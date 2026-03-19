@@ -1,0 +1,13 @@
+[plugin]
+name = "Voice Scribe"
+version = "1.0.0"
+description = "Voice dictation: speak Russian → type English with custom style prompts"
+entry = "scribe.VoiceScribePlugin"
+
+[settings]
+openai_api_key = ""
+transcription_model = "whisper-1"
+chat_model = "gpt-5.4"
+input_language = "ru"
+output_language = "en"
+sample_rate = 16000

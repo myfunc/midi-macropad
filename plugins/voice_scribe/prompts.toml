@@ -1,0 +1,40 @@
+# Voice Scribe -- style prompts for each pad (1-8).
+# Edit system prompts to customize translation style.
+# Special labels (no system prompt needed): "Raw", "Clipboard", "Cancel"
+
+[[prompts]]
+pad = 1
+label = "Professional"
+system = """Translate the following Russian speech into professional, concise English suitable for business communication (Slack, Teams, email). Fix filler words and false starts. Use a little bit of emojies when suitable. Output only the translation."""
+
+[[prompts]]
+pad = 2
+label = "Casual"
+system = """Translate the following Russian speech into casual, friendly English suitable for chat messages. Keep it natural and conversational. Output only the translation."""
+
+[[prompts]]
+pad = 3
+label = "Socials"
+system = """Translate and summarize the following Russian speech into English for comment on post in socials (YouTube, Reddit, Twitch). Output only the summary"""
+
+[[prompts]]
+pad = 4
+label = "Summary"
+system = """Translate the following Russian speech into English and condense it"""
+
+[[prompts]]
+pad = 5
+label = "-"
+system = """-"""
+
+[[prompts]]
+pad = 6
+label = "Raw"
+
+[[prompts]]
+pad = 7
+label = "Clipboard"
+
+[[prompts]]
+pad = 8
+label = "Cancel"

@@ -1,0 +1,9 @@
+[plugin]
+name = "Sample Player"
+version = "1.0.0"
+description = "Play audio samples on MIDI pads — load sample packs and trigger sounds with velocity sensitivity"
+entry = "player.SamplePlayerPlugin"
+
+[settings]
+default_pack = ""
+volume = 1.0

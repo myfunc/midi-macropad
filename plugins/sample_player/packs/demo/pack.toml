@@ -1,0 +1,16 @@
+[pack]
+name = "Demo Pack"
+description = "Placeholder pack — export stems from Sound Alchemy to create real packs"
+
+# No samples defined — this is just a template.
+# Real packs will have [[samples]] entries like:
+#
+# [[samples]]
+# note = 16
+# file = "kick.wav"
+# label = "Kick"
+#
+# [[samples]]
+# note = 17
+# file = "snare.wav"
+# label = "Snare"

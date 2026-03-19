@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Runtime / user data
+logs/
+.macropad.pid
+settings.json
+.env
+
+# Secrets
+plugins/voice_scribe/.api_key
+plugins/voice_scribe/mic_device.txt
+
+# Beads (internal task tracker)
+.beads/
+AGENTS.md
+
+# Research notes
+RESEARCH-*.md
+
+# Sample packs (can be large, user-supplied)
+plugins/sample_player/packs/*/samples/

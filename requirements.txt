@@ -1,0 +1,12 @@
+mido
+python-rtmidi
+pynput
+pycaw
+dearpygui
+comtypes
+toml
+obs-websocket-py
+sounddevice
+soundfile
+numpy
+openai
