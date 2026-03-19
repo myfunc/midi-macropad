@@ -72,3 +72,4 @@ class Plugin(ABC):
     def build_properties(self, parent_tag: str) -> None:
         """Build UI for the right-panel properties when this plugin is selected."""
         pass
+

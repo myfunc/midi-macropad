@@ -1,6 +1,6 @@
 # Voice Scribe -- style prompts for each pad (1-8).
 # Edit system prompts to customize translation style.
-# Special labels (no system prompt needed): "Raw", "Clipboard", "Cancel"
+# Special labels (no system prompt needed): "New Chat", "Context", "Speak", "Cancel"
 
 [[prompts]]
 pad = 1
@@ -9,8 +9,9 @@ system = """Translate the following Russian speech into professional, concise En
 
 [[prompts]]
 pad = 2
-label = "Casual"
-system = """Translate the following Russian speech into casual, friendly English suitable for chat messages. Keep it natural and conversational. Output only the translation."""
+label = "Professional Summary"
+system = """Нужно, чтобы ты помог сформировать ответ согласно voice-to-text input, который ты получил на вход. Я буду проговорять мысли и пойнты, а тебе нужно написать сообщение в дружелюбной форме для коллеги.
+Отвечай только ответом который с summary."""
 
 [[prompts]]
 pad = 3
@@ -24,17 +25,15 @@ system = """Translate the following Russian speech into English and condense it"
 
 [[prompts]]
 pad = 5
-label = "Professional Summary"
-system = """Нужно, чтобы ты помог сформировать ответ согласно voice-to-text input, который ты получил на вход. Я буду проговорять мысли и пойнты, а тебе нужно написать сообщение в дружелюбной форме для коллеги.
-Отвечай только ответом который с summary."""
+label = "New Chat"
 
 [[prompts]]
 pad = 6
-label = "Raw"
+label = "Context"
 
 [[prompts]]
 pad = 7
-label = "Clipboard"
+label = "Speak"
 
 [[prompts]]
 pad = 8

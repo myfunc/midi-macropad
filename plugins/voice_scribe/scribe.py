@@ -3,11 +3,13 @@
 import sys
 import os
 import io
+import json
 import threading
 import time
 import wave
 import ctypes
 import ctypes.wintypes
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base import Plugin
@@ -22,9 +24,21 @@ log = get_logger("voice_scribe")
 
 MODE_NAME = "Voice Scribe"
 PAD_NOTE_OFFSET = 15
-CLIPBOARD_DEFAULT_PROMPT = (
-    "Translate the following Russian text into professional English. "
-    "Output only the translation."
+CHAT_SYSTEM = (
+    "You are a voice-driven writing assistant. The user builds context by providing "
+    "text snippets from conversations, posts, or documents (marked as [Context N:]), "
+    "then gives a voice instruction in Russian (marked as [Instruction:]).\n\n"
+    "Rules:\n"
+    "- Output ONLY the final text, ready to paste and send. No explanations, no commentary.\n"
+    "- The user may specify target language, style, and tone in their voice instruction.\n"
+    "- If no language is specified, infer from context (reply language matches the conversation).\n"
+    "- Generate a natural response/message as if the user wrote it themselves.\n"
+    "- In follow-up turns, remember all previous context and responses.\n\n"
+    "Formatting:\n"
+    "- Wrap code, technical terms, file names, and commands in backticks (`like this`).\n"
+    "- Use minimal markdown where appropriate (bold for emphasis, lists if needed).\n"
+    "- Use emojis sparingly — only when the tone is genuinely enthusiastic, celebratory, "
+    "or to soften an inability to help (e.g. 🎉, 🙏, 🤔). Never force them."
 )
 _ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 _KEY_FILE = Path(__file__).parent / ".api_key"
@@ -174,6 +188,9 @@ class VoiceScribePlugin(Plugin):
         self._last_result: str = ""
         self._last_prompt_label: str = ""
         self._whisper_prompt: str = ""
+        self._pending_context: list[str] = []
+        self._chat_history: list[dict] = []
+        self._chat_file: Path | None = None
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -246,12 +263,47 @@ class VoiceScribePlugin(Plugin):
 
         if label == "Cancel":
             self._stop_recording()
+            self._pending_context.clear()
             self._set_status("Cancelled", "warn")
             return True
 
-        if label == "Clipboard":
+        if label == "New Chat":
+            self._stop_recording()
+            self._chat_history = [{"role": "system", "content": CHAT_SYSTEM}]
+            self._chat_file = self._new_chat_file()
+            self._pending_context.clear()
+            self._set_status("New chat started", "ok")
+            log.info("New chat started → %s", self._chat_file.name)
+            return True
+
+        if label == "Context":
             if not self._processing:
-                threading.Thread(target=self._process_clipboard, daemon=True).start()
+                text = self._capture_selection()
+                if text.strip():
+                    self._pending_context.append(text)
+                    self._set_status(
+                        f"Context added ({len(self._pending_context)} items)", "ok")
+                    log.info("Context +1 (%d total), %d chars",
+                             len(self._pending_context), len(text))
+                else:
+                    self._set_status("No text selected", "warn")
+            return True
+
+        if label == "Speak":
+            if self._recording and self._active_note == note:
+                self._stop_recording()
+                if not self._processing:
+                    threading.Thread(target=self._process_speak, args=(note,),
+                                     daemon=True).start()
+            elif not self._recording and not self._processing:
+                selection = self._capture_selection()
+                if selection.strip():
+                    self._pending_context.append(selection)
+                self._active_note = note
+                self._start_recording()
+                ctx_count = len(self._pending_context)
+                self._set_status(
+                    f"Recording [Speak] ({ctx_count} ctx)...", "recording")
             return True
 
         if self._recording and self._active_note == note:
@@ -362,7 +414,7 @@ class VoiceScribePlugin(Plugin):
             self._last_prompt_label = label
             log.info("Transcript [%s]: %s", label, transcript[:120])
 
-            if label == "Raw" or not system:
+            if not system:
                 self._paste(transcript)
                 self._last_result = transcript
                 self._set_status(f"Done [{label or 'raw'}]", "ok")
@@ -384,26 +436,64 @@ class VoiceScribePlugin(Plugin):
         finally:
             self._processing = False
 
-    def _process_clipboard(self) -> None:
+    # -- speak pipeline --------------------------------------------------------
+
+    @staticmethod
+    def _capture_selection() -> str:
+        """Send Ctrl+C to copy the current selection, then read clipboard."""
+        from pynput.keyboard import Key, Controller
+        kb = Controller()
+        kb.press(Key.ctrl_l)
+        kb.press("c")
+        kb.release("c")
+        kb.release(Key.ctrl_l)
+        time.sleep(0.15)
+        return _clipboard_read()
+
+    def _process_speak(self, note: int) -> None:
         self._processing = True
         try:
-            self._set_status("Translating clipboard...", "busy")
-            text = _clipboard_read()
-            if not text or not text.strip():
-                self._set_status("Clipboard empty", "warn")
+            self._set_status("Transcribing...", "busy")
+            wav = self._collect_wav()
+            if not wav:
+                self._set_status("No audio captured", "warn")
                 return
-            self._last_original = text
-            pro = self._prompts.get(1 + PAD_NOTE_OFFSET, {})
-            system = pro.get("system", CLIPBOARD_DEFAULT_PROMPT)
-            translated = self._gpt_translate(text, system)
-            if translated:
-                self._paste(translated)
-                self._last_result = translated
-                self._set_status("Done [Clipboard]", "ok")
+            instruction = self._whisper_transcribe(wav)
+            if not instruction:
+                self._set_status("Empty transcription", "warn")
+                return
+
+            if not self._chat_history:
+                self._chat_history = [{"role": "system", "content": CHAT_SYSTEM}]
+                self._chat_file = self._new_chat_file()
+
+            parts = []
+            for i, ctx in enumerate(self._pending_context, 1):
+                parts.append(f"[Context {i}:]\n{ctx}")
+            parts.append(f"[Instruction:]\n{instruction}")
+            user_msg = "\n\n".join(parts)
+
+            self._chat_history.append({"role": "user", "content": user_msg})
+            self._pending_context.clear()
+
+            self._last_original = instruction
+            self._last_prompt_label = "Speak"
+            log.info("Speak — instruction: %s (%d ctx, %d history msgs)",
+                     instruction[:80], len(parts) - 1, len(self._chat_history))
+
+            self._set_status("Generating...", "busy")
+            result = self._gpt_chat(self._chat_history)
+            if result:
+                self._chat_history.append({"role": "assistant", "content": result})
+                self._save_chat_log()
+                self._paste(result)
+                self._last_result = result
+                self._set_status("Done [Speak]", "ok")
             else:
-                self._set_status("Translation returned empty", "warn")
+                self._chat_history.pop()
+                self._set_status("Generation returned empty", "warn")
         except Exception as exc:
-            log.error("Clipboard error: %s", exc)
+            log.error("Speak error: %s", exc)
             self._set_status(f"Error: {exc}", "error")
             if self._log_fn:
                 self._log_fn("VOICE", str(exc)[:80], color=(255, 80, 80))
@@ -439,6 +529,35 @@ class VoiceScribePlugin(Plugin):
             temperature=0.3,
         )
         return resp.choices[0].message.content.strip()
+
+    def _gpt_chat(self, messages: list[dict]) -> str:
+        from openai import OpenAI
+        client = OpenAI(api_key=self.api_key)
+        resp = client.chat.completions.create(
+            model=self.chat_model,
+            messages=messages,
+            temperature=0.3,
+        )
+        return resp.choices[0].message.content.strip()
+
+    # -- chat log persistence -------------------------------------------------
+
+    def _new_chat_file(self) -> Path:
+        chats_dir = self._plugin_dir / "chats"
+        chats_dir.mkdir(exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        return chats_dir / f"{stamp}.json"
+
+    def _save_chat_log(self) -> None:
+        if not self._chat_file or not self._chat_history:
+            return
+        try:
+            self._chat_file.write_text(
+                json.dumps(self._chat_history, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            log.error("Failed to save chat log: %s", exc)
 
     # -- paste at cursor ------------------------------------------------------
 
@@ -543,7 +662,7 @@ class VoiceScribePlugin(Plugin):
                     dpg.add_input_text(tag=f"vs_pad_label_{note}",
                                        default_value=label, width=150,
                                        hint="Label")
-                if label not in ("Raw", "Clipboard", "Cancel"):
+                if label not in ("New Chat", "Context", "Speak", "Cancel"):
                     dpg.add_input_text(tag=f"vs_pad_system_{note}",
                                        default_value=system, width=-1,
                                        multiline=True, height=55,
@@ -701,7 +820,7 @@ class VoiceScribePlugin(Plugin):
         lines = [
             "# Voice Scribe -- style prompts for each pad (1-8).",
             "# Edit system prompts to customize translation style.",
-            '# Special labels (no system prompt needed): "Raw", "Clipboard", "Cancel"',
+            '# Special labels (no system prompt needed): "New Chat", "Context", "Speak", "Cancel"',
             "",
         ]
         if self._whisper_prompt:

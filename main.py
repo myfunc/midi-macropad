@@ -227,6 +227,7 @@ def handle_midi_event(event: MidiEvent):
 
         if event.type == "pad_press":
             flash_pad(event.note, event.velocity)
+            leds.pad_on(event.note, event.velocity)
             if plugin_manager.on_pad_press(event.note, event.velocity):
                 labels = plugin_manager.get_all_pad_labels()
                 label = labels.get(event.note, f"note {event.note}")
@@ -246,6 +247,7 @@ def handle_midi_event(event: MidiEvent):
                               color=(150, 150, 160))
 
         elif event.type == "pad_release":
+            leds.pad_off(event.note)
             if not plugin_manager.on_pad_release(event.note):
                 release_pad(event.note)
 
@@ -318,11 +320,19 @@ def _execute_obs_action(action):
     cmd = action.target
     if cmd == "toggle_recording":
         obs.toggle_recording()
+        if obs.is_recording:
+            leds.pad_on(16)  # Rec pad stays lit while recording
+        else:
+            leds.pad_off(16)
         add_log_entry("OBS",
                       f"Recording: {'ON' if obs.is_recording else 'OFF'}",
                       color=(255, 100, 100))
     elif cmd == "toggle_streaming":
         obs.toggle_streaming()
+        if obs.is_streaming:
+            leds.pad_on(17)  # Stream pad stays lit while streaming
+        else:
+            leds.pad_off(17)
         add_log_entry("OBS",
                       f"Streaming: {'ON' if obs.is_streaming else 'OFF'}",
                       color=(255, 100, 100))
@@ -550,6 +560,11 @@ def main():
     midi.start()
     add_log_entry("SYS", "Starting MIDI listener...", color=(100, 255, 150))
 
+    if leds.connect():
+        add_log_entry("LED", "Hardware LED output connected", color=(100, 255, 150))
+    else:
+        add_log_entry("LED", "Hardware LED output not available", color=(255, 180, 80))
+
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dashboard_post_setup()
@@ -587,6 +602,7 @@ def main():
         dpg.render_dearpygui_frame()
 
     plugin_manager.unload_all()
+    leds.disconnect()
     midi.stop()
     dpg.destroy_context()
     log.info("MIDI Macropad closed")

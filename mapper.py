@@ -95,7 +95,7 @@ def load_config(path: str | Path) -> AppConfig:
             process=ctx_data["process"],
             mode=ctx_data["mode"],
         ))
-    
+
     return cfg
 
 

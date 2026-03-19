@@ -34,6 +34,9 @@ settings.json
 plugins/voice_scribe/.api_key
 plugins/voice_scribe/mic_device.txt
 
+# Voice Scribe chat logs (contain user dictation, potentially private)
+plugins/voice_scribe/chats/
+
 # Beads (internal task tracker)
 .beads/
 AGENTS.md
