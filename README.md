@@ -4,6 +4,8 @@ Turn an **Akai MPK Mini Play** (or any MIDI controller) into a programmable macr
 
 Built with Python, [DearPyGui](https://github.com/hoffstadt/DearPyGui), and [mido](https://mido.readthedocs.io/).
 
+![MIDI Macropad UI](docs/screenshot.png)
+
 ## Features
 
 - **6 switchable modes** — Productivity, Development, Media, OBS, Voice Scribe, Sound Pads
