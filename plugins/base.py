@@ -14,6 +14,7 @@ class Plugin(ABC):
     version: str = "0.0.0"
     description: str = ""
     _log_fn = None
+    _runtime_services: dict[str, object] = {}
 
     @abstractmethod
     def on_load(self, config: dict) -> None:
@@ -24,6 +25,9 @@ class Plugin(ABC):
     def on_unload(self) -> None:
         """Called when the plugin is unloaded."""
         ...
+
+    def set_runtime_services(self, services: dict[str, object]) -> None:
+        self._runtime_services = services
 
     # -- MIDI event hooks (return True to consume) ----------------------------
 
@@ -72,4 +76,15 @@ class Plugin(ABC):
     def build_properties(self, parent_tag: str) -> None:
         """Build UI for the right-panel properties when this plugin is selected."""
         pass
+
+    # -- shared runtime helpers ------------------------------------------------
+
+    def emit_feedback(self, cue_id: str) -> bool:
+        feedback = self._runtime_services.get("feedback")
+        if feedback is None:
+            return False
+        try:
+            return bool(feedback.emit(cue_id))
+        except Exception:
+            return False
 

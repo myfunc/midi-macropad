@@ -51,6 +51,7 @@ from mapper import Mapper, load_config
 from executor import execute_keystroke, execute_shell, execute_launch, execute_scroll
 from audio import AudioController, enumerate_output_devices, enumerate_input_devices
 from app_detector import get_foreground_process
+from feedback import FeedbackService
 from ui.dashboard import (
     create_dashboard, setup_theme, hex_to_rgb,
     create_layout, create_center_content, add_plugin_tab,
@@ -84,6 +85,23 @@ EVENT_QUEUE: queue.Queue = queue.Queue(maxsize=256)
 log = get_logger("app")
 
 
+class _NullLedController:
+    def connect(self) -> bool:
+        return False
+
+    def disconnect(self) -> None:
+        pass
+
+    def pad_on(self, note: int, velocity: int = 127) -> None:
+        pass
+
+    def pad_off(self, note: int) -> None:
+        pass
+
+
+leds = _NullLedController()
+
+
 def _append_ui_log(tag: str, message: str, color=(200, 200, 200)):
     try:
         add_log_entry(tag, message, color=color)
@@ -115,6 +133,8 @@ try:
     plugin_manager = PluginManager(
         Path(__file__).parent / "plugins", log_fn=_runtime_log,
     )
+    feedback = FeedbackService(config.device_name, log_fn=_runtime_log)
+    plugin_manager.set_runtime_services({"feedback": feedback})
     audio = AudioController(
         output_device_id=settings.get("output_device_id"),
         input_device_id=settings.get("input_device_id"),
@@ -240,7 +260,7 @@ def handle_midi_event(event: MidiEvent):
                 add_log_entry("PAD",
                               f"{mapping.label} (note {event.note}, vel {event.velocity})",
                               color=(100, 200, 255))
-                _execute_action(mapping.action)
+                _execute_action(mapping.action, cue_id=_feedback_cue_for_mapping(mapping))
             else:
                 add_log_entry("PAD",
                               f"note {event.note} vel {event.velocity} (unmapped)",
@@ -296,7 +316,20 @@ def _handle_knob(knob, value: int):
             _runtime_log("ERR", err, color=(255, 80, 80))
 
 
-def _execute_action(action):
+def _feedback_cue_for_mapping(mapping) -> str:
+    label = mapping.label.lower()
+    if any(word in label for word in ("delete", "cut", "lock")):
+        return "action.danger"
+    if any(word in label for word in (
+        "undo", "redo", "find", "terminal", "palette", "file",
+        "scene", "desktop", "task view", "screenshot",
+    )):
+        return "action.navigation"
+    return "action.default"
+
+
+def _execute_action(action, cue_id: str = "action.default"):
+    resolved_cue = cue_id
     if action.type == "keystroke":
         err = execute_keystroke(action.keys)
     elif action.type == "shell":
@@ -304,19 +337,20 @@ def _execute_action(action):
     elif action.type == "launch":
         err = execute_launch(action.command)
     elif action.type == "obs":
-        err = None
-        _execute_obs_action(action)
+        err, resolved_cue = _execute_obs_action(action)
     else:
         err = f"Unsupported action type: {action.type}"
     if err:
         _runtime_log("ERR", err, color=(255, 80, 80))
+        feedback.emit_error()
+    elif resolved_cue:
+        feedback.emit_action(resolved_cue)
 
 
 def _execute_obs_action(action):
     if not obs.connected:
         if not obs.connect():
-            add_log_entry("OBS", "Cannot connect to OBS", color=(255, 80, 80))
-            return
+            return "Cannot connect to OBS", None
     cmd = action.target
     if cmd == "toggle_recording":
         obs.toggle_recording()
@@ -327,6 +361,7 @@ def _execute_obs_action(action):
         add_log_entry("OBS",
                       f"Recording: {'ON' if obs.is_recording else 'OFF'}",
                       color=(255, 100, 100))
+        return None, "action.toggle_on" if obs.is_recording else "action.toggle_off"
     elif cmd == "toggle_streaming":
         obs.toggle_streaming()
         if obs.is_streaming:
@@ -336,20 +371,26 @@ def _execute_obs_action(action):
         add_log_entry("OBS",
                       f"Streaming: {'ON' if obs.is_streaming else 'OFF'}",
                       color=(255, 100, 100))
+        return None, "action.toggle_on" if obs.is_streaming else "action.toggle_off"
     elif cmd == "next_scene":
         obs.next_scene()
         add_log_entry("OBS", f"Scene: {obs.current_scene}", color=(255, 180, 80))
+        return None, "action.navigation"
     elif cmd == "prev_scene":
         obs.prev_scene()
         add_log_entry("OBS", f"Scene: {obs.current_scene}", color=(255, 180, 80))
+        return None, "action.navigation"
     elif cmd.startswith("scene:"):
         scene_name = cmd[6:]
         obs.switch_scene(scene_name)
         add_log_entry("OBS", f"Scene: {scene_name}", color=(255, 180, 80))
+        return None, "action.navigation"
     elif cmd.startswith("mute:"):
         source_name = cmd[5:]
         obs.toggle_source_mute(source_name)
         add_log_entry("OBS", f"Toggle mute: {source_name}", color=(255, 140, 100))
+        return None, "action.default"
+    return f"Unsupported OBS action: {cmd}", None
 
 
 def check_foreground_app():
@@ -602,6 +643,7 @@ def main():
         dpg.render_dearpygui_frame()
 
     plugin_manager.unload_all()
+    feedback.close()
     leds.disconnect()
     midi.stop()
     dpg.destroy_context()

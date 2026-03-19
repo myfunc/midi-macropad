@@ -15,9 +15,10 @@ class PluginManager:
     def __init__(self, plugins_dir: Path, log_fn=None):
         self.plugins_dir = plugins_dir
         self.plugins: dict[str, Plugin] = {}
-        self.enabled: set[str] = set()
+        self.enabled: list[str] = []
         self._discovered: list[dict] = []
         self._log = log_fn or (lambda *a, **kw: None)
+        self._runtime_services: dict[str, object] = {}
 
     # -- Discovery ------------------------------------------------------------
 
@@ -51,6 +52,16 @@ class PluginManager:
 
     # -- Loading / unloading --------------------------------------------------
 
+    def set_runtime_services(self, services: dict[str, object]) -> None:
+        self._runtime_services = dict(services)
+        for plugin in self.plugins.values():
+            try:
+                plugin.set_runtime_services(self._runtime_services)
+            except Exception:
+                self._log("PLUGIN",
+                          f"Failed to update runtime services: {traceback.format_exc()}",
+                          color=(255, 80, 80))
+
     def load_plugin(self, plugin_info: dict) -> None:
         entry: str = plugin_info["entry"]
         if not entry:
@@ -72,10 +83,12 @@ class PluginManager:
             cls = getattr(module, class_name)
             instance: Plugin = cls()
             instance._log_fn = self._log
+            instance.set_runtime_services(self._runtime_services)
             instance.on_load(plugin_info.get("settings", {}))
             name = plugin_info["name"]
             self.plugins[name] = instance
-            self.enabled.add(name)
+            if name not in self.enabled:
+                self.enabled.append(name)
             self._log("PLUGIN",
                       f"Loaded {name} v{plugin_info['version']}",
                       color=(100, 255, 150))
@@ -89,7 +102,8 @@ class PluginManager:
 
     def unload_plugin(self, name: str) -> None:
         plugin = self.plugins.pop(name, None)
-        self.enabled.discard(name)
+        if name in self.enabled:
+            self.enabled.remove(name)
         if plugin is None:
             return
         try:

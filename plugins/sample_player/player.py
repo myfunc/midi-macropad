@@ -41,12 +41,14 @@ class SamplePlayerPlugin(Plugin):
     name = "Sample Player"
     version = "1.0.0"
     description = "Play audio samples on MIDI pads"
+    mode_name = "Sound Pads"
 
     def __init__(self):
         self.samples: dict[int, Sample] = {}
         self.volume: float = 1.0
         self.packs_dir: Path = Path(__file__).parent / "packs"
         self.current_pack: str = ""
+        self._active = False
         self._voices: list[Voice] = []
         self._lock = threading.Lock()
         self._stream: sd.OutputStream | None = None
@@ -71,9 +73,14 @@ class SamplePlayerPlugin(Plugin):
         self._stop_stream()
         self.samples.clear()
 
+    def on_mode_changed(self, mode_name: str) -> None:
+        self._active = mode_name == self.mode_name
+
     # -- MIDI event hooks --
 
     def on_pad_press(self, note: int, velocity: int) -> bool:
+        if not self._active:
+            return False
         if note not in self.samples:
             return False
         if not self._ensure_stream():
@@ -86,15 +93,19 @@ class SamplePlayerPlugin(Plugin):
         return True
 
     def on_pad_release(self, note: int) -> bool:
-        return note in self.samples
+        return self._active and note in self.samples
 
     def on_knob(self, cc: int, value: int) -> bool:
+        if not self._active:
+            return False
         if cc == VOLUME_CC:
             self.volume = value / 127.0
             return True
         return False
 
     def get_pad_labels(self) -> dict[int, str]:
+        if not self._active:
+            return {}
         return {note: s.label for note, s in self.samples.items()}
 
     # -- audio stream (polyphonic mixer) --

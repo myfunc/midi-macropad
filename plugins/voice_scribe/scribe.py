@@ -44,6 +44,10 @@ _ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 _KEY_FILE = Path(__file__).parent / ".api_key"
 
 
+class OperationCancelled(Exception):
+    """Raised when a voice job was hard-cancelled or superseded."""
+
+
 def _load_api_key_from_files() -> str:
     if _KEY_FILE.exists():
         key = _KEY_FILE.read_text(encoding="utf-8").strip()
@@ -181,7 +185,9 @@ class VoiceScribePlugin(Plugin):
         self._audio_chunks: list[np.ndarray] = []
         self._stream: sd.InputStream | None = None
         self._lock = threading.Lock()
-        self._processing: bool = False
+        self._state_lock = threading.Lock()
+        self._processing_token: int | None = None
+        self._token_counter: int = 0
 
         self._status: str = "Idle"
         self._last_original: str = ""
@@ -209,12 +215,12 @@ class VoiceScribePlugin(Plugin):
                  self.mic_device)
 
     def on_unload(self) -> None:
-        self._stop_recording()
+        self._hard_cancel(set_status=False)
 
     def on_mode_changed(self, mode_name: str) -> None:
         self._active = mode_name == MODE_NAME
         if not self._active:
-            self._stop_recording()
+            self._hard_cancel(set_status=False)
 
     # -- mic device persistence -----------------------------------------------
 
@@ -262,9 +268,7 @@ class VoiceScribePlugin(Plugin):
         label = info.get("label", "")
 
         if label == "Cancel":
-            self._stop_recording()
-            self._pending_context.clear()
-            self._set_status("Cancelled", "warn")
+            self._hard_cancel()
             return True
 
         if label == "New Chat":
@@ -277,30 +281,37 @@ class VoiceScribePlugin(Plugin):
             return True
 
         if label == "Context":
-            if not self._processing:
+            if not self._is_processing():
                 text = self._capture_selection()
                 if text.strip():
                     self._pending_context.append(text)
+                    self.emit_feedback("voice.context_added")
                     self._set_status(
                         f"Context added ({len(self._pending_context)} items)", "ok")
                     log.info("Context +1 (%d total), %d chars",
                              len(self._pending_context), len(text))
                 else:
+                    self.emit_feedback("voice.warn")
                     self._set_status("No text selected", "warn")
             return True
 
         if label == "Speak":
             if self._recording and self._active_note == note:
                 self._stop_recording()
-                if not self._processing:
-                    threading.Thread(target=self._process_speak, args=(note,),
+                self.emit_feedback("voice.record_stop")
+                token = self._begin_processing()
+                if token is not None:
+                    threading.Thread(target=self._process_speak, args=(note, token),
                                      daemon=True).start()
-            elif not self._recording and not self._processing:
+            elif not self._recording and not self._is_processing():
                 selection = self._capture_selection()
                 if selection.strip():
                     self._pending_context.append(selection)
+                    self.emit_feedback("voice.context_added")
                 self._active_note = note
                 self._start_recording()
+                if self._recording:
+                    self.emit_feedback("voice.record_start")
                 ctx_count = len(self._pending_context)
                 self._set_status(
                     f"Recording [Speak] ({ctx_count} ctx)...", "recording")
@@ -308,12 +319,16 @@ class VoiceScribePlugin(Plugin):
 
         if self._recording and self._active_note == note:
             self._stop_recording()
-            if not self._processing:
-                threading.Thread(target=self._process_audio, args=(note,),
+            self.emit_feedback("voice.record_stop")
+            token = self._begin_processing()
+            if token is not None:
+                threading.Thread(target=self._process_audio, args=(note, token),
                                  daemon=True).start()
-        elif not self._recording and not self._processing:
+        elif not self._recording and not self._is_processing():
             self._active_note = note
             self._start_recording()
+            if self._recording:
+                self.emit_feedback("voice.record_start")
             self._set_status(f"Recording [{label}]", "recording")
         return True
 
@@ -335,7 +350,7 @@ class VoiceScribePlugin(Plugin):
             return None
         color = self._STATUS_COLORS.get(
             "recording" if self._recording else
-            "busy" if self._processing else "idle",
+            "busy" if self._is_processing() else "idle",
             (150, 150, 160),
         )
         return f"Voice Scribe: {self._status}", color
@@ -364,6 +379,7 @@ class VoiceScribePlugin(Plugin):
 
     def _stop_recording(self) -> None:
         self._recording = False
+        self._active_note = None
         if self._stream is not None:
             try:
                 self._stream.stop()
@@ -395,17 +411,72 @@ class VoiceScribePlugin(Plugin):
 
     # -- processing pipeline --------------------------------------------------
 
-    def _process_audio(self, note: int) -> None:
-        self._processing = True
+    def _is_processing(self) -> bool:
+        with self._state_lock:
+            return self._processing_token is not None
+
+    def _begin_processing(self) -> int | None:
+        with self._state_lock:
+            if self._processing_token is not None:
+                return None
+            self._token_counter += 1
+            self._processing_token = self._token_counter
+            return self._processing_token
+
+    def _finish_processing(self, token: int) -> None:
+        with self._state_lock:
+            if self._processing_token == token:
+                self._processing_token = None
+
+    def _assert_token_active(self, token: int) -> None:
+        with self._state_lock:
+            if self._processing_token != token:
+                raise OperationCancelled()
+
+    def _is_token_active(self, token: int) -> bool:
+        with self._state_lock:
+            return self._processing_token == token
+
+    def _hard_cancel(self, set_status: bool = True) -> None:
+        had_activity = self._recording or self._is_processing()
+        self._stop_recording()
+        self._pending_context.clear()
+        with self._state_lock:
+            self._token_counter += 1
+            self._processing_token = None
+        if set_status:
+            if had_activity:
+                self.emit_feedback("voice.cancel_requested")
+                self.emit_feedback("voice.cancelled")
+                self._set_status("Hard cancelled", "warn")
+            else:
+                self.emit_feedback("voice.warn")
+                self._set_status("Nothing to cancel", "warn")
+
+    def _set_status_if_active(self, token: int, text: str, kind: str) -> None:
+        self._assert_token_active(token)
+        self._set_status(text, kind)
+
+    def _paste_if_active(self, token: int, text: str) -> None:
+        self._assert_token_active(token)
+        self._paste(text)
+
+    def _process_audio(self, note: int, token: int) -> None:
         try:
-            self._set_status("Transcribing...", "busy")
+            self._assert_token_active(token)
+            self.emit_feedback("voice.processing_start")
+            self._set_status_if_active(token, "Transcribing...", "busy")
             wav = self._collect_wav()
+            self._assert_token_active(token)
             if not wav:
-                self._set_status("No audio captured", "warn")
+                self.emit_feedback("voice.warn")
+                self._set_status_if_active(token, "No audio captured", "warn")
                 return
             transcript = self._whisper_transcribe(wav)
+            self._assert_token_active(token)
             if not transcript:
-                self._set_status("Empty transcription", "warn")
+                self.emit_feedback("voice.warn")
+                self._set_status_if_active(token, "Empty transcription", "warn")
                 return
             self._last_original = transcript
             info = self._prompts.get(note, {})
@@ -415,26 +486,36 @@ class VoiceScribePlugin(Plugin):
             log.info("Transcript [%s]: %s", label, transcript[:120])
 
             if not system:
-                self._paste(transcript)
+                self._paste_if_active(token, transcript)
                 self._last_result = transcript
-                self._set_status(f"Done [{label or 'raw'}]", "ok")
+                self._assert_token_active(token)
+                self.emit_feedback("voice.done")
+                self._set_status_if_active(token, f"Done [{label or 'raw'}]", "ok")
                 return
 
-            self._set_status(f"Translating [{label}]...", "busy")
+            self._set_status_if_active(token, f"Translating [{label}]...", "busy")
             translated = self._gpt_translate(transcript, system)
+            self._assert_token_active(token)
             if translated:
-                self._paste(translated)
+                self._paste_if_active(token, translated)
                 self._last_result = translated
-                self._set_status(f"Done [{label}]", "ok")
+                self._assert_token_active(token)
+                self.emit_feedback("voice.done")
+                self._set_status_if_active(token, f"Done [{label}]", "ok")
             else:
-                self._set_status("Translation returned empty", "warn")
+                self.emit_feedback("voice.warn")
+                self._set_status_if_active(token, "Translation returned empty", "warn")
+        except OperationCancelled:
+            log.info("Voice job cancelled before completion")
         except Exception as exc:
             log.error("Processing error: %s", exc)
-            self._set_status(f"Error: {exc}", "error")
-            if self._log_fn:
+            if self._is_token_active(token):
+                self.emit_feedback("voice.error")
+                self._set_status(f"Error: {exc}", "error")
+            if self._log_fn and self._is_token_active(token):
                 self._log_fn("VOICE", str(exc)[:80], color=(255, 80, 80))
         finally:
-            self._processing = False
+            self._finish_processing(token)
 
     # -- speak pipeline --------------------------------------------------------
 
@@ -450,17 +531,22 @@ class VoiceScribePlugin(Plugin):
         time.sleep(0.15)
         return _clipboard_read()
 
-    def _process_speak(self, note: int) -> None:
-        self._processing = True
+    def _process_speak(self, note: int, token: int) -> None:
         try:
-            self._set_status("Transcribing...", "busy")
+            self._assert_token_active(token)
+            self.emit_feedback("voice.processing_start")
+            self._set_status_if_active(token, "Transcribing...", "busy")
             wav = self._collect_wav()
+            self._assert_token_active(token)
             if not wav:
-                self._set_status("No audio captured", "warn")
+                self.emit_feedback("voice.warn")
+                self._set_status_if_active(token, "No audio captured", "warn")
                 return
             instruction = self._whisper_transcribe(wav)
+            self._assert_token_active(token)
             if not instruction:
-                self._set_status("Empty transcription", "warn")
+                self.emit_feedback("voice.warn")
+                self._set_status_if_active(token, "Empty transcription", "warn")
                 return
 
             if not self._chat_history:
@@ -473,32 +559,40 @@ class VoiceScribePlugin(Plugin):
             parts.append(f"[Instruction:]\n{instruction}")
             user_msg = "\n\n".join(parts)
 
-            self._chat_history.append({"role": "user", "content": user_msg})
-            self._pending_context.clear()
-
             self._last_original = instruction
             self._last_prompt_label = "Speak"
             log.info("Speak — instruction: %s (%d ctx, %d history msgs)",
                      instruction[:80], len(parts) - 1, len(self._chat_history))
 
-            self._set_status("Generating...", "busy")
-            result = self._gpt_chat(self._chat_history)
+            self._set_status_if_active(token, "Generating...", "busy")
+            request_messages = list(self._chat_history)
+            request_messages.append({"role": "user", "content": user_msg})
+            self._pending_context.clear()
+            result = self._gpt_chat(request_messages)
+            self._assert_token_active(token)
             if result:
-                self._chat_history.append({"role": "assistant", "content": result})
+                self._chat_history = request_messages + [{"role": "assistant", "content": result}]
                 self._save_chat_log()
-                self._paste(result)
+                self._paste_if_active(token, result)
                 self._last_result = result
-                self._set_status("Done [Speak]", "ok")
+                self._assert_token_active(token)
+                self.emit_feedback("voice.done")
+                self._set_status_if_active(token, "Done [Speak]", "ok")
             else:
                 self._chat_history.pop()
-                self._set_status("Generation returned empty", "warn")
+                self.emit_feedback("voice.warn")
+                self._set_status_if_active(token, "Generation returned empty", "warn")
+        except OperationCancelled:
+            log.info("Voice speak job cancelled before completion")
         except Exception as exc:
             log.error("Speak error: %s", exc)
-            self._set_status(f"Error: {exc}", "error")
-            if self._log_fn:
+            if self._is_token_active(token):
+                self.emit_feedback("voice.error")
+                self._set_status(f"Error: {exc}", "error")
+            if self._log_fn and self._is_token_active(token):
                 self._log_fn("VOICE", str(exc)[:80], color=(255, 80, 80))
         finally:
-            self._processing = False
+            self._finish_processing(token)
 
     # -- API calls ------------------------------------------------------------
 
@@ -596,11 +690,9 @@ class VoiceScribePlugin(Plugin):
                 dpg.set_value("vs_active_prompt",
                               f"Prompt: {self._last_prompt_label}")
             if self._last_original and dpg.does_item_exist("vs_orig"):
-                short = self._last_original[:200].replace("\n", " ")
-                dpg.set_value("vs_orig", f"RU: {short}")
+                dpg.set_value("vs_orig", self._last_original)
             if self._last_result and dpg.does_item_exist("vs_result"):
-                short = self._last_result[:200].replace("\n", " ")
-                dpg.set_value("vs_result", f"EN: {short}")
+                dpg.set_value("vs_result", self._last_result)
         except Exception:
             pass
 
@@ -629,14 +721,51 @@ class VoiceScribePlugin(Plugin):
     def _build_prompt_editor(self, parent: str) -> None:
         import dearpygui.dearpygui as dpg
 
+        editable_prompt_targets = []
+        for note in sorted(self._prompts.keys()):
+            prompt = self._prompts[note]
+            label = prompt.get("label", "")
+            if label in ("New Chat", "Context", "Speak", "Cancel"):
+                continue
+            pad_num = prompt.get("pad", note - PAD_NOTE_OFFSET)
+            editable_prompt_targets.append((f"Pad {pad_num} - {label}", note))
+
         dpg.add_text("Status: Idle", tag="vs_status", parent=parent,
                      color=(150, 150, 160))
         dpg.add_text("Prompt: --", tag="vs_active_prompt",
                      parent=parent, color=(120, 120, 140), wrap=400)
-        dpg.add_text("RU: --", tag="vs_orig", parent=parent,
-                     color=(150, 150, 160), wrap=400)
-        dpg.add_text("EN: --", tag="vs_result", parent=parent,
-                     color=(150, 150, 160), wrap=400)
+        dpg.add_text("Last transcript:", parent=parent,
+                     color=(150, 150, 160))
+        dpg.add_input_text(tag="vs_orig",
+                           default_value=self._last_original,
+                           readonly=True,
+                           width=-1,
+                           multiline=True,
+                           height=65,
+                           parent=parent)
+        dpg.add_text("Last result:", parent=parent,
+                     color=(150, 150, 160))
+        dpg.add_input_text(tag="vs_result",
+                           default_value=self._last_result,
+                           readonly=True,
+                           width=-1,
+                           multiline=True,
+                           height=90,
+                           parent=parent)
+        with dpg.group(horizontal=True, parent=parent):
+            dpg.add_button(label="Copy Result", width=120,
+                           callback=lambda: self._copy_last_result_to_clipboard())
+            dpg.add_button(label="Use as Whisper Hint", width=150,
+                           callback=lambda: self._load_last_result_into_whisper())
+        if editable_prompt_targets:
+            combo_items = [title for title, _ in editable_prompt_targets]
+            with dpg.group(horizontal=True, parent=parent):
+                dpg.add_combo(tag="vs_result_target_prompt",
+                              items=combo_items,
+                              default_value=combo_items[0],
+                              width=220)
+                dpg.add_button(label="Use in Selected Prompt", width=170,
+                               callback=lambda: self._load_last_result_into_prompt())
         dpg.add_spacer(height=6, parent=parent)
         dpg.add_separator(parent=parent)
         dpg.add_spacer(height=4, parent=parent)
@@ -784,6 +913,49 @@ class VoiceScribePlugin(Plugin):
         threading.Thread(target=_run, daemon=True).start()
 
     # -- prompt save helpers --------------------------------------------------
+
+    def _copy_last_result_to_clipboard(self) -> None:
+        if not self._last_result.strip():
+            self._set_status("No result to copy yet", "warn")
+            return
+        try:
+            _clipboard_write(self._last_result)
+            self._set_status("Result copied to clipboard", "ok")
+        except OSError as exc:
+            self._set_status(f"Clipboard error: {exc}", "error")
+
+    def _load_last_result_into_whisper(self) -> None:
+        import dearpygui.dearpygui as dpg
+        if not self._last_result.strip():
+            self._set_status("No result to insert yet", "warn")
+            return
+        if dpg.does_item_exist("vs_whisper_prompt"):
+            dpg.set_value("vs_whisper_prompt", self._last_result)
+            self._set_status("Result loaded into Whisper hint", "ok")
+
+    def _load_last_result_into_prompt(self) -> None:
+        import dearpygui.dearpygui as dpg
+        if not self._last_result.strip():
+            self._set_status("No result to insert yet", "warn")
+            return
+        if not dpg.does_item_exist("vs_result_target_prompt"):
+            self._set_status("No editable prompt target", "warn")
+            return
+        selected = dpg.get_value("vs_result_target_prompt")
+        for note in sorted(self._prompts.keys()):
+            prompt = self._prompts[note]
+            label = prompt.get("label", "")
+            if label in ("New Chat", "Context", "Speak", "Cancel"):
+                continue
+            pad_num = prompt.get("pad", note - PAD_NOTE_OFFSET)
+            target_name = f"Pad {pad_num} - {label}"
+            if target_name == selected:
+                field_tag = f"vs_pad_system_{note}"
+                if dpg.does_item_exist(field_tag):
+                    dpg.set_value(field_tag, self._last_result)
+                    self._set_status(f"Result loaded into Pad {pad_num}", "ok")
+                    return
+        self._set_status("Prompt target not found", "warn")
 
     def _on_save_prompts_clicked(self) -> None:
         import dearpygui.dearpygui as dpg
