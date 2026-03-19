@@ -24,8 +24,9 @@ system = """Translate the following Russian speech into English and condense it"
 
 [[prompts]]
 pad = 5
-label = "-"
-system = """-"""
+label = "Professional Summary"
+system = """Нужно, чтобы ты помог сформировать ответ согласно voice-to-text input, который ты получил на вход. Я буду проговорять мысли и пойнты, а тебе нужно написать сообщение в дружелюбной форме для коллеги.
+Отвечай только ответом который с summary."""
 
 [[prompts]]
 pad = 6
