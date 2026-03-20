@@ -250,6 +250,7 @@ def handle_midi_event(event: MidiEvent):
             leds.pad_on(event.note, event.velocity)
             if plugin_manager.on_pad_press(event.note, event.velocity):
                 labels = plugin_manager.get_all_pad_labels()
+                overlay_plugin_pad_labels(labels)
                 label = labels.get(event.note, f"note {event.note}")
                 add_log_entry("PAD",
                               f"{label} (note {event.note}, vel {event.velocity}) [plugin]",

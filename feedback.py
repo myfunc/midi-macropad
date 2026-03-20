@@ -243,6 +243,22 @@ class MidiCuePlayer:
         self._queue.put(cue_id)
         return True
 
+    def send_messages(self, *messages: mido.Message) -> bool:
+        if not messages:
+            return False
+        with self._lock:
+            port = self._ensure_port()
+            if port is None:
+                return False
+            try:
+                for message in messages:
+                    port.send(message)
+                return True
+            except Exception as exc:
+                self._log("FEEDBACK", f"Direct MIDI send failed: {exc}", color=(255, 80, 80))
+                self._port = None
+                return False
+
     def _run(self) -> None:
         while True:
             cue_id = self._queue.get()
@@ -289,11 +305,11 @@ class MidiCuePlayer:
             finally:
                 self.all_notes_off()
 
-    def all_notes_off(self) -> None:
+    def all_notes_off(self, channels: tuple[int, ...] = (0, 9)) -> None:
         if self._port is None:
             return
         try:
-            for channel in (0, 9):
+            for channel in channels:
                 self._port.send(mido.Message("control_change", channel=channel, control=123, value=0))
         except Exception:
             self._port = None
@@ -323,6 +339,15 @@ class FeedbackService:
 
     def emit_error(self) -> bool:
         return self.emit("action.error")
+
+    def send_midi(self, *messages: mido.Message) -> bool:
+        return self._midi.send_messages(*messages)
+
+    def all_notes_off(self, *channels: int) -> None:
+        if channels:
+            self._midi.all_notes_off(tuple(channels))
+            return
+        self._midi.all_notes_off()
 
     def close(self) -> None:
         self._midi.close()

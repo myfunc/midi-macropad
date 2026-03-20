@@ -1,0 +1,756 @@
+[performance]
+tempo_bpm = 92
+steps_per_bar = 16
+key_low_note = 48
+key_high_note = 72
+default_chord_bank = "Am Lift"
+
+[[beats]]
+input_note = 16
+label = "Kick Pulse"
+channel = 9
+velocity = 122
+duration_ms = 90
+
+[[beats.events]]
+step = 0
+notes = [36]
+
+[[beats.events]]
+step = 4
+notes = [36]
+
+[[beats.events]]
+step = 8
+notes = [36]
+
+[[beats.events]]
+step = 12
+notes = [36]
+
+[[beats]]
+input_note = 17
+label = "Snare Backbeat"
+channel = 9
+velocity = 116
+duration_ms = 90
+
+[[beats.events]]
+step = 4
+notes = [38]
+
+[[beats.events]]
+step = 12
+notes = [38]
+
+[[beats]]
+input_note = 18
+label = "Closed Hats"
+channel = 9
+velocity = 88
+duration_ms = 70
+
+[[beats.events]]
+step = 2
+notes = [42]
+
+[[beats.events]]
+step = 6
+notes = [42]
+
+[[beats.events]]
+step = 10
+notes = [42]
+
+[[beats.events]]
+step = 14
+notes = [42]
+
+[[beats]]
+input_note = 19
+label = "Open Hats"
+channel = 9
+velocity = 94
+duration_ms = 110
+
+[[beats.events]]
+step = 7
+notes = [46]
+
+[[beats.events]]
+step = 15
+notes = [46]
+
+[[beats]]
+input_note = 20
+label = "Clap Stack"
+channel = 9
+velocity = 108
+duration_ms = 90
+
+[[beats.events]]
+step = 4
+notes = [39]
+
+[[beats.events]]
+step = 12
+notes = [39]
+
+[[beats]]
+input_note = 21
+label = "Bass Pulse"
+channel = 1
+program = 38
+velocity = 104
+duration_ms = 180
+
+[[beats.events]]
+step = 0
+notes = [36]
+
+[[beats.events]]
+step = 6
+notes = [36]
+
+[[beats.events]]
+step = 8
+notes = [38]
+
+[[beats.events]]
+step = 14
+notes = [38]
+
+[[beats]]
+input_note = 22
+label = "Shaker Drive"
+channel = 9
+velocity = 82
+duration_ms = 60
+
+[[beats.events]]
+step = 1
+notes = [82]
+
+[[beats.events]]
+step = 5
+notes = [82]
+
+[[beats.events]]
+step = 9
+notes = [82]
+
+[[beats.events]]
+step = 13
+notes = [82]
+
+[[beats]]
+input_note = 23
+label = "Perc Rattle"
+channel = 9
+velocity = 96
+duration_ms = 70
+
+[[beats.events]]
+step = 3
+notes = [75]
+
+[[beats.events]]
+step = 7
+notes = [75]
+
+[[beats.events]]
+step = 11
+notes = [75]
+
+[[beats.events]]
+step = 15
+notes = [75]
+
+[[drums]]
+input_note = 48
+label = "Kick"
+channel = 9
+velocity = 124
+duration_ms = 80
+
+[[drums.events]]
+offset_ms = 0
+notes = [36]
+
+[[drums]]
+input_note = 49
+label = "Snare"
+channel = 9
+velocity = 118
+duration_ms = 80
+
+[[drums.events]]
+offset_ms = 0
+notes = [38]
+
+[[drums]]
+input_note = 50
+label = "Clap"
+channel = 9
+velocity = 112
+duration_ms = 80
+
+[[drums.events]]
+offset_ms = 0
+notes = [39]
+
+[[drums]]
+input_note = 51
+label = "Closed Hat"
+channel = 9
+velocity = 94
+duration_ms = 60
+
+[[drums.events]]
+offset_ms = 0
+notes = [42]
+
+[[drums]]
+input_note = 52
+label = "Open Hat"
+channel = 9
+velocity = 96
+duration_ms = 120
+
+[[drums.events]]
+offset_ms = 0
+notes = [46]
+
+[[drums]]
+input_note = 53
+label = "Crash"
+channel = 9
+velocity = 108
+duration_ms = 180
+
+[[drums.events]]
+offset_ms = 0
+notes = [49]
+
+[[drums]]
+input_note = 54
+label = "Low Tom"
+channel = 9
+velocity = 106
+duration_ms = 100
+
+[[drums.events]]
+offset_ms = 0
+notes = [45]
+
+[[drums]]
+input_note = 55
+label = "High Tom"
+channel = 9
+velocity = 102
+duration_ms = 90
+
+[[drums.events]]
+offset_ms = 0
+notes = [50]
+
+[[drops]]
+input_note = 56
+label = "Power Drop"
+channel = 3
+program = 29
+velocity = 110
+duration_ms = 160
+
+[[drops.events]]
+offset_ms = 0
+notes = [52, 59]
+
+[[drops.events]]
+offset_ms = 170
+notes = [50, 57]
+
+[[drops.events]]
+offset_ms = 340
+notes = [48, 55]
+
+[[drops]]
+input_note = 57
+label = "Octave Drop"
+channel = 3
+program = 30
+velocity = 112
+duration_ms = 180
+
+[[drops.events]]
+offset_ms = 0
+notes = [57, 69]
+
+[[drops.events]]
+offset_ms = 210
+notes = [55, 67]
+
+[[drops.events]]
+offset_ms = 420
+notes = [52, 64]
+
+[[drops]]
+input_note = 58
+label = "Mute Slam"
+channel = 3
+program = 30
+velocity = 108
+duration_ms = 140
+
+[[drops.events]]
+offset_ms = 0
+notes = [45, 52]
+
+[[drops.events]]
+offset_ms = 150
+notes = [43, 50]
+
+[[drops.events]]
+offset_ms = 300
+notes = [40, 47]
+
+[[drops]]
+input_note = 59
+label = "Ending Fall"
+channel = 3
+program = 29
+velocity = 106
+duration_ms = 200
+
+[[drops.events]]
+offset_ms = 0
+notes = [64]
+
+[[drops.events]]
+offset_ms = 220
+notes = [60]
+
+[[drops.events]]
+offset_ms = 440
+notes = [57]
+
+[[riffs]]
+input_note = 60
+label = "Riff A"
+channel = 3
+program = 29
+velocity = 104
+duration_ms = 140
+
+[[riffs.events]]
+offset_ms = 0
+notes = [52]
+
+[[riffs.events]]
+offset_ms = 160
+notes = [55]
+
+[[riffs.events]]
+offset_ms = 320
+notes = [57]
+
+[[riffs.events]]
+offset_ms = 480
+notes = [55]
+
+[[riffs]]
+input_note = 61
+label = "Riff B"
+channel = 3
+program = 29
+velocity = 104
+duration_ms = 140
+
+[[riffs.events]]
+offset_ms = 0
+notes = [57]
+
+[[riffs.events]]
+offset_ms = 160
+notes = [60]
+
+[[riffs.events]]
+offset_ms = 320
+notes = [62]
+
+[[riffs.events]]
+offset_ms = 480
+notes = [60]
+
+[[riffs]]
+input_note = 62
+label = "Riff C"
+channel = 3
+program = 30
+velocity = 106
+duration_ms = 150
+
+[[riffs.events]]
+offset_ms = 0
+notes = [48, 55]
+
+[[riffs.events]]
+offset_ms = 180
+notes = [50, 57]
+
+[[riffs.events]]
+offset_ms = 360
+notes = [52, 59]
+
+[[riffs]]
+input_note = 63
+label = "Riff D"
+channel = 3
+program = 30
+velocity = 108
+duration_ms = 160
+
+[[riffs.events]]
+offset_ms = 0
+notes = [52, 59]
+
+[[riffs.events]]
+offset_ms = 180
+notes = [50, 57]
+
+[[riffs.events]]
+offset_ms = 360
+notes = [48, 55]
+
+[[chord_banks]]
+name = "Am Lift"
+
+[[chord_banks.slots]]
+input_note = 64
+label = "Am"
+channel = 2
+program = 25
+velocity = 106
+duration_ms = 900
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [57, 60, 64, 69]
+
+[[chord_banks.slots]]
+input_note = 65
+label = "F"
+channel = 2
+program = 25
+velocity = 104
+duration_ms = 900
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [53, 57, 60, 65]
+
+[[chord_banks.slots]]
+input_note = 66
+label = "C"
+channel = 2
+program = 25
+velocity = 104
+duration_ms = 900
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [55, 60, 64, 67]
+
+[[chord_banks.slots]]
+input_note = 67
+label = "G"
+channel = 2
+program = 25
+velocity = 104
+duration_ms = 900
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [55, 59, 62, 67]
+
+[[chord_banks.slots]]
+input_note = 68
+label = "Dm"
+channel = 2
+program = 25
+velocity = 102
+duration_ms = 900
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [57, 62, 65, 69]
+
+[[chord_banks.slots]]
+input_note = 69
+label = "Em"
+channel = 2
+program = 25
+velocity = 102
+duration_ms = 900
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [59, 64, 67, 71]
+
+[[chord_banks.slots]]
+input_note = 70
+label = "Gsus"
+channel = 2
+program = 25
+velocity = 104
+duration_ms = 900
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [57, 60, 62, 67]
+
+[[chord_banks.slots]]
+input_note = 71
+label = "Cmaj7"
+channel = 2
+program = 25
+velocity = 102
+duration_ms = 920
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [55, 59, 60, 64]
+
+[[chord_banks.slots]]
+input_note = 72
+label = "Fadd9"
+channel = 2
+program = 25
+velocity = 102
+duration_ms = 920
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [53, 57, 60, 67]
+
+[[chord_banks]]
+name = "Em Dark"
+
+[[chord_banks.slots]]
+input_note = 64
+label = "Em"
+channel = 2
+program = 27
+velocity = 104
+duration_ms = 920
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [52, 55, 59, 64]
+
+[[chord_banks.slots]]
+input_note = 65
+label = "C"
+channel = 2
+program = 27
+velocity = 104
+duration_ms = 920
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [48, 52, 55, 60]
+
+[[chord_banks.slots]]
+input_note = 66
+label = "G"
+channel = 2
+program = 27
+velocity = 104
+duration_ms = 920
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [50, 55, 59, 62]
+
+[[chord_banks.slots]]
+input_note = 67
+label = "D"
+channel = 2
+program = 27
+velocity = 104
+duration_ms = 920
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [50, 54, 57, 62]
+
+[[chord_banks.slots]]
+input_note = 68
+label = "Am"
+channel = 2
+program = 27
+velocity = 102
+duration_ms = 920
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [52, 57, 60, 64]
+
+[[chord_banks.slots]]
+input_note = 69
+label = "Bm"
+channel = 2
+program = 27
+velocity = 102
+duration_ms = 920
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [54, 59, 62, 66]
+
+[[chord_banks.slots]]
+input_note = 70
+label = "Cmaj7"
+channel = 2
+program = 27
+velocity = 100
+duration_ms = 940
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [48, 52, 55, 59]
+
+[[chord_banks.slots]]
+input_note = 71
+label = "G6"
+channel = 2
+program = 27
+velocity = 100
+duration_ms = 940
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [50, 55, 59, 64]
+
+[[chord_banks.slots]]
+input_note = 72
+label = "Dsus"
+channel = 2
+program = 27
+velocity = 100
+duration_ms = 940
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [50, 55, 57, 62]
+
+[[chord_banks]]
+name = "House Major"
+
+[[chord_banks.slots]]
+input_note = 64
+label = "C"
+channel = 2
+program = 89
+velocity = 104
+duration_ms = 980
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [48, 55, 60, 64]
+
+[[chord_banks.slots]]
+input_note = 65
+label = "G"
+channel = 2
+program = 89
+velocity = 104
+duration_ms = 980
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [50, 55, 59, 62]
+
+[[chord_banks.slots]]
+input_note = 66
+label = "Am"
+channel = 2
+program = 89
+velocity = 102
+duration_ms = 980
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [52, 57, 60, 64]
+
+[[chord_banks.slots]]
+input_note = 67
+label = "F"
+channel = 2
+program = 89
+velocity = 102
+duration_ms = 980
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [53, 57, 60, 65]
+
+[[chord_banks.slots]]
+input_note = 68
+label = "Dm"
+channel = 2
+program = 89
+velocity = 100
+duration_ms = 980
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [50, 57, 62, 65]
+
+[[chord_banks.slots]]
+input_note = 69
+label = "Em"
+channel = 2
+program = 89
+velocity = 100
+duration_ms = 980
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [52, 59, 64, 67]
+
+[[chord_banks.slots]]
+input_note = 70
+label = "Gsus"
+channel = 2
+program = 89
+velocity = 100
+duration_ms = 980
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [50, 55, 57, 62]
+
+[[chord_banks.slots]]
+input_note = 71
+label = "Cmaj7"
+channel = 2
+program = 89
+velocity = 100
+duration_ms = 1000
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [48, 52, 59, 64]
+
+[[chord_banks.slots]]
+input_note = 72
+label = "Fmaj7"
+channel = 2
+program = 89
+velocity = 100
+duration_ms = 1000
+
+[[chord_banks.slots.events]]
+offset_ms = 0
+notes = [53, 57, 60, 64]

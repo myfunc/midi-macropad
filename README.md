@@ -18,6 +18,7 @@ The goal was simple: keep everyday actions on real pads and knobs, switch behavi
 
 - Turns 8 pads, 4 knobs, and the joystick into configurable actions.
 - Switches between dedicated modes such as Productivity, Development, Media, OBS, Voice Scribe, and Sound Pads.
+- Adds a Performance mode where pads toggle beat layers and the piano keys trigger drums, riffs, and switchable chord banks.
 - Detects the active window and can change mode automatically.
 - Controls Windows master volume and microphone volume.
 - Talks to OBS Studio over WebSocket.
@@ -49,6 +50,7 @@ Feedback path: **shared runtime feedback service -> MIDI out -> controller's int
 |--------|---------|
 | `Voice Scribe` | Voice-driven Russian-to-English writing assistant with prompt styles, context capture, chat memory, hard cancel, and MIDI feedback cues. |
 | `Sample Player` | Polyphonic WAV pad sampler with pack selection, velocity response, and plugin volume control in `Sound Pads` mode. |
+| `Performance Template` | Live sketch template for MPK Mini Play: pad beat toggles, key-triggered drums and guitar phrases, plus 9 switchable chord keys. |
 
 More detail lives in [`docs/plugins.md`](docs/plugins.md).
 

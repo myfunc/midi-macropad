@@ -10,6 +10,7 @@ Today that shared runtime surface is intentionally small. The key example is the
 |--------|------|
 | `Voice Scribe` | Voice-driven writing assistant for Russian speech, English output, and context-aware generation |
 | `Sample Player` | Sample playback engine for turning pads into a small performance sampler |
+| `Performance Template` | Built-in live rig template with toggle beats on pads, key-triggered drums and guitar phrases, and 9 switchable chord keys |
 
 ## Voice Scribe
 
@@ -73,3 +74,22 @@ The default prompt set includes a mix of generation styles and control actions:
 ### Pack format
 
 Each pack is a folder with a `pack.toml` manifest and referenced WAV files. This makes it easy to create drum kits, soundboards, or performance-oriented pad sets.
+
+## Performance Template
+
+`Performance Template` is a ready-to-edit live sketch layer for the MPK Mini Play's unused piano keys.
+
+### What it does
+
+- uses pads `16-23` as beat layer toggles driven by an internal step sequencer
+- maps keys `48-55` to drum hits
+- maps keys `56-59` to guitar-style drops
+- maps keys `60-63` to short riff phrases
+- reserves the highest 9 keys (`64-72` by default) for the active chord bank
+- lets you switch chord banks and adjust tempo from the plugin UI
+- lets you turn musical feedback cues on or off from the plugin properties
+- stores the whole layout in `plugins/performance_template/template.toml`
+
+### Why it matters
+
+This gives the project a first playable music-performance template without requiring external WAV packs. The host sends notes back into the MPK Mini Play's internal synth, so the template is immediately editable and musically useful even before building custom sample libraries.

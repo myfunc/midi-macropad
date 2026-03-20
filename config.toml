@@ -201,6 +201,15 @@ note = 23
 label = "Play/Pause"
 action = { type = "keystroke", keys = "playpause" }
 
+# ========== Mode: Performance ==========
+[[modes]]
+name = "Performance"
+color = "#22C55E"
+# Pads and keyboard are handled by the performance template plugin:
+# - Pads 16-23 toggle beat layers
+# - Keys 48-63 trigger drums, drops, and riffs
+# - Keys 64-72 trigger the active 9-slot chord bank
+
 # ========== Mode: Voice Scribe ==========
 [[modes]]
 name = "Voice Scribe"

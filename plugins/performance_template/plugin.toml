@@ -1,0 +1,8 @@
+[plugin]
+name = "Performance Template"
+version = "0.1.0"
+description = "Live performance template with pad beat toggles, key riffs, and switchable chord banks"
+entry = "performance.PerformanceTemplatePlugin"
+
+[settings]
+template = "template.toml"
