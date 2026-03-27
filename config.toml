@@ -21,6 +21,71 @@ cc = 50
 label = "Spotify"
 action = { type = "volume", target = "spotify" }
 
+# ========== Mode: Spotify ==========
+[[modes]]
+name = "Spotify"
+color = "#1DB954"
+icon = "SPT"
+
+[[modes.pads]]
+note = 16
+label = "Play/Pause"
+action = { type = "app_keystroke", keys = "space", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 17
+label = "Next"
+action = { type = "app_keystroke", keys = "ctrl+right", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 18
+label = "Prev"
+action = { type = "app_keystroke", keys = "ctrl+left", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 19
+label = "Like"
+action = { type = "app_keystroke", keys = "alt+shift+b", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 20
+label = "Shuffle"
+action = { type = "app_keystroke", keys = "ctrl+s", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 21
+label = "DJ Mix"
+action = { type = "app_keystroke", keys = "ctrl+shift+j", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 22
+label = "Add to PL"
+action = { type = "plugin", target = "spotify:add_to_playlist" }
+
+[[modes.pads]]
+note = 23
+label = "Remove PL"
+action = { type = "plugin", target = "spotify:remove_from_playlist" }
+
+# ========== Mode: Voicemeeter ==========
+[[modes]]
+name = "Voicemeeter"
+color = "#06B6D4"
+icon = "MIX"
+# Pads and knobs are handled by the voicemeeter plugin
+# Top row:  Mute Mic | Mute Desk | EQ B1 | Send2Mic
+# Bot row:  Gate     | Monitor   | Comp  | Resync
+
+# ========== Mode: Voice Scribe ==========
+[[modes]]
+name = "Voice Scribe"
+color = "#EC4899"
+icon = "MIC"
+# Pads are handled by the voice_scribe plugin
+# Press a style pad to start recording, press again to stop and translate
+# Pad layout: Professional | Casual | Technical | Email
+#              Summary     | Raw RU | Clipboard | Cancel
+
 # ========== Mode: OBS ==========
 [[modes]]
 name = "OBS"
@@ -67,33 +132,6 @@ note = 23
 label = "Play/Pause"
 action = { type = "keystroke", keys = "playpause" }
 
-# ========== Mode: Voice Scribe ==========
-[[modes]]
-name = "Voice Scribe"
-color = "#EC4899"
-icon = "MIC"
-# Pads are handled by the voice_scribe plugin
-# Press a style pad to start recording, press again to stop and translate
-# Pad layout: Professional | Casual | Technical | Email
-#              Summary     | Raw RU | Clipboard | Cancel
-
-# ========== Mode: Sound Pads ==========
-[[modes]]
-name = "Sound Pads"
-color = "#F59E0B"
-icon = "SND"
-# Pads are handled by the sample_player plugin
-
-# ========== Mode: Voicemeeter ==========
-[[modes]]
-name = "Voicemeeter"
-color = "#06B6D4"
-icon = "MIX"
-# Pads and knobs are handled by the voicemeeter plugin
-# Top row:  Mute Mic | Mute Desk | EQ B1 | Send2Mic
-# Bot row:  Gate     | Monitor   | Comp  | Resync
-# Knobs: K1=Mic Gain  K2=Gate  K3=Comp (or Spotify in default mode)  Joy=B1 Gain
-
 # ========== Mode: OBS Session ==========
 [[modes]]
 name = "OBS Session"
@@ -103,51 +141,12 @@ icon = "CAM"
 # Top row (active): Start Session | Record | Stop Session | free
 # Bottom row: reserved for future session utilities
 
-# ========== Mode: Spotify ==========
+# ========== Mode: Sound Pads ==========
 [[modes]]
-name = "Spotify"
-color = "#1DB954"
-icon = "SPT"
-
-[[modes.pads]]
-note = 16
-label = "Play/Pause"
-action = { type = "app_keystroke", keys = "space", process = "Spotify.exe" }
-
-[[modes.pads]]
-note = 17
-label = "Next"
-action = { type = "app_keystroke", keys = "ctrl+right", process = "Spotify.exe" }
-
-[[modes.pads]]
-note = 18
-label = "Prev"
-action = { type = "app_keystroke", keys = "ctrl+left", process = "Spotify.exe" }
-
-[[modes.pads]]
-note = 19
-label = "Like"
-action = { type = "app_keystroke", keys = "alt+shift+b", process = "Spotify.exe" }
-
-[[modes.pads]]
-note = 20
-label = "Shuffle"
-action = { type = "app_keystroke", keys = "ctrl+s", process = "Spotify.exe" }
-
-[[modes.pads]]
-note = 21
-label = "DJ Mix"
-action = { type = "app_keystroke", keys = "ctrl+shift+j", process = "Spotify.exe" }
-
-[[modes.pads]]
-note = 22
-label = "Add to PL"
-action = { type = "plugin", target = "spotify:add_to_playlist" }
-
-[[modes.pads]]
-note = 23
-label = "Remove PL"
-action = { type = "plugin", target = "spotify:remove_from_playlist" }
+name = "Sound Pads"
+color = "#F59E0B"
+icon = "SND"
+# Pads are handled by the sample_player plugin
 
 # ========== Context Overrides ==========
 [[contexts]]
