@@ -1,4 +1,4 @@
-"""Right sidebar -- context-sensitive properties panel."""
+"""Right sidebar -- tabbed panel (Properties + plugin tabs)."""
 import dearpygui.dearpygui as dpg
 from ui import selection
 
@@ -8,14 +8,24 @@ _rebuild_fn = None
 def create_right_sidebar(parent="panel_right"):
     with dpg.child_window(parent=parent, border=False):
         dpg.add_spacer(height=6)
-        dpg.add_text("  PROPERTIES", color=(75, 78, 95))
-        dpg.add_spacer(height=6)
-        dpg.add_text("Select a pad or plugin to edit",
-                     tag="sr_placeholder", color=(85, 88, 100), wrap=250,
-                     indent=8)
-        dpg.add_group(tag="sr_content")
+        dpg.add_tab_bar(tag="right_tabs")
+        with dpg.tab(label=" Properties ", parent="right_tabs", tag="right_tab_props"):
+            dpg.add_spacer(height=6)
+            dpg.add_text("Select a pad or plugin to edit",
+                         tag="sr_placeholder", color=(85, 88, 100), wrap=250,
+                         indent=8)
+            dpg.add_group(tag="sr_content")
 
     selection.set_callback(_on_selection_changed)
+
+
+def add_right_tab(tab_id: str, label: str) -> str:
+    """Add a tab to the right sidebar. Returns content tag."""
+    tag = f"right_tab_{tab_id}"
+    content = f"right_tab_content_{tab_id}"
+    with dpg.tab(label=f" {label} ", parent="right_tabs", tag=tag):
+        dpg.add_child_window(tag=content, height=-1, border=False)
+    return content
 
 
 def set_rebuild_fn(fn):

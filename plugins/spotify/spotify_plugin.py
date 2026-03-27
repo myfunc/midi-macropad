@@ -269,7 +269,12 @@ class SpotifyPlugin(Plugin):
 
         dpg.add_text("Spotify Connection", parent=parent_tag, color=SPOTIFY_GREEN)
         dpg.add_text(
-            "Connect your Spotify account using OAuth. You'll need a Client ID from the Spotify Developer Dashboard.",
+            "Setup (one-time):\n"
+            "1. Go to developer.spotify.com/dashboard\n"
+            "2. Create App > paste any name, description\n"
+            "3. Add Redirect URI: http://127.0.0.1:8765\n"
+            "4. Copy Client ID > paste below\n"
+            "5. Click Connect > authorize in browser",
             parent=parent_tag,
             wrap=260,
             color=_TEXT_MUTED,

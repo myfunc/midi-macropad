@@ -59,7 +59,7 @@ from ui.dashboard import (
 )
 from ui.pad_grid import (
     create_pad_grid, update_pad_labels, flash_pad, release_pad,
-    clear_pad_labels, overlay_plugin_pad_labels,
+    clear_pad_labels, overlay_plugin_pad_labels, update_knob_display,
 )
 from ui.volume_panel import (
     create_volume_panel, set_master_volume_display, set_mic_volume_display,
@@ -274,6 +274,7 @@ def handle_midi_event(event: MidiEvent):
             release_pad(event.note)
 
         elif event.type == "knob":
+            update_knob_display(event.cc, event.value)
             if plugin_manager.on_knob(event.cc, event.value):
                 return
             knob = mapper.lookup_knob(event.cc)
@@ -539,8 +540,8 @@ def main():
         plugin_toggle_callback=on_plugin_toggle,
     )
 
-    # Center: pad grid, mixer, log
-    create_pad_grid()
+    # Center: pad grid + knobs + mixer, log
+    create_pad_grid(knobs=config.knobs)
     create_volume_panel(
         master_callback=on_master_volume_slider,
         mic_callback=on_mic_volume_slider,
