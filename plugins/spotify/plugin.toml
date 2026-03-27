@@ -1,0 +1,9 @@
+[plugin]
+name = "Spotify"
+version = "0.1.0"
+description = "Spotify playback control via Web API (OAuth PKCE)"
+entry = "spotify_plugin.SpotifyPlugin"
+
+[settings]
+client_id = ""
+redirect_port = 8765

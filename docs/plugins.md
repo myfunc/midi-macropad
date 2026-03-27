@@ -12,6 +12,7 @@ Today that shared runtime surface is intentionally small. The key example is the
 | `Sample Player` | Sample playback engine for turning pads into a small performance sampler |
 | `OBS Session` | OBS WebSocket session workflow: scene setup, segmented recording, ffmpeg concat, optional Whisper subtitles and burn-in; transcript-only runs concat across all segments; session start is blocked if OBS is already recording |
 | `Voicemeeter` | Voicemeeter-oriented pad and knob routing when that mode is active |
+| `Spotify` | Spotify Web API via OAuth PKCE (no client secret); right sidebar for connection status, Client ID setup, and now-playing; center tab for now-playing view and transport; MIDI pads 1–6 for Play/Pause, Next, Prev, Like, Shuffle, Repeat; pads 7–8 for Search and Liked Songs as keyboard shortcut pass-through; knob 3 (CC50) adjusts Spotify desktop volume via Windows audio session; background now-playing poll every 3s with automatic token refresh. Requires Spotify Premium and a Client ID from developer.spotify.com |
 | `Performance Template` | Optional live rig template with toggle beats on pads, key-triggered drums and guitar phrases, and 9 switchable chord keys |
 
 ## Voice Scribe

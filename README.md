@@ -22,6 +22,7 @@ The goal was simple: keep everyday actions on real pads and knobs, switch behavi
 - Detects the active window and can change mode automatically.
 - Controls Windows master volume, microphone volume, and Spotify app volume.
 - Talks to OBS Studio over WebSocket.
+- Connects to **Spotify** over the Web API with OAuth PKCE (Client ID only—[developer.spotify.com](https://developer.spotify.com/dashboard)); now-playing and transport in the UI, pad and knob mappings in **Spotify** mode, 3s polling, and auto token refresh. **Spotify Premium** required.
 - Plays short device-side MIDI feedback phrases on the controller for actions and voice states.
 - Loads plugins from `plugins/` for custom MIDI behavior and UI panels.
 
@@ -52,6 +53,7 @@ Feedback path: **shared runtime feedback service -> MIDI out -> controller's int
 | `Sample Player` | Polyphonic WAV pad sampler with pack selection, velocity response, and plugin volume control in `Sound Pads` mode. |
 | `OBS Session` | Connects to OBS, sets up a composite scene (screen + PiP camera), segmented recording into a session folder, then optional ffmpeg stitch and Whisper subtitles. |
 | `Voicemeeter` | Routes pads and knobs to Voicemeeter macro / volume workflows when that mode is active. |
+| `Spotify` | OAuth PKCE Web API control (no client secret); sidebar for connection, Client ID, and now-playing; center tab for now-playing and transport; pads 1–6 for playback/like/shuffle/repeat; pads 7–8 for Search and Liked Songs shortcuts; knob 3 (CC50) for Spotify app volume via Windows audio session; 3s now-playing polling and auto token refresh. Requires Premium and a Client ID. |
 | `Performance Template` | Optional live sketch template for MPK Mini Play: pad beat toggles, key-triggered drums and guitar phrases, plus 9 switchable chord keys. |
 
 More detail lives in [`docs/plugins.md`](docs/plugins.md).

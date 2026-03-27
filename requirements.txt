@@ -10,3 +10,4 @@ sounddevice
 soundfile
 numpy
 openai
+requests
