@@ -180,6 +180,18 @@ class PluginManager:
                           color=(255, 80, 80))
         return False
 
+    def poll_all(self) -> None:
+        for name in list(self.enabled):
+            plugin = self.plugins.get(name)
+            if plugin is None:
+                continue
+            try:
+                plugin.poll()
+            except Exception:
+                self._log("PLUGIN",
+                          f"{name}.poll error: {traceback.format_exc()}",
+                          color=(255, 80, 80))
+
     def on_mode_changed(self, mode_name: str) -> None:
         for name in list(self.enabled):
             plugin = self.plugins.get(name)

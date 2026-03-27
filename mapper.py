@@ -13,6 +13,7 @@ class ActionDef:
     keys: str = ""
     target: str = ""
     command: str = ""
+    process: str = ""
 
 @dataclass
 class PadMapping:
@@ -73,6 +74,7 @@ def load_config(path: str | Path) -> AppConfig:
                     keys=act.get("keys", ""),
                     target=act.get("target", ""),
                     command=act.get("command", ""),
+                    process=act.get("process", ""),
                 ),
             ))
         cfg.modes.append(mode)
@@ -87,14 +89,18 @@ def load_config(path: str | Path) -> AppConfig:
                 keys=act.get("keys", ""),
                 target=act.get("target", ""),
                 command=act.get("command", ""),
+                process=act.get("process", ""),
             ),
         ))
     
+    mode_names_loaded = {m["name"].lower() for m in data.get("modes", [])}
     for ctx_data in data.get("contexts", []):
-        cfg.contexts.append(ContextRule(
-            process=ctx_data["process"],
-            mode=ctx_data["mode"],
-        ))
+        target = ctx_data.get("mode", "")
+        if target.lower() not in mode_names_loaded:
+            continue
+        cfg.contexts.append(
+            ContextRule(process=ctx_data["process"], mode=target)
+        )
 
     return cfg
 
@@ -150,8 +156,10 @@ class Mapper:
         return len(self.config.modes)
     
     def set_mode(self, index: int):
-        if 0 <= index < len(self.config.modes):
-            self.current_mode_index = index
+        if not self.config.modes:
+            self.current_mode_index = 0
+            return
+        self.current_mode_index = max(0, min(int(index), len(self.config.modes) - 1))
     
     def set_mode_by_name(self, name: str) -> bool:
         for i, mode in enumerate(self.config.modes):
@@ -161,10 +169,14 @@ class Mapper:
         return False
     
     def next_mode(self):
-        self.current_mode_index = (self.current_mode_index + 1) % max(1, len(self.config.modes))
-    
+        n = len(self.config.modes)
+        if n:
+            self.current_mode_index = (self.current_mode_index + 1) % n
+
     def prev_mode(self):
-        self.current_mode_index = (self.current_mode_index - 1) % max(1, len(self.config.modes))
+        n = len(self.config.modes)
+        if n:
+            self.current_mode_index = (self.current_mode_index - 1) % n
     
     def lookup_pad(self, note: int) -> PadMapping | None:
         if not self._pad_maps:

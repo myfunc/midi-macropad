@@ -17,10 +17,10 @@ The goal was simple: keep everyday actions on real pads and knobs, switch behavi
 ## What It Does
 
 - Turns 8 pads, 4 knobs, and the joystick into configurable actions.
-- Switches between dedicated modes such as Productivity, Development, Media, OBS, Voice Scribe, and Sound Pads.
-- Adds a Performance mode where pads toggle beat layers and the piano keys trigger drums, riffs, and switchable chord banks.
+- Switches between modes defined in `config.toml` (for example OBS, Voice Scribe, Sound Pads, Voicemeeter, OBS Session, and Spotify).
+- Optional `Performance Template` plugin adds a separate Performance-style sketch mode when enabled in settings.
 - Detects the active window and can change mode automatically.
-- Controls Windows master volume and microphone volume.
+- Controls Windows master volume, microphone volume, and Spotify app volume.
 - Talks to OBS Studio over WebSocket.
 - Plays short device-side MIDI feedback phrases on the controller for actions and voice states.
 - Loads plugins from `plugins/` for custom MIDI behavior and UI panels.
@@ -50,7 +50,9 @@ Feedback path: **shared runtime feedback service -> MIDI out -> controller's int
 |--------|---------|
 | `Voice Scribe` | Voice-driven Russian-to-English writing assistant with prompt styles, context capture, chat memory, hard cancel, and MIDI feedback cues. |
 | `Sample Player` | Polyphonic WAV pad sampler with pack selection, velocity response, and plugin volume control in `Sound Pads` mode. |
-| `Performance Template` | Live sketch template for MPK Mini Play: pad beat toggles, key-triggered drums and guitar phrases, plus 9 switchable chord keys. |
+| `OBS Session` | Connects to OBS, sets up a composite scene (screen + PiP camera), segmented recording into a session folder, then optional ffmpeg stitch and Whisper subtitles. |
+| `Voicemeeter` | Routes pads and knobs to Voicemeeter macro / volume workflows when that mode is active. |
+| `Performance Template` | Optional live sketch template for MPK Mini Play: pad beat toggles, key-triggered drums and guitar phrases, plus 9 switchable chord keys. |
 
 More detail lives in [`docs/plugins.md`](docs/plugins.md).
 

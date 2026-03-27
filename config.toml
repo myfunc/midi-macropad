@@ -5,141 +5,6 @@ name = "MPK mini play"
 double_tap_ms = 300
 long_press_ms = 2000
 
-# ========== Mode: Productivity ==========
-[[modes]]
-name = "Productivity"
-color = "#3B82F6"
-
-[[modes.pads]]
-note = 16
-label = "Copy"
-action = { type = "keystroke", keys = "ctrl+c" }
-
-[[modes.pads]]
-note = 17
-label = "Paste"
-action = { type = "keystroke", keys = "ctrl+v" }
-
-[[modes.pads]]
-note = 18
-label = "Backspace"
-action = { type = "keystroke", keys = "backspace" }
-
-[[modes.pads]]
-note = 19
-label = "Delete"
-action = { type = "keystroke", keys = "delete" }
-
-[[modes.pads]]
-note = 20
-label = "Undo"
-action = { type = "keystroke", keys = "ctrl+z" }
-
-[[modes.pads]]
-note = 21
-label = "Redo"
-action = { type = "keystroke", keys = "ctrl+y" }
-
-[[modes.pads]]
-note = 22
-label = "Select All"
-action = { type = "keystroke", keys = "ctrl+a" }
-
-[[modes.pads]]
-note = 23
-label = "Cut"
-action = { type = "keystroke", keys = "ctrl+x" }
-
-# ========== Mode: Development ==========
-[[modes]]
-name = "Development"
-color = "#10B981"
-
-[[modes.pads]]
-note = 16
-label = "Terminal"
-action = { type = "keystroke", keys = "ctrl+`" }
-
-[[modes.pads]]
-note = 17
-label = "Cmd Palette"
-action = { type = "keystroke", keys = "ctrl+shift+p" }
-
-[[modes.pads]]
-note = 18
-label = "Go to File"
-action = { type = "keystroke", keys = "ctrl+p" }
-
-[[modes.pads]]
-note = 19
-label = "Find in Files"
-action = { type = "keystroke", keys = "ctrl+shift+f" }
-
-[[modes.pads]]
-note = 20
-label = "Sidebar"
-action = { type = "keystroke", keys = "ctrl+b" }
-
-[[modes.pads]]
-note = 21
-label = "Source Ctrl"
-action = { type = "keystroke", keys = "ctrl+shift+g" }
-
-[[modes.pads]]
-note = 22
-label = "Comment"
-action = { type = "keystroke", keys = "ctrl+/" }
-
-[[modes.pads]]
-note = 23
-label = "Format"
-action = { type = "keystroke", keys = "ctrl+shift+i" }
-
-# ========== Mode: Media ==========
-[[modes]]
-name = "Media"
-color = "#8B5CF6"
-
-[[modes.pads]]
-note = 16
-label = "Play/Pause"
-action = { type = "keystroke", keys = "playpause" }
-
-[[modes.pads]]
-note = 17
-label = "Prev Track"
-action = { type = "keystroke", keys = "prevtrack" }
-
-[[modes.pads]]
-note = 18
-label = "Next Track"
-action = { type = "keystroke", keys = "nexttrack" }
-
-[[modes.pads]]
-note = 19
-label = "Mute"
-action = { type = "keystroke", keys = "volumemute" }
-
-[[modes.pads]]
-note = 20
-label = "Screenshot"
-action = { type = "keystroke", keys = "win+shift+s" }
-
-[[modes.pads]]
-note = 21
-label = "Lock"
-action = { type = "keystroke", keys = "win+l" }
-
-[[modes.pads]]
-note = 22
-label = "Desktop"
-action = { type = "keystroke", keys = "win+d" }
-
-[[modes.pads]]
-note = 23
-label = "Task View"
-action = { type = "keystroke", keys = "win+tab" }
-
 # ========== Global Knobs ==========
 [[knobs]]
 cc = 48
@@ -153,8 +18,8 @@ action = { type = "volume", target = "mic" }
 
 [[knobs]]
 cc = 50
-label = "Scroll"
-action = { type = "scroll" }
+label = "Spotify"
+action = { type = "volume", target = "spotify" }
 
 # ========== Mode: OBS ==========
 [[modes]]
@@ -201,15 +66,6 @@ note = 23
 label = "Play/Pause"
 action = { type = "keystroke", keys = "playpause" }
 
-# ========== Mode: Performance ==========
-[[modes]]
-name = "Performance"
-color = "#22C55E"
-# Pads and keyboard are handled by the performance template plugin:
-# - Pads 16-23 toggle beat layers
-# - Keys 48-63 trigger drums, drops, and riffs
-# - Keys 64-72 trigger the active 9-slot chord bank
-
 # ========== Mode: Voice Scribe ==========
 [[modes]]
 name = "Voice Scribe"
@@ -225,11 +81,77 @@ name = "Sound Pads"
 color = "#F59E0B"
 # Pads are handled by the sample_player plugin
 
+# ========== Mode: Voicemeeter ==========
+[[modes]]
+name = "Voicemeeter"
+color = "#06B6D4"
+# Pads and knobs are handled by the voicemeeter plugin
+# Top row:  Mute Mic | Mute Desk | EQ B1 | Send2Mic
+# Bot row:  Gate     | Monitor   | Comp  | Resync
+# Knobs: K1=Mic Gain  K2=Gate  K3=Comp (or Spotify in default mode)  Joy=B1 Gain
+
+# ========== Mode: OBS Session ==========
+[[modes]]
+name = "OBS Session"
+color = "#8B5CF6"
+# Pads are handled by the obs_session plugin
+# Top row (active): Start Session | Record | Stop Session | free
+# Bottom row: reserved for future session utilities
+
+# ========== Mode: Spotify ==========
+[[modes]]
+name = "Spotify"
+color = "#1DB954"
+
+[[modes.pads]]
+note = 16
+label = "Play/Pause"
+action = { type = "app_keystroke", keys = "space", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 17
+label = "Next"
+action = { type = "app_keystroke", keys = "ctrl+right", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 18
+label = "Prev"
+action = { type = "app_keystroke", keys = "ctrl+left", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 19
+label = "Like"
+action = { type = "app_keystroke", keys = "alt+shift+b", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 20
+label = "Shuffle"
+action = { type = "app_keystroke", keys = "ctrl+s", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 21
+label = "Repeat"
+action = { type = "app_keystroke", keys = "ctrl+r", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 22
+label = "Search"
+action = { type = "app_keystroke", keys = "ctrl+l", process = "Spotify.exe" }
+
+[[modes.pads]]
+note = 23
+label = "Liked Songs"
+action = { type = "app_keystroke", keys = "alt+shift+s", process = "Spotify.exe" }
+
 # ========== Context Overrides ==========
 [[contexts]]
 process = "obs64.exe"
 mode = "OBS"
 
 [[contexts]]
-process = "Cursor.exe"
-mode = "Development"
+process = "voicemeeterpro_x64.exe"
+mode = "Voicemeeter"
+
+[[contexts]]
+process = "Spotify.exe"
+mode = "Spotify"

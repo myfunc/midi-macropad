@@ -30,6 +30,9 @@ def describe_pad(label: str, action) -> str:
     """Generate a human-readable description for a pad's action."""
     if action.type == "keystroke":
         return f"{label} -- sends {_format_keys(action.keys)}"
+    elif action.type == "app_keystroke":
+        proc = action.process or "target app"
+        return f"{label} -- sends {_format_keys(action.keys)} to {proc}"
     elif action.type == "obs":
         t = action.target
         if t == "toggle_recording":
@@ -52,7 +55,12 @@ def describe_pad(label: str, action) -> str:
     elif action.type == "launch":
         return f"{label} -- opens: {action.command}"
     elif action.type == "volume":
-        target = "master volume" if action.target == "master" else "mic volume"
+        if action.target == "master":
+            target = "master volume"
+        elif action.target == "mic":
+            target = "mic volume"
+        else:
+            target = f"{action.target} app volume"
         return f"{label} -- controls {target}"
     elif action.type == "scroll":
         return f"{label} -- mouse scroll"

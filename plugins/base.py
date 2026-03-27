@@ -43,6 +43,12 @@ class Plugin(ABC):
     def on_pitch_bend(self, value: int) -> bool:
         return False
 
+    # -- frame tick (called every render frame) --------------------------------
+
+    def poll(self) -> None:
+        """Called every frame from the main loop. Use for live UI updates."""
+        pass
+
     # -- UI hooks -------------------------------------------------------------
 
     def get_pad_labels(self) -> dict[int, str]:

@@ -1,0 +1,8 @@
+[plugin]
+name = "Voicemeeter"
+version = "1.0.0"
+description = "Control Voicemeeter Banana — routing, EQ, gate, compression with real-time visualizer"
+entry = "voicemeeter.VoicemeeterPlugin"
+
+[settings]
+dll_path = "C:\\Program Files (x86)\\VB\\Voicemeeter\\VoicemeeterRemote64.dll"

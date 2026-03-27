@@ -1,9 +1,10 @@
-"""Windows audio control via pycaw — master volume and microphone.
+"""Windows audio control via pycaw.
 
-Supports device enumeration and selection by device ID.
-Falls back to Windows default devices when no ID is specified.
+Supports endpoint volume (master + microphone), app-session volume by process
+name, and endpoint enumeration / selection by device ID.
 """
 import comtypes
+import time
 from ctypes import POINTER, cast, pointer
 from comtypes import CLSCTX_ALL, GUID
 from pycaw.pycaw import (
@@ -105,6 +106,41 @@ def _activate_device(device_id: str | None, data_flow: int):
         return None
 
 
+def _normalize_process_name(process_name: str) -> str:
+    name = (process_name or "").strip().lower()
+    if name.endswith(".exe"):
+        name = name[:-4]
+    return name
+
+
+def _get_app_volume_controls(process_name: str) -> list:
+    """Return SimpleAudioVolume controls for matching process sessions."""
+    target = _normalize_process_name(process_name)
+    if not target:
+        return []
+    try:
+        sessions = AudioUtilities.GetAllSessions()
+    except Exception as exc:
+        log.warning("GetAllSessions failed for %s: %s", process_name, exc)
+        return []
+
+    matches = []
+    for session in sessions:
+        process = getattr(session, "Process", None)
+        if not process:
+            continue
+        try:
+            session_name = _normalize_process_name(process.name())
+        except Exception:
+            continue
+        if session_name != target:
+            continue
+        volume = getattr(session, "SimpleAudioVolume", None)
+        if volume is not None:
+            matches.append(volume)
+    return matches
+
+
 class AudioController:
     """Controls master output volume and microphone input volume."""
 
@@ -114,12 +150,34 @@ class AudioController:
                  midi_mic_cap: float = 1.0):
         self._master = None
         self._mic = None
+        self._app_controls_cache: dict[str, tuple[float, list]] = {}
+        self._app_controls_ttl_sec = 1.0
+        self._last_app_miss_log: dict[str, float] = {}
         self.output_device_id = output_device_id
         self.input_device_id = input_device_id
         self.midi_master_cap = midi_master_cap
         self.midi_mic_cap = midi_mic_cap
         self._init_master()
         self._init_mic()
+
+    def _get_cached_app_volume_controls(self, process_name: str, refresh: bool = False) -> list:
+        target = _normalize_process_name(process_name)
+        if not target:
+            return []
+
+        now = time.monotonic()
+        cached = self._app_controls_cache.get(target)
+        if cached and not refresh and (now - cached[0]) < self._app_controls_ttl_sec:
+            return cached[1]
+
+        controls = _get_app_volume_controls(target)
+        self._app_controls_cache[target] = (now, controls)
+        if not controls:
+            last_log = self._last_app_miss_log.get(target, 0.0)
+            if now - last_log > 5.0:
+                log.info("No audio session found for app '%s'", process_name)
+                self._last_app_miss_log[target] = now
+        return controls
 
     def _init_master(self):
         self._master = _activate_device(self.output_device_id, data_flow=0)
@@ -217,6 +275,44 @@ class AudioController:
                 self._mic.SetMute(int(mute), None)
             except Exception:
                 pass
+
+    # -- app session volume --
+
+    def get_app_volume(self, process_name: str) -> float | None:
+        controls = self._get_cached_app_volume_controls(process_name)
+        if not controls:
+            controls = self._get_cached_app_volume_controls(process_name, refresh=True)
+        if not controls:
+            return None
+        levels = []
+        for control in controls:
+            try:
+                levels.append(control.GetMasterVolume())
+            except Exception:
+                continue
+        if not levels:
+            return None
+        return sum(levels) / len(levels)
+
+    def set_app_volume(self, process_name: str, level: float) -> bool:
+        level = max(0.0, min(1.0, level))
+        for attempt in range(2):
+            controls = self._get_cached_app_volume_controls(
+                process_name,
+                refresh=attempt > 0,
+            )
+            if not controls:
+                return False
+            changed = False
+            for control in controls:
+                try:
+                    control.SetMasterVolume(level, None)
+                    changed = True
+                except Exception:
+                    continue
+            if changed:
+                return True
+        return False
 
     # -- helpers --
 

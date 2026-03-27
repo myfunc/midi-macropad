@@ -2,7 +2,7 @@
 import dearpygui.dearpygui as dpg
 
 ACTION_TYPES = [
-    "keystroke", "shell", "launch", "obs", "volume", "scroll", "plugin",
+    "keystroke", "app_keystroke", "shell", "launch", "obs", "volume", "scroll", "plugin",
 ]
 
 OBS_TARGETS = [
@@ -46,11 +46,16 @@ def build_pad_properties(parent: str, note: int, pad_mapping, on_save=None):
 def _build_fields(note, action_type, mapping):
     parent = f"pe_fields_{note}"
 
-    if action_type == "keystroke":
+    if action_type in ("keystroke", "app_keystroke"):
         keys = mapping.action.keys if mapping else ""
         dpg.add_text("Keys:", parent=parent, color=(150, 150, 160))
         dpg.add_input_text(tag=f"pe_keys_{note}", default_value=keys,
                            hint="e.g. ctrl+shift+p", width=-1, parent=parent)
+        if action_type == "app_keystroke":
+            process = mapping.action.process if mapping else ""
+            dpg.add_text("Process:", parent=parent, color=(150, 150, 160))
+            dpg.add_input_text(tag=f"pe_process_{note}", default_value=process,
+                               hint="e.g. Spotify.exe", width=-1, parent=parent)
 
     elif action_type in ("shell", "launch"):
         cmd = mapping.action.command if mapping else ""
@@ -69,8 +74,9 @@ def _build_fields(note, action_type, mapping):
     elif action_type == "volume":
         target = mapping.action.target if mapping else "master"
         dpg.add_text("Target:", parent=parent, color=(150, 150, 160))
-        dpg.add_combo(tag=f"pe_vol_{note}", items=["master", "mic"],
-                      default_value=target, width=-1, parent=parent)
+        dpg.add_input_text(tag=f"pe_vol_{note}", default_value=target,
+                           hint="master, mic, spotify, spotify.exe",
+                           width=-1, parent=parent)
 
     elif action_type == "scroll":
         dpg.add_text("(no extra parameters)", parent=parent,
@@ -116,8 +122,10 @@ def _collect(note) -> dict:
         data["action_type"] = dpg.get_value(f"pe_action_type_{note}")
 
     atype = data.get("action_type", "keystroke")
-    if atype == "keystroke" and dpg.does_item_exist(f"pe_keys_{note}"):
+    if atype in ("keystroke", "app_keystroke") and dpg.does_item_exist(f"pe_keys_{note}"):
         data["keys"] = dpg.get_value(f"pe_keys_{note}")
+        if atype == "app_keystroke" and dpg.does_item_exist(f"pe_process_{note}"):
+            data["process"] = dpg.get_value(f"pe_process_{note}")
     elif atype in ("shell", "launch") and dpg.does_item_exist(f"pe_cmd_{note}"):
         data["command"] = dpg.get_value(f"pe_cmd_{note}")
     elif atype == "obs" and dpg.does_item_exist(f"pe_obs_{note}"):

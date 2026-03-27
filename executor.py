@@ -43,6 +43,19 @@ _SPECIAL_KEYS = {
 }
 
 
+def _single_token_to_key(part: str):
+    """Map a single token to a layout-independent key when possible."""
+    if len(part) != 1:
+        return KeyCode.from_char(part)
+
+    char = part.lower()
+    if "a" <= char <= "z":
+        return KeyCode.from_vk(ord(char.upper()))
+    if "0" <= char <= "9":
+        return KeyCode.from_vk(ord(char))
+    return KeyCode.from_char(part)
+
+
 def _parse_keys(keys_str: str):
     """Parse 'ctrl+shift+p' into a list of pynput key objects."""
     parts = [p.strip().lower() for p in keys_str.split("+")]
@@ -51,7 +64,7 @@ def _parse_keys(keys_str: str):
         if part in _SPECIAL_KEYS:
             result.append(_SPECIAL_KEYS[part])
         elif len(part) == 1:
-            result.append(KeyCode.from_char(part))
+            result.append(_single_token_to_key(part))
         else:
             result.append(KeyCode.from_char(part))
     return result

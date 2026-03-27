@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDI Macropad × Voicemeeter</title>
+<style>
+  :root {
+    --bg: #0c0e14;
+    --surface: #14171f;
+    --border: #1e2230;
+    --text: #e2e4ea;
+    --dim: #6b7080;
+    --cyan: #06b6d4;
+    --green: #10b981;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --purple: #8b5cf6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── hero ── */
+  .hero {
+    text-align: center;
+    padding: 80px 0 48px;
+    position: relative;
+  }
+  .hero h1 {
+    font-size: 2.6rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--cyan), var(--green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+  }
+  .hero p { color: var(--dim); font-size: 1.1rem; }
+  .badge {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 16px;
+  }
+  .badge--live { background: rgba(16, 185, 129, .15); color: var(--green); border: 1px solid rgba(16, 185, 129, .3); }
+
+  /* ── sections ── */
+  section {
+    padding: 48px 0;
+    opacity: 0;
+    transform: translateY(24px);
+    animation: fadeUp .6s ease forwards;
+  }
+  section:nth-child(2) { animation-delay: .1s; }
+  section:nth-child(3) { animation-delay: .2s; }
+  section:nth-child(4) { animation-delay: .3s; }
+  section:nth-child(5) { animation-delay: .4s; }
+  section:nth-child(6) { animation-delay: .5s; }
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  h2 {
+    font-size: 1.5rem;
+    margin-bottom: 24px;
+    color: var(--cyan);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2::before {
+    content: '';
+    width: 4px;
+    height: 28px;
+    background: var(--cyan);
+    border-radius: 2px;
+  }
+  .note {
+    background: var(--surface);
+    border-left: 3px solid var(--cyan);
+    padding: 14px 18px;
+    border-radius: 0 8px 8px 0;
+    margin: 20px 0;
+    font-size: 0.92rem;
+    color: var(--dim);
+  }
+
+  /* ── signal flow diagram ── */
+  .flow {
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 32px;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .flow-row {
+    display: grid;
+    grid-template-columns: 130px 40px 1fr 40px 150px;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 18px;
+  }
+  .flow-row:last-child { margin-bottom: 0; }
+  .flow-node {
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    position: relative;
+  }
+  .flow-node--input { background: rgba(6, 182, 212, .12); border: 1px solid rgba(6, 182, 212, .3); color: var(--cyan); }
+  .flow-node--vm {
+    background: rgba(139, 92, 246, .1);
+    border: 1px solid rgba(139, 92, 246, .3);
+    color: var(--purple);
+    grid-row: 1 / 4;
+    padding: 30px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+  }
+  .flow-node--output { font-size: 0.8rem; font-weight: 600; }
+  .flow-node--a1 { background: rgba(16, 185, 129, .12); border: 1px solid rgba(16, 185, 129, .3); color: var(--green); }
+  .flow-node--b1 { background: rgba(245, 158, 11, .12); border: 1px solid rgba(245, 158, 11, .3); color: var(--orange); }
+  .flow-node--both { background: rgba(239, 68, 68, .12); border: 1px solid rgba(239, 68, 68, .3); color: var(--red); }
+
+  /* animated signal dots */
+  .flow-pipe {
+    height: 2px;
+    background: var(--border);
+    position: relative;
+    overflow: hidden;
+    border-radius: 1px;
+  }
+  .flow-pipe::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 2px;
+    border-radius: 1px;
+    animation: flowPulse 1.8s linear infinite;
+  }
+  .flow-pipe--cyan::after { background: var(--cyan); }
+  .flow-pipe--green::after { background: var(--green); }
+  .flow-pipe--orange::after { background: var(--orange); }
+  .flow-pipe--red::after { background: var(--red); }
+  @keyframes flowPulse {
+    0% { left: -20px; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { left: 100%; opacity: 0; }
+  }
+  .flow-pipe:nth-child(2)::after { animation-delay: 0.3s; }
+  .flow-pipe:nth-child(4)::after { animation-delay: 0.6s; }
+
+  .flow-grid {
+    display: grid;
+    grid-template-columns: 130px 40px auto 40px 150px;
+    gap: 0 0;
+    align-items: center;
+  }
+  .flow-grid > * { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+
+  /* ── pad grid ── */
+  .pads {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    max-width: 520px;
+    margin: 0 auto;
+  }
+  .pad {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 10px;
+    text-align: center;
+    transition: all .25s ease;
+    cursor: default;
+  }
+  .pad:hover {
+    border-color: var(--cyan);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(6, 182, 212, .15);
+  }
+  .pad__label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .pad__desc {
+    font-size: 0.7rem;
+    color: var(--dim);
+  }
+  .pad--route .pad__label { color: var(--cyan); }
+  .pad--proc .pad__label { color: var(--green); }
+  .pad--util .pad__label { color: var(--purple); }
+
+  .knobs {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  .knob-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 20px;
+    text-align: center;
+    min-width: 120px;
+  }
+  .knob-card__name {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--orange);
+    margin-bottom: 4px;
+  }
+  .knob-card__param {
+    font-size: 0.72rem;
+    color: var(--dim);
+  }
+
+  /* ── latency bars ── */
+  .latency-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 80px;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .latency-label { font-size: 0.85rem; color: var(--dim); }
+  .latency-track {
+    height: 22px;
+    background: var(--surface);
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .latency-fill {
+    height: 100%;
+    border-radius: 5px;
+    animation: grow 1.2s ease forwards;
+    transform-origin: left;
+  }
+  @keyframes grow {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+  .latency-fill--fast { background: linear-gradient(90deg, var(--green), var(--cyan)); width: 12%; animation-delay: .3s; transform: scaleX(0); }
+  .latency-fill--med  { background: linear-gradient(90deg, var(--cyan), var(--purple)); width: 20%; animation-delay: .5s; transform: scaleX(0); }
+  .latency-fill--slow { background: linear-gradient(90deg, var(--orange), var(--red)); width: 38%; animation-delay: .7s; transform: scaleX(0); }
+  .latency-fill--ref  { background: linear-gradient(90deg, var(--dim), #444); width: 100%; animation-delay: .9s; transform: scaleX(0); }
+  .latency-val { font-size: 0.85rem; font-weight: 600; text-align: right; }
+  .latency-val--fast { color: var(--green); }
+  .latency-val--med  { color: var(--cyan); }
+  .latency-val--slow { color: var(--orange); }
+  .latency-val--ref  { color: var(--dim); }
+
+  /* ── timeline / roadmap ── */
+  .timeline {
+    position: relative;
+    padding-left: 32px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .tl-item {
+    position: relative;
+    margin-bottom: 28px;
+    padding-left: 20px;
+  }
+  .tl-item::before {
+    content: '';
+    position: absolute;
+    left: -28px;
+    top: 6px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--bg);
+  }
+  .tl-item--done::before { background: var(--green); border-color: var(--green); }
+  .tl-item--next::before {
+    border-color: var(--cyan);
+    animation: pulse 2s ease infinite;
+  }
+  .tl-item--future::before { border-color: var(--dim); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, .4); }
+    50% { box-shadow: 0 0 0 8px rgba(6, 182, 212, 0); }
+  }
+  .tl-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+  .tl-title--done { color: var(--green); }
+  .tl-title--next { color: var(--cyan); }
+  .tl-title--future { color: var(--dim); }
+  .tl-desc { font-size: 0.82rem; color: var(--dim); }
+
+  /* ── audience cards ── */
+  .audience {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 20px;
+  }
+  .aud-card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid var(--border);
+  }
+  .aud-card__who { font-size: 0.85rem; color: var(--dim); margin-bottom: 8px; }
+  .aud-card__list { font-size: 1rem; font-weight: 600; }
+  .aud-card--you .aud-card__list { color: var(--green); }
+  .aud-card--them .aud-card__list { color: var(--orange); }
+
+  footer {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--dim);
+    font-size: 0.78rem;
+    border-top: 1px solid var(--border);
+    margin-top: 20px;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- HERO -->
+<section class="hero">
+  <h1>MIDI Macropad × Voicemeeter</h1>
+  <p>Управление аудио-маршрутизацией с MIDI-клавиатуры в реальном времени</p>
+  <span class="badge badge--live">Phase 1 — Active</span>
+</section>
+
+<!-- SIGNAL FLOW -->
+<section>
+  <h2>Поток сигнала</h2>
+
+  <div class="flow">
+    <!-- Row 1: MIC -->
+    <div class="flow-grid" style="margin-bottom: 16px;">
+      <div class="flow-node flow-node--input">MIC<br><small style="opacity:.6">Blue Yeti</small></div>
+      <div class="flow-pipe flow-pipe--cyan"></div>
+      <div class="flow-node" style="background:rgba(139,92,246,.08); border:1px solid rgba(139,92,246,.2); color:var(--purple); border-radius:12px;">
+        Voicemeeter<br>Banana<br><small style="opacity:.6">Gate → Comp → EQ</small>
+      </div>
+      <div class="flow-pipe flow-pipe--orange"></div>
+      <div class="flow-node flow-node--output flow-node--b1">B1 — Mic Out<br><small style="opacity:.6">→ Discord, OBS</small></div>
+    </div>
+    <!-- Row 2: DESKTOP -->
+    <div class="flow-grid" style="margin-bottom: 16px;">
+      <div class="flow-node flow-node--input">DESKTOP<br><small style="opacity:.6">Системный звук</small></div>
+      <div class="flow-pipe flow-pipe--cyan"></div>
+      <div class="flow-node" style="opacity:0; pointer-events:none;">-</div>
+      <div class="flow-pipe flow-pipe--green"></div>
+      <div class="flow-node flow-node--output flow-node--a1">A1 — Наушники<br><small style="opacity:.6">Intel SST</small></div>
+    </div>
+    <!-- Row 3: SEND2MIC -->
+    <div class="flow-grid">
+      <div class="flow-node flow-node--input">SEND2MIC<br><small style="opacity:.6">Inject audio</small></div>
+      <div class="flow-pipe flow-pipe--red"></div>
+      <div class="flow-node" style="opacity:0; pointer-events:none;">-</div>
+      <div class="flow-pipe flow-pipe--red"></div>
+      <div class="flow-node flow-node--output flow-node--both">A1 + B1<br><small style="opacity:.6">Toggle via pad</small></div>
+    </div>
+  </div>
+
+  <div class="audience">
+    <div class="aud-card aud-card--you">
+      <div class="aud-card__who">Ты слышишь (A1 наушники)</div>
+      <div class="aud-card__list">Desktop + Send2Mic</div>
+    </div>
+    <div class="aud-card aud-card--them">
+      <div class="aud-card__who">Собеседник слышит (B1)</div>
+      <div class="aud-card__list">Mic + Send2Mic (если вкл)</div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTROL MAP -->
+<section>
+  <h2>Карта управления</h2>
+  <p style="color:var(--dim); margin-bottom:20px; font-size:.9rem;">8 падов (2×4) + 3 крутилки + джойстик — полный контроль Voicemeeter</p>
+
+  <div class="pads">
+    <div class="pad pad--route"><div class="pad__label">MIC</div><div class="pad__desc">Mute/Unmute микрофон</div></div>
+    <div class="pad pad--route"><div class="pad__label">DESK</div><div class="pad__desc">Mute/Unmute десктоп</div></div>
+    <div class="pad pad--route"><div class="pad__label">EQ B1</div><div class="pad__desc">Вкл/Выкл эквалайзер</div></div>
+    <div class="pad pad--route"><div class="pad__label">S2M→B1</div><div class="pad__desc">Inject звук в микрофон</div></div>
+    <div class="pad pad--proc"><div class="pad__label">GATE</div><div class="pad__desc">Вкл/Выкл noise gate</div></div>
+    <div class="pad pad--proc"><div class="pad__label">MON</div><div class="pad__desc">Слышать себя в наушниках</div></div>
+    <div class="pad pad--proc"><div class="pad__label">COMP</div><div class="pad__desc">Вкл/Выкл компрессор</div></div>
+    <div class="pad pad--util"><div class="pad__label">RESYNC</div><div class="pad__desc">Переподключение к VM</div></div>
+  </div>
+
+  <div class="knobs">
+    <div class="knob-card"><div class="knob-card__name">K1</div><div class="knob-card__param">Mic Gain<br><small>-60 ... +12 dB</small></div></div>
+    <div class="knob-card"><div class="knob-card__name">K2</div><div class="knob-card__param">Gate<br><small>0 ... 10</small></div></div>
+    <div class="knob-card"><div class="knob-card__name">K3</div><div class="knob-card__param">Compressor<br><small>0 ... 10</small></div></div>
+    <div class="knob-card"><div class="knob-card__name">JOY</div><div class="knob-card__param">B1 Bus Gain<br><small>-36 ... +36 dB</small></div></div>
+  </div>
+
+  <div class="note">
+    Верхний ряд падов — <strong>маршрутизация</strong> (кто что слышит).<br>
+    Нижний ряд — <strong>обработка</strong> звука + утилиты.<br>
+    В режиме Voicemeeter крутилки K1-K3 перехватываются плагином.
+  </div>
+</section>
+
+<!-- LATENCY -->
+<section>
+  <h2>Анализ задержки</h2>
+  <p style="color:var(--dim); margin-bottom:24px; font-size:.9rem;">Сколько времени от действия до результата?</p>
+
+  <div class="latency-row">
+    <div class="latency-label">MIDI → Voicemeeter</div>
+    <div class="latency-track"><div class="latency-fill latency-fill--fast"></div></div>
+    <div class="latency-val latency-val--fast">5–17 ms</div>
+  </div>
+  <div class="latency-row">
+    <div class="latency-label">Прямой аудиопоток</div>
+    <div class="latency-track"><div class="latency-fill latency-fill--med"></div></div>
+    <div class="latency-val latency-val--med">11–25 ms</div>
+  </div>
+  <div class="latency-row">
+    <div class="latency-label">Audio Pipeline</div>
+    <div class="latency-track"><div class="latency-fill latency-fill--slow"></div></div>
+    <div class="latency-val latency-val--slow">35–45 ms</div>
+  </div>
+  <div class="latency-row">
+    <div class="latency-label">Человек замечает</div>
+    <div class="latency-track"><div class="latency-fill latency-fill--ref"></div></div>
+    <div class="latency-val latency-val--ref">100+ ms</div>
+  </div>
+
+  <div class="note">
+    <strong>Phase 1 (сейчас)</strong> — управление параметрами через DLL API. Задержка ~5-17ms: нажал кнопку — Voicemeeter мгновенно реагирует.<br><br>
+    <strong>Phase 3 (будущее)</strong> — audio pipeline с noise cancellation. ~35-45ms задержка, но всё ещё ниже порога восприятия для речи.<br><br>
+    <strong>Сравнение:</strong> Zoom/Discord добавляют ~50-150ms собственной задержки. Наш пайплайн незаметен на их фоне.
+  </div>
+</section>
+
+<!-- ROADMAP -->
+<section>
+  <h2>Дорожная карта</h2>
+  <div class="timeline">
+    <div class="tl-item tl-item--done">
+      <div class="tl-title tl-title--done">Phase 1 — Voicemeeter Remote Control</div>
+      <div class="tl-desc">Пады: mute, EQ, routing, gate, comp. Крутилки: gain, gate, comp. Визуализатор маршрутизации с level meters. Подключение через VoicemeeterRemote64.dll.</div>
+    </div>
+    <div class="tl-item tl-item--next">
+      <div class="tl-title tl-title--next">Phase 2 — Soundboard через Voicemeeter</div>
+      <div class="tl-desc">Направить Sample Player на Voicemeeter AUX Input. Кнопка Send2Mic отправляет звуки собеседнику. Визуализация: видно, когда звук идёт в B1.</div>
+    </div>
+    <div class="tl-item tl-item--future">
+      <div class="tl-title tl-title--future">Phase 3 — Noise Cancellation</div>
+      <div class="tl-desc">Real-time audio pipeline: Yeti → Python (RNNoise/noisereduce) → VB-CABLE → Voicemeeter. Крутилкой регулируешь интенсивность. Toggle по кнопке.</div>
+    </div>
+    <div class="tl-item tl-item--future">
+      <div class="tl-title tl-title--future">Phase 4 — Voice Changer (AI)</div>
+      <div class="tl-desc">Подключение AI-модели для трансформации голоса в реальном времени. Пресеты на падах (Deep, Chipmunk, Robot). Pitch shift через крутилку.</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  MIDI Macropad × Voicemeeter Integration &middot; Phase 1 Built &middot; 2026
+</footer>
+
+</div>
+
+</body>
+</html>

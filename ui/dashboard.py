@@ -126,17 +126,26 @@ def create_layout():
 
 
 def create_center_content():
-    """Create the pad area + tab bar inside panel_center."""
+    """Create the pad area + mixer/tabs split inside panel_center."""
     dpg.add_child_window(tag="pad_area", parent="panel_center",
                          height=220, border=False)
     dpg.add_spacer(height=2, parent="panel_center")
-    dpg.add_tab_bar(tag="center_tabs", parent="panel_center")
 
-    with dpg.tab(label="  Log  ", parent="center_tabs", tag="tab_log"):
-        dpg.add_child_window(tag="log_content", height=-1, border=False)
+    with dpg.group(horizontal=True, parent="panel_center",
+                   tag="center_split"):
+        with dpg.child_window(tag="mixer_side", width=300):
+            dpg.add_text("MIXER", color=(140, 140, 170))
+            dpg.add_separator()
+            dpg.add_spacer(height=2)
+            dpg.add_child_window(tag="mixer_content", height=-1,
+                                 border=False)
 
-    with dpg.tab(label="  Mixer  ", parent="center_tabs", tag="tab_mixer"):
-        dpg.add_child_window(tag="mixer_content", height=-1, border=False)
+        with dpg.child_window(tag="tabs_side", width=-1):
+            dpg.add_tab_bar(tag="center_tabs")
+            with dpg.tab(label="  Log  ", parent="center_tabs",
+                         tag="tab_log"):
+                dpg.add_child_window(tag="log_content", height=-1,
+                                     border=False)
 
 
 def add_plugin_tab(tab_id: str, label: str) -> str:

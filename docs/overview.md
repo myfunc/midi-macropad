@@ -14,7 +14,7 @@ The project combines three things in one tool:
 
 ## Feature Snapshot
 
-- 6 built-in modes: `Productivity`, `Development`, `Media`, `OBS`, `Voice Scribe`, `Sound Pads`
+- Modes are defined in `config.toml` (for example `OBS`, `Voice Scribe`, `Sound Pads`, `Voicemeeter`, `OBS Session`, `Spotify`)
 - 8 velocity-sensitive pads, 4 knobs, and joystick support
 - TOML-based configuration for modes, pads, knobs, and app contexts
 - Automatic mode switching based on the foreground application
@@ -35,14 +35,16 @@ The recent iteration also makes the workflow feel more physical: `Voice Scribe` 
 
 ## Modes
 
+Exact pads and colors live in `config.toml`. Typical modes:
+
 | Mode | Purpose |
 |------|---------|
-| `Productivity` | Everyday editing and clipboard shortcuts |
-| `Development` | Coding-oriented shortcuts and editor actions |
-| `Media` | Playback, desktop, and quick utility actions |
 | `OBS` | Recording, streaming, and scene-related control |
 | `Voice Scribe` | Voice-first bilingual writing workflow with chat memory, hard cancel, and MIDI status cues |
 | `Sound Pads` | Sample triggering through the sampler plugin |
+| `Voicemeeter` | Audio-routing-focused macros and knob maps for Voicemeeter |
+| `OBS Session` | Multi-segment session recordings with optional post-process stitch and subtitles |
+| `Spotify` | Playback shortcuts, Liked Songs actions, and Spotify-focused transport control |
 
 ## Configuration
 

@@ -10,7 +10,9 @@ Today that shared runtime surface is intentionally small. The key example is the
 |--------|------|
 | `Voice Scribe` | Voice-driven writing assistant for Russian speech, English output, and context-aware generation |
 | `Sample Player` | Sample playback engine for turning pads into a small performance sampler |
-| `Performance Template` | Built-in live rig template with toggle beats on pads, key-triggered drums and guitar phrases, and 9 switchable chord keys |
+| `OBS Session` | OBS WebSocket session workflow: scene setup, segmented recording, ffmpeg concat, optional Whisper subtitles and burn-in; transcript-only runs concat across all segments; session start is blocked if OBS is already recording |
+| `Voicemeeter` | Voicemeeter-oriented pad and knob routing when that mode is active |
+| `Performance Template` | Optional live rig template with toggle beats on pads, key-triggered drums and guitar phrases, and 9 switchable chord keys |
 
 ## Voice Scribe
 

@@ -223,6 +223,7 @@ def on_plugin_toggle(name, info, enabled):
         plugin_manager.unload_plugin(name)
         selection.clear()
     _apply_mode_ui()
+    settings.put("enabled_plugins", list(plugin_manager.enabled))
 
 
 # ---- MIDI event handling ----------------------------------------------------
@@ -269,8 +270,8 @@ def handle_midi_event(event: MidiEvent):
 
         elif event.type == "pad_release":
             leds.pad_off(event.note)
-            if not plugin_manager.on_pad_release(event.note):
-                release_pad(event.note)
+            plugin_manager.on_pad_release(event.note)
+            release_pad(event.note)
 
         elif event.type == "knob":
             if plugin_manager.on_knob(event.cc, event.value):
@@ -307,6 +308,8 @@ def _handle_knob(knob, value: int):
             level = audio.midi_to_mic_volume(value)
             audio.set_mic_volume(level)
             set_mic_volume_display(level)
+        else:
+            audio.set_app_volume(action.target, value / 127.0)
     elif action.type == "scroll":
         err = execute_scroll(value)
         if err:
@@ -333,6 +336,16 @@ def _execute_action(action, cue_id: str = "action.default"):
     resolved_cue = cue_id
     if action.type == "keystroke":
         err = execute_keystroke(action.keys)
+    elif action.type == "app_keystroke":
+        active_process = get_foreground_process() or ""
+        expected_process = action.process or ""
+        if expected_process and active_process.lower() != expected_process.lower():
+            err = (
+                f"Skipped {_format_action_keys(action.keys)}: active app is "
+                f"{active_process or 'none'}, expected {expected_process}"
+            )
+        else:
+            err = execute_keystroke(action.keys)
     elif action.type == "shell":
         err = execute_shell(action.command)
     elif action.type == "launch":
@@ -346,6 +359,10 @@ def _execute_action(action, cue_id: str = "action.default"):
         feedback.emit_error()
     elif resolved_cue:
         feedback.emit_action(resolved_cue)
+
+
+def _format_action_keys(keys: str) -> str:
+    return keys.replace("+", " + ")
 
 
 def _execute_obs_action(action):
@@ -564,9 +581,13 @@ def main():
 
     set_rebuild_fn(_on_selection_changed)
 
-    # Restore saved mode
-    saved_mode = settings.get("mode_index", 0)
-    if config.modes and 0 <= saved_mode < len(config.modes):
+    # Restore saved mode (clamp after config/mode list changes)
+    saved_mode = int(settings.get("mode_index", 0))
+    if config.modes:
+        n_modes = len(config.modes)
+        if not (0 <= saved_mode < n_modes):
+            saved_mode = max(0, min(saved_mode, n_modes - 1))
+            settings.put("mode_index", saved_mode)
         mapper.set_mode(saved_mode)
         set_active_mode(saved_mode)
 
@@ -576,8 +597,16 @@ def main():
     set_master_mute_display(audio.get_master_mute())
     set_mic_mute_display(audio.get_mic_mute())
 
-    # Plugins
-    plugin_manager.load_all()
+    # Plugins — restore previously enabled set, or load all on first run
+    saved_plugins = settings.get("enabled_plugins")
+    if saved_plugins is not None:
+        target_plugins = set(saved_plugins)
+        for info in plugin_manager.discover():
+            if info["name"] in target_plugins:
+                plugin_manager.load_plugin(info)
+        settings.put("enabled_plugins", list(plugin_manager.enabled))
+    else:
+        plugin_manager.load_all()
     populate_plugins(plugin_manager.discover(),
                      set(plugin_manager.plugins.keys()))
     _create_plugin_tabs()
@@ -631,6 +660,7 @@ def main():
         check_foreground_app()
         poll_dashboard()
         poll_hover()
+        plugin_manager.poll_all()
 
         status = plugin_manager.get_active_status()
         if status:
@@ -647,6 +677,7 @@ def main():
     feedback.close()
     leds.disconnect()
     midi.stop()
+    settings.save_profile()
     dpg.destroy_context()
     log.info("MIDI Macropad closed")
 

@@ -1,0 +1,19 @@
+[plugin]
+name = "OBS Session"
+version = "0.3.0"
+description = "Session recording workflow for OBS"
+entry = "obs_session.OBSSessionPlugin"
+
+[settings]
+host = "127.0.0.1"
+port = 4455
+password = ""
+working_scene = "MM_Session"
+right_screen_source = "MM_Right Screen"
+camera_source = "MM_Camera"
+mic_source = "MM_Microphone"
+output_dir = ""
+auto_setup_scene = true
+postprocess_stitch = true
+postprocess_transcript = false
+postprocess_open_folder = true
