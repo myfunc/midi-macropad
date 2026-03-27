@@ -733,7 +733,8 @@ def main():
         for info in plugin_manager.discover():
             if info["name"] in target_plugins:
                 plugin_manager.load_plugin(info)
-        settings.put("enabled_plugins", list(plugin_manager.enabled))
+        if plugin_manager.enabled or not saved_plugins:
+            settings.put("enabled_plugins", list(plugin_manager.enabled))
     else:
         plugin_manager.load_all()
     populate_plugins(plugin_manager.discover(),

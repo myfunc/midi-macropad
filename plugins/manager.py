@@ -70,11 +70,13 @@ class PluginManager:
             return
         module_part, class_name = entry.rsplit(".", 1)
         plugin_path: Path = plugin_info["path"]
-        added = False
+        added_dirs: list[str] = []
         pdir = str(plugin_path)
-        if pdir not in sys.path:
-            sys.path.insert(0, pdir)
-            added = True
+        plugins_root = str(plugin_path.parent)
+        for d in (pdir, plugins_root):
+            if d not in sys.path:
+                sys.path.insert(0, d)
+                added_dirs.append(d)
         try:
             if module_part in sys.modules:
                 module = importlib.reload(sys.modules[module_part])
@@ -98,8 +100,9 @@ class PluginManager:
                       f"Failed to load {plugin_info['name']}: {traceback.format_exc()}",
                       color=(255, 80, 80))
         finally:
-            if added and pdir in sys.path:
-                sys.path.remove(pdir)
+            for d in added_dirs:
+                if d in sys.path:
+                    sys.path.remove(d)
 
     def unload_plugin(self, name: str) -> None:
         plugin = self.plugins.pop(name, None)
