@@ -44,14 +44,20 @@ _CONNECTED_OK = (100, 255, 150)
 _CONNECTED_BAD = (255, 90, 90)
 _STATUS_IDLE = (150, 150, 165)
 
-# MIDI pad notes (API actions); 22–23 pass through for keystroke macros
+# MIDI pad notes — pads 16–20 are API actions, 21 is DJ keystroke (pass-through),
+# 22–23 are API playlist actions
 PAD_PLAY_PAUSE = 16
 PAD_NEXT = 17
 PAD_PREV = 18
 PAD_LIKE = 19
 PAD_SHUFFLE = 20
-PAD_REPEAT = 21
-_API_PAD_NOTES = frozenset({PAD_PLAY_PAUSE, PAD_NEXT, PAD_PREV, PAD_LIKE, PAD_SHUFFLE, PAD_REPEAT})
+PAD_DJ_MIX = 21
+PAD_ADD_TO_PL = 22
+PAD_REMOVE_PL = 23
+_API_PAD_NOTES = frozenset({
+    PAD_PLAY_PAUSE, PAD_NEXT, PAD_PREV, PAD_LIKE, PAD_SHUFFLE,
+    PAD_ADD_TO_PL, PAD_REMOVE_PL,
+})
 
 
 class SpotifyPlugin(Plugin):
@@ -85,6 +91,8 @@ class SpotifyPlugin(Plugin):
         self._position_label = "0:00"
         self._duration_label = "0:00"
         self._is_playing = False
+        self._current_track_uri = ""
+        self._current_playlist_id = ""
         self._poll_running = False
 
         self._last_poll = 0.0
@@ -189,18 +197,40 @@ class SpotifyPlugin(Plugin):
 
             threading.Thread(target=_toggle_shuffle, daemon=True).start()
             return True
-        if note == PAD_REPEAT:
+        if note == PAD_DJ_MIX:
+            return False  # pass through — handled as app_keystroke in config
+        if note == PAD_ADD_TO_PL:
 
-            def _cycle() -> None:
-                new_mode = self._api_call(
-                    lambda: self._api.cycle_repeat(self._repeat_mode) if self._api else None
+            def _add() -> None:
+                if not self._current_track_uri or not self._current_playlist_id:
+                    log.warning("Spotify: no active playlist context to add to")
+                    return
+                ok = self._api_call(
+                    lambda: self._api.add_to_playlist(
+                        self._current_playlist_id, self._current_track_uri
+                    ) if self._api else None
                 )
-                if new_mode:
-                    self._repeat_mode = new_mode
+                if ok:
+                    log.info("Spotify: added to playlist")
 
-            threading.Thread(target=_cycle, daemon=True).start()
+            threading.Thread(target=_add, daemon=True).start()
             return True
-        # Notes 22–23: keystroke Search / Liked Songs — pass through
+        if note == PAD_REMOVE_PL:
+
+            def _remove() -> None:
+                if not self._current_track_uri or not self._current_playlist_id:
+                    log.warning("Spotify: no active playlist context to remove from")
+                    return
+                ok = self._api_call(
+                    lambda: self._api.remove_from_playlist(
+                        self._current_playlist_id, self._current_track_uri
+                    ) if self._api else None
+                )
+                if ok:
+                    log.info("Spotify: removed from playlist")
+
+            threading.Thread(target=_remove, daemon=True).start()
+            return True
         return False
 
     def on_pad_release(self, note: int) -> bool:
@@ -231,9 +261,9 @@ class SpotifyPlugin(Plugin):
             PAD_PREV: "Previous",
             PAD_LIKE: "Like" if not self._liked else "Unlike",
             PAD_SHUFFLE: "Shuffle: On" if self._shuffle_on else "Shuffle: Off",
-            PAD_REPEAT: f"Repeat: {self._repeat_label()}",
-            22: "Search",
-            23: "Liked Songs",
+            PAD_DJ_MIX: "DJ Mix",
+            PAD_ADD_TO_PL: "+ Playlist",
+            PAD_REMOVE_PL: "- Playlist",
         }
 
     def get_status(self) -> tuple[str, tuple[int, int, int]] | None:
@@ -333,7 +363,7 @@ class SpotifyPlugin(Plugin):
         self._add_labeled_value(parent_tag, "Artist", "sp_track_artist")
         self._add_labeled_value(parent_tag, "Album", "sp_track_album")
         self._add_labeled_value(parent_tag, "Shuffle", "sp_shuffle_state")
-        self._add_labeled_value(parent_tag, "Repeat", "sp_repeat_state")
+        self._add_labeled_value(parent_tag, "Playlist", "sp_playlist_state")
         self._add_labeled_value(parent_tag, "Library", "sp_liked_status")
 
         dpg.add_spacer(height=10, parent=parent_tag)
@@ -346,12 +376,13 @@ class SpotifyPlugin(Plugin):
         dpg.add_text("Pad 3: Previous Track (API)", parent=parent_tag)
         dpg.add_text("Pad 4: Like/Unlike (API)", parent=parent_tag)
         dpg.add_text("Pad 5: Toggle Shuffle (API)", parent=parent_tag)
-        dpg.add_text("Pad 6: Cycle Repeat (API)", parent=parent_tag)
-        dpg.add_text("Pad 7: Search (keystroke)", parent=parent_tag)
-        dpg.add_text("Pad 8: Liked Songs (keystroke)", parent=parent_tag)
+        dpg.add_text("Pad 6: DJ Mix (keystroke)", parent=parent_tag)
+        dpg.add_text("Pad 7: Add to Playlist (API)", parent=parent_tag)
+        dpg.add_text("Pad 8: Remove from Playlist (API)", parent=parent_tag)
         dpg.add_text(
-            "Pads 1–6 use the Spotify Web API for reliable control. Pads 7–8 use keyboard shortcuts "
-            "and require Spotify to be in focus.",
+            "Pads 1–5, 7–8 use the Spotify Web API. Pad 6 (DJ Mix) sends a keystroke "
+            "and requires Spotify to be in focus. Playlist actions work only when "
+            "playing from a playlist context.",
             parent=parent_tag,
             wrap=260,
             color=_TEXT_MUTED,
@@ -463,6 +494,9 @@ class SpotifyPlugin(Plugin):
             return None
 
     def _poll_playback(self) -> None:
+        if not self._api or not self._connected:
+            self._poll_running = False
+            return
         try:
             state = self._api_call(lambda: self._api.get_current_playback() if self._api else None)
             if state:
@@ -479,6 +513,14 @@ class SpotifyPlugin(Plugin):
                 self._progress_fraction = progress_ms / max(duration_ms, 1)
                 self._position_label = f"{progress_ms // 60000}:{(progress_ms // 1000) % 60:02d}"
                 self._duration_label = f"{duration_ms // 60000}:{(duration_ms // 1000) % 60:02d}"
+                self._current_track_uri = item.get("uri", "")
+                ctx = state.get("context")
+                if ctx and ctx.get("type") == "playlist":
+                    uri = ctx.get("uri", "")
+                    parts = uri.split(":")
+                    self._current_playlist_id = parts[2] if len(parts) == 3 else ""
+                else:
+                    self._current_playlist_id = ""
                 track_id = item.get("id")
                 if track_id:
                     liked = self._api_call(lambda: self._api.is_track_liked(track_id) if self._api else None)
@@ -495,6 +537,8 @@ class SpotifyPlugin(Plugin):
                 self._progress_fraction = 0.0
                 self._position_label = "0:00"
                 self._duration_label = "0:00"
+                self._current_track_uri = ""
+                self._current_playlist_id = ""
         except Exception as exc:
             log.warning("Spotify poll error: %s", exc)
         finally:
@@ -581,8 +625,8 @@ class SpotifyPlugin(Plugin):
             dpg.add_text("Shuffle:", color=_TEXT_MUTED)
             dpg.add_text("", tag="sp_center_shuffle", color=_TEXT_SECTION)
             dpg.add_spacer(width=20)
-            dpg.add_text("Repeat:", color=_TEXT_MUTED)
-            dpg.add_text("", tag="sp_center_repeat", color=_TEXT_SECTION)
+            dpg.add_text("Playlist:", color=_TEXT_MUTED)
+            dpg.add_text("", tag="sp_center_playlist", color=_TEXT_SECTION)
         dpg.add_spacer(height=8, parent=parent_tag)
         dpg.add_button(
             tag="sp_center_btn_like",
@@ -673,7 +717,7 @@ class SpotifyPlugin(Plugin):
         artist = self._track_artist if self._connected else "—"
         album = self._track_album if self._connected else "—"
         sh_text = f"Shuffle: {self._shuffle_label()}" if self._connected else "—"
-        rp_text = f"Repeat: {self._repeat_label()}" if self._connected else "—"
+        pl_text = "In playlist" if self._current_playlist_id else "No playlist" if self._connected else "—"
         lk_text = self._liked_label() if self._connected else "—"
 
         self._set_text_if_exists(dpg, "sp_connection_status", conn_text, conn_color)
@@ -681,7 +725,7 @@ class SpotifyPlugin(Plugin):
         self._set_text_if_exists(dpg, "sp_track_artist", artist, (230, 232, 238))
         self._set_text_if_exists(dpg, "sp_track_album", album, (230, 232, 238))
         self._set_text_if_exists(dpg, "sp_shuffle_state", sh_text, _STATUS_IDLE)
-        self._set_text_if_exists(dpg, "sp_repeat_state", rp_text, _STATUS_IDLE)
+        self._set_text_if_exists(dpg, "sp_playlist_state", pl_text, _STATUS_IDLE)
         self._set_text_if_exists(dpg, "sp_liked_status", lk_text, _STATUS_IDLE)
 
         center_track = self._track_name if self._connected else "Not connected"
@@ -700,8 +744,9 @@ class SpotifyPlugin(Plugin):
         self._set_text_if_exists(
             dpg, "sp_center_shuffle", self._shuffle_label() if self._connected else "—", _TEXT_SECTION
         )
+        pl_center = "In playlist" if self._current_playlist_id else "No playlist"
         self._set_text_if_exists(
-            dpg, "sp_center_repeat", self._repeat_label() if self._connected else "—", _TEXT_SECTION
+            dpg, "sp_center_playlist", pl_center if self._connected else "—", _TEXT_SECTION
         )
 
         like_lbl = "Unlike" if self._liked else "Like"

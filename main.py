@@ -72,7 +72,7 @@ from ui.sidebar_left import (
     create_left_sidebar, populate_plugins, set_active_mode,
     is_manual_override,
 )
-from ui.sidebar_right import create_right_sidebar, set_rebuild_fn, rebuild
+from ui.sidebar_right import create_right_sidebar, set_rebuild_fn, rebuild, set_plugin_list
 from ui.pad_editor import build_pad_properties
 from ui.status_bar import poll_hover, register as register_tooltip
 from ui import selection
@@ -222,6 +222,7 @@ def on_plugin_toggle(name, info, enabled):
     else:
         plugin_manager.unload_plugin(name)
         selection.clear()
+    set_plugin_list(list(plugin_manager.plugins.keys()))
     _apply_mode_ui()
     settings.put("enabled_plugins", list(plugin_manager.enabled))
 
@@ -440,6 +441,8 @@ def check_foreground_app():
 # ---- selection -> right sidebar ----------------------------------------------
 
 def _on_selection_changed(sel_type, sel_id):
+    if dpg.does_item_exist("sr_plugin_combo"):
+        dpg.set_value("sr_plugin_combo", sel_id if sel_type == "plugin" else "(none)")
     if sel_type == "pad":
         mapping = mapper.lookup_pad(sel_id)
         rebuild(lambda parent: build_pad_properties(
@@ -610,6 +613,7 @@ def main():
         plugin_manager.load_all()
     populate_plugins(plugin_manager.discover(),
                      set(plugin_manager.plugins.keys()))
+    set_plugin_list(list(plugin_manager.plugins.keys()))
     _create_plugin_tabs()
     _apply_mode_ui()
 

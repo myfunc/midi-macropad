@@ -111,6 +111,41 @@ class SpotifyAPI:
             return bool(result and result[0])
         return False
 
+    def get_current_playlist_id(self) -> str | None:
+        """Extract playlist ID from current playback context, if any."""
+        state = self.get_current_playback()
+        if not state:
+            return None
+        ctx = state.get("context")
+        if ctx and ctx.get("type") == "playlist":
+            uri = ctx.get("uri", "")
+            parts = uri.split(":")
+            if len(parts) == 3:
+                return parts[2]
+        return None
+
+    def add_to_playlist(self, playlist_id: str, track_uri: str) -> bool:
+        resp = self._request(
+            "post",
+            f"/playlists/{playlist_id}/tracks",
+            json={"uris": [track_uri]},
+        )
+        if resp.status_code in (200, 201):
+            return True
+        log.warning("add_to_playlist: %d %s", resp.status_code, resp.text[:200])
+        return False
+
+    def remove_from_playlist(self, playlist_id: str, track_uri: str) -> bool:
+        resp = self._request(
+            "delete",
+            f"/playlists/{playlist_id}/tracks",
+            json={"tracks": [{"uri": track_uri}]},
+        )
+        if resp.status_code in (200, 204):
+            return True
+        log.warning("remove_from_playlist: %d %s", resp.status_code, resp.text[:200])
+        return False
+
     def get_user_profile(self) -> dict | None:
         resp = self._request("get", "/me")
         if resp.status_code == 200:

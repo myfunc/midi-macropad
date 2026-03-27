@@ -10,6 +10,19 @@ def create_right_sidebar(parent="panel_right"):
         dpg.add_spacer(height=6)
         dpg.add_tab_bar(tag="right_tabs")
         with dpg.tab(label=" Properties ", parent="right_tabs", tag="right_tab_props"):
+            dpg.add_spacer(height=4)
+            with dpg.group(horizontal=True):
+                dpg.add_spacer(width=6)
+                dpg.add_text("Plugin:", color=(85, 88, 100))
+                dpg.add_combo(
+                    tag="sr_plugin_combo",
+                    items=[],
+                    default_value="",
+                    width=-1,
+                    callback=_on_plugin_combo_changed,
+                )
+            dpg.add_spacer(height=4)
+            dpg.add_separator()
             dpg.add_spacer(height=6)
             dpg.add_text("Select a pad or plugin to edit",
                          tag="sr_placeholder", color=(85, 88, 100), wrap=250,
@@ -17,6 +30,20 @@ def create_right_sidebar(parent="panel_right"):
             dpg.add_group(tag="sr_content")
 
     selection.set_callback(_on_selection_changed)
+
+
+def set_plugin_list(plugin_names: list[str]):
+    """Populate the plugin combo with loaded plugin names."""
+    if dpg.does_item_exist("sr_plugin_combo"):
+        items = ["(none)"] + sorted(plugin_names)
+        dpg.configure_item("sr_plugin_combo", items=items)
+
+
+def _on_plugin_combo_changed(sender, app_data):
+    if app_data and app_data != "(none)":
+        selection.select("plugin", app_data)
+    else:
+        selection.select(None, None)
 
 
 def add_right_tab(tab_id: str, label: str) -> str:
