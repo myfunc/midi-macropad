@@ -3,8 +3,6 @@ import os
 import ctypes
 import dearpygui.dearpygui as dpg
 
-from ui.sidebar_right import add_right_tab
-
 LEFT_W = 184
 RIGHT_W = 274
 STATUS_H = 26

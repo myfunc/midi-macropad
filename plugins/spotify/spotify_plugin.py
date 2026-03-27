@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import sys
 import threading
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base import Plugin
 from logger import get_logger
 import settings
@@ -428,7 +426,7 @@ class SpotifyPlugin(Plugin):
 
     def _on_connect_clicked(self) -> None:
         if not self.client_id:
-            log.warning("Spotify: Client ID required")
+            self._log("SPOTIFY", "Client ID required", color=(255, 180, 80), level="warning")
             return
         threading.Thread(target=self._run_auth_flow, daemon=True).start()
 
@@ -447,7 +445,7 @@ class SpotifyPlugin(Plugin):
             log.info("Spotify: connected as %s", self._display_name)
         except Exception as exc:
             self._last_error = str(exc)
-            log.error("Spotify OAuth failed: %s", exc)
+            self._log("SPOTIFY", f"OAuth failed: {exc}", color=(255, 80, 80), level="error")
 
     def _do_token_refresh(self) -> bool:
         with self._token_lock:
@@ -469,7 +467,7 @@ class SpotifyPlugin(Plugin):
                 self._persist_settings()
                 return True
             except Exception as exc:
-                log.error("Spotify token refresh failed: %s", exc)
+                self._log("SPOTIFY", f"Token refresh failed: {exc}", color=(255, 80, 80), level="error")
                 self._last_error = f"Token refresh failed: {exc}"
                 self._access_token = ""
                 self._token_expires_at = 0.0
@@ -490,7 +488,7 @@ class SpotifyPlugin(Plugin):
                 return fn()
             return None
         except Exception as exc:
-            log.warning("Spotify API error: %s", exc)
+            self._log("SPOTIFY", f"API error: {exc}", color=(255, 180, 80), level="warning")
             return None
 
     def _poll_playback(self) -> None:
@@ -540,7 +538,7 @@ class SpotifyPlugin(Plugin):
                 self._current_track_uri = ""
                 self._current_playlist_id = ""
         except Exception as exc:
-            log.warning("Spotify poll error: %s", exc)
+            self._log("SPOTIFY", f"Poll error: {exc}", color=(255, 180, 80), level="warning")
         finally:
             self._poll_running = False
 

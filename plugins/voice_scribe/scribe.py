@@ -1,6 +1,5 @@
 """Voice Scribe plugin — speak Russian, type English with configurable style prompts."""
 
-import sys
 import os
 import io
 import json
@@ -11,7 +10,6 @@ import ctypes
 import ctypes.wintypes
 from datetime import datetime
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base import Plugin
 
 import numpy as np
@@ -375,7 +373,7 @@ class VoiceScribePlugin(Plugin):
         except Exception as exc:
             self._recording = False
             self._set_status(f"Mic error: {exc}", "error")
-            log.error("Mic start failed: %s", exc)
+            self._log("VOICE", f"Mic start failed: {exc}", color=(255, 80, 80), level="error")
 
     def _stop_recording(self) -> None:
         self._recording = False
@@ -508,12 +506,10 @@ class VoiceScribePlugin(Plugin):
         except OperationCancelled:
             log.info("Voice job cancelled before completion")
         except Exception as exc:
-            log.error("Processing error: %s", exc)
+            self._log("VOICE", f"Processing error: {exc}", color=(255, 80, 80), level="error")
             if self._is_token_active(token):
                 self.emit_feedback("voice.error")
                 self._set_status(f"Error: {exc}", "error")
-            if self._log_fn and self._is_token_active(token):
-                self._log_fn("VOICE", str(exc)[:80], color=(255, 80, 80))
         finally:
             self._finish_processing(token)
 
@@ -585,12 +581,10 @@ class VoiceScribePlugin(Plugin):
         except OperationCancelled:
             log.info("Voice speak job cancelled before completion")
         except Exception as exc:
-            log.error("Speak error: %s", exc)
+            self._log("VOICE", f"Speak error: {exc}", color=(255, 80, 80), level="error")
             if self._is_token_active(token):
                 self.emit_feedback("voice.error")
                 self._set_status(f"Error: {exc}", "error")
-            if self._log_fn and self._is_token_active(token):
-                self._log_fn("VOICE", str(exc)[:80], color=(255, 80, 80))
         finally:
             self._finish_processing(token)
 
@@ -904,7 +898,7 @@ class VoiceScribePlugin(Plugin):
                         dpg.configure_item("vs_mic_test_result",
                                            color=(255, 80, 80))
             except Exception as exc:
-                log.error("Mic test failed: %s", exc)
+                self._log("VOICE", f"Mic test failed: {exc}", color=(255, 80, 80), level="error")
                 if dpg.does_item_exist("vs_mic_test_result"):
                     dpg.set_value("vs_mic_test_result", f"Error: {exc}")
                     dpg.configure_item("vs_mic_test_result",

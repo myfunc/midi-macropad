@@ -4,13 +4,10 @@ Pad-based toggles and knob-based continuous control via VoicemeeterRemote64.dll.
 Includes a real-time routing visualizer with level meters.
 """
 
-import sys
-import os
 import ctypes
 import math
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base import Plugin
 from logger import get_logger
 

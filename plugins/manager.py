@@ -83,6 +83,7 @@ class PluginManager:
             cls = getattr(module, class_name)
             instance: Plugin = cls()
             instance._log_fn = self._log
+            instance._logger = __import__("logger").get_logger(plugin_info["name"])
             instance.set_runtime_services(self._runtime_services)
             instance.on_load(plugin_info.get("settings", {}))
             name = plugin_info["name"]

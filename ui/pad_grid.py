@@ -14,6 +14,34 @@ _pad_press_times: dict[int, float] = {}
 _knob_bar_tags: dict[int, str] = {}
 _default_color = (40, 40, 52, 255)
 _press_color = (100, 180, 255, 255)
+_release_theme = None
+_flash_themes: dict[int, int] = {}
+
+
+def _get_release_theme():
+    global _release_theme
+    if _release_theme is None:
+        with dpg.theme() as t:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, _default_color)
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
+        _release_theme = t
+    return _release_theme
+
+
+def _get_flash_theme(velocity: int):
+    if velocity in _flash_themes:
+        return _flash_themes[velocity]
+    brightness = 80 + int(velocity / 127 * 175)
+    r = min(brightness, 255)
+    g = min(int(brightness * 0.8), 255)
+    b = 255
+    with dpg.theme() as t:
+        with dpg.theme_component(dpg.mvButton):
+            dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 255))
+            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
+    _flash_themes[velocity] = t
+    return t
 
 
 def create_pad_grid(parent="pad_area", knobs=None):
@@ -113,14 +141,7 @@ def flash_pad(note: int, velocity: int = 127):
     if note not in _pad_tags:
         return
     tag = _pad_tags[note]
-    brightness = 80 + int(velocity / 127 * 175)
-    r = min(brightness, 255)
-    g = min(int(brightness * 0.8), 255)
-    b = 255
-    with dpg.theme() as t:
-        with dpg.theme_component(dpg.mvButton):
-            dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 255))
-            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
+    t = _get_flash_theme(velocity)
     dpg.bind_item_theme(tag, t)
     _pad_press_times[note] = time.time()
 
@@ -129,8 +150,4 @@ def release_pad(note: int):
     if note not in _pad_tags:
         return
     tag = _pad_tags[note]
-    with dpg.theme() as t:
-        with dpg.theme_component(dpg.mvButton):
-            dpg.add_theme_color(dpg.mvThemeCol_Button, _default_color)
-            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
-    dpg.bind_item_theme(tag, t)
+    dpg.bind_item_theme(tag, _get_release_theme())

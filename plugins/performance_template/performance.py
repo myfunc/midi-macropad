@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -12,7 +10,6 @@ from pathlib import Path
 import mido
 import toml
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base import Plugin
 import settings
 

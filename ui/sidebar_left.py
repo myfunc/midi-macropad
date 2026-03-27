@@ -13,12 +13,77 @@ _mode_icons: list[str] = []
 _active_index: int = 0
 _manual_override: bool = False
 _mode_count: int = 0
+_mode_themes: dict[tuple[int, bool, bool], int] = {}
+
+
+def _get_mode_theme(mode_index: int, active: bool, is_icon: bool) -> int:
+    key = (mode_index, active, is_icon)
+    if key in _mode_themes:
+        return _mode_themes[key]
+    r, g, b = (
+        _mode_colors[mode_index]
+        if mode_index < len(_mode_colors)
+        else (100, 100, 120)
+    )
+    if is_icon:
+        if active:
+            with dpg.theme() as icon_t:
+                with dpg.theme_component(dpg.mvButton):
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 120))
+                    dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
+                    dpg.add_theme_color(
+                        dpg.mvThemeCol_ButtonHovered, (r, g, b, 150)
+                    )
+                    dpg.add_theme_color(
+                        dpg.mvThemeCol_ButtonActive, (r, g, b, 180)
+                    )
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 4)
+        else:
+            with dpg.theme() as icon_t:
+                with dpg.theme_component(dpg.mvButton):
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 25))
+                    dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 140))
+                    dpg.add_theme_color(
+                        dpg.mvThemeCol_ButtonHovered, (r, g, b, 45)
+                    )
+                    dpg.add_theme_color(
+                        dpg.mvThemeCol_ButtonActive, (r, g, b, 65)
+                    )
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 4)
+        _mode_themes[key] = icon_t
+        return icon_t
+    if active:
+        with dpg.theme() as btn_t:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 45))
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 65))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 80))
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
+    else:
+        with dpg.theme() as btn_t:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 140))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 28))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 45))
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
+    _mode_themes[key] = btn_t
+    return btn_t
 
 
 def create_left_sidebar(parent="panel_left", *, mode_names, mode_colors,
                         mode_icons=None, callback=None,
                         plugin_toggle_callback=None):
     global _mode_callback, _plugin_toggle_callback, _mode_count
+    for theme_id in _mode_themes.values():
+        if dpg.does_item_exist(theme_id):
+            dpg.delete_item(theme_id)
+    _mode_themes.clear()
     _mode_callback = callback
     _plugin_toggle_callback = plugin_toggle_callback
     _mode_btn_tags.clear()
@@ -174,44 +239,9 @@ def _update_mode_highlight(index):
     for i, (btn_tag, icon_tag) in enumerate(zip(_mode_btn_tags, _mode_icon_tags)):
         if not dpg.does_item_exist(btn_tag):
             continue
-        r, g, b = _mode_colors[i] if i < len(_mode_colors) else (100, 100, 120)
         active = i == index
-
-        if active:
-            with dpg.theme() as btn_t:
-                with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 45))
-                    dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 65))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 80))
-                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
-            with dpg.theme() as icon_t:
-                with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 120))
-                    dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 150))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 180))
-                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 4)
-        else:
-            with dpg.theme() as btn_t:
-                with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
-                    dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 140))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 28))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 45))
-                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
-            with dpg.theme() as icon_t:
-                with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 25))
-                    dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 140))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 45))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 65))
-                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 4)
-
+        btn_t = _get_mode_theme(i, active, False)
+        icon_t = _get_mode_theme(i, active, True)
         dpg.bind_item_theme(btn_tag, btn_t)
         dpg.bind_item_theme(icon_tag, icon_t)
 
@@ -228,8 +258,3 @@ def get_mode_count() -> int:
 
 def is_manual_override():
     return _manual_override
-
-
-def clear_manual_override():
-    global _manual_override
-    _manual_override = False

@@ -78,11 +78,15 @@ from ui.status_bar import poll_hover, register as register_tooltip
 from ui import selection
 from obs_controller import OBSController
 from plugins.manager import PluginManager
-from logger import get_logger, LOG_FILE
+from logger import get_logger, LOG_FILE, log_startup_banner, log_session_summary
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.toml")
 EVENT_QUEUE: queue.Queue = queue.Queue(maxsize=256)
 log = get_logger("app")
+
+_midi_event_count = 0
+_plugin_error_count = 0
+_session_start = 0.0
 
 
 class _NullLedController:
@@ -110,6 +114,9 @@ def _append_ui_log(tag: str, message: str, color=(200, 200, 200)):
 
 
 def _runtime_log(tag: str, message: str, color=(200, 200, 200)):
+    global _plugin_error_count
+    if color == (255, 80, 80):
+        _plugin_error_count += 1
     _append_ui_log(tag, message, color=color)
     logger = log.error if color == (255, 80, 80) else log.info
     logger("%s | %s", tag, message)
@@ -256,6 +263,8 @@ def on_inverted_toggle():
 
 
 def handle_midi_event(event: MidiEvent):
+    global _midi_event_count
+    _midi_event_count += 1
     try:
         mapper.remap_event(event)
 
@@ -733,6 +742,10 @@ def main():
     _create_plugin_tabs()
     _apply_mode_ui()
 
+    global _session_start
+    _session_start = time.monotonic()
+    log_startup_banner(list(plugin_manager.enabled))
+
     # Tooltips
     register_tooltip("inverted_btn",
                      "Flip pad layout 180\u00b0 for upside-down use")
@@ -794,10 +807,14 @@ def main():
 
         dpg.render_dearpygui_frame()
 
+    duration_s = time.monotonic() - _session_start
+    log_session_summary(_midi_event_count, _plugin_error_count, duration_s)
+
     plugin_manager.unload_all()
     feedback.close()
     leds.disconnect()
     midi.stop()
+    settings.flush()
     settings.save_profile()
     dpg.destroy_context()
     log.info("MIDI Macropad closed")

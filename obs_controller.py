@@ -1,7 +1,6 @@
 """OBS WebSocket controller — scene switching, recording, streaming."""
 from __future__ import annotations
 
-import threading
 import time
 from typing import Any, Callable
 

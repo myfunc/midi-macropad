@@ -47,5 +47,8 @@ RESEARCH-*.md
 # Local screenshots (canonical copy is docs/screenshot.png)
 /image.png
 
+# Backups (local safety copies of configs/secrets)
+backups/
+
 # Sample packs (can be large, user-supplied)
 plugins/sample_player/packs/*/samples/

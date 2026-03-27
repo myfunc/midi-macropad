@@ -42,8 +42,6 @@ class ContextRule:
 @dataclass
 class AppConfig:
     device_name: str = "MPK mini play"
-    double_tap_ms: int = 300
-    long_press_ms: int = 2000
     modes: list[Mode] = field(default_factory=list)
     knobs: list[KnobMapping] = field(default_factory=list)
     contexts: list[ContextRule] = field(default_factory=list)
@@ -56,10 +54,7 @@ def load_config(path: str | Path) -> AppConfig:
     cfg = AppConfig()
     if "device" in data:
         cfg.device_name = data["device"].get("name", cfg.device_name)
-    if "settings" in data:
-        cfg.double_tap_ms = data["settings"].get("double_tap_ms", cfg.double_tap_ms)
-        cfg.long_press_ms = data["settings"].get("long_press_ms", cfg.long_press_ms)
-    
+
     for mode_data in data.get("modes", []):
         mode = Mode(
             name=mode_data["name"],
@@ -169,17 +164,7 @@ class Mapper:
                 self.current_mode_index = i
                 return True
         return False
-    
-    def next_mode(self):
-        n = len(self.config.modes)
-        if n:
-            self.current_mode_index = (self.current_mode_index + 1) % n
 
-    def prev_mode(self):
-        n = len(self.config.modes)
-        if n:
-            self.current_mode_index = (self.current_mode_index - 1) % n
-    
     def lookup_pad(self, note: int) -> PadMapping | None:
         if not self._pad_maps:
             return None

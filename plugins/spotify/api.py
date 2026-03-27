@@ -23,16 +23,18 @@ class SpotifyAPI:
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 
-    def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+    def _request(self, method: str, path: str, _429_retries: int = 0, **kwargs) -> requests.Response:
         url = f"{self.base_url}{path}"
         resp = getattr(requests, method)(url, headers=self._headers(), timeout=10, **kwargs)
         if resp.status_code == 401:
             raise TokenExpiredError("Access token expired")
         if resp.status_code == 429:
+            if _429_retries >= 3:
+                return resp
             retry_after = int(resp.headers.get("Retry-After", 1))
             log.warning("Spotify rate limited, waiting %ds", retry_after)
             time.sleep(retry_after)
-            return self._request(method, path, **kwargs)
+            return self._request(method, path, _429_retries=_429_retries + 1, **kwargs)
         return resp
 
     def get_current_playback(self) -> dict | None:
@@ -83,16 +85,6 @@ class SpotifyAPI:
         log.warning("toggle_shuffle: %d %s", resp.status_code, resp.text[:200])
         return current_state
 
-    def cycle_repeat(self, current_state: str) -> str:
-        """Returns new repeat mode, or current on failure."""
-        cycle = {"off": "context", "context": "track", "track": "off"}
-        new_state = cycle.get(current_state, "off")
-        resp = self._request("put", f"/me/player/repeat?state={new_state}")
-        if resp.status_code in (200, 204):
-            return new_state
-        log.warning("cycle_repeat: %d %s", resp.status_code, resp.text[:200])
-        return current_state
-
     def get_current_track_id(self) -> str | None:
         state = self.get_current_playback()
         if not state:
@@ -110,19 +102,6 @@ class SpotifyAPI:
             result = resp.json()
             return bool(result and result[0])
         return False
-
-    def get_current_playlist_id(self) -> str | None:
-        """Extract playlist ID from current playback context, if any."""
-        state = self.get_current_playback()
-        if not state:
-            return None
-        ctx = state.get("context")
-        if ctx and ctx.get("type") == "playlist":
-            uri = ctx.get("uri", "")
-            parts = uri.split(":")
-            if len(parts) == 3:
-                return parts[2]
-        return None
 
     def add_to_playlist(self, playlist_id: str, track_uri: str) -> bool:
         resp = self._request(

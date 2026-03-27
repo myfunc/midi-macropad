@@ -37,16 +37,3 @@ def get_foreground_process() -> str | None:
         kernel32.CloseHandle(handle)
     
     return None
-
-
-def get_foreground_window_title() -> str:
-    """Return the title of the foreground window."""
-    hwnd = user32.GetForegroundWindow()
-    if not hwnd:
-        return ""
-    length = user32.GetWindowTextLengthW(hwnd)
-    if length == 0:
-        return ""
-    buf = (ctypes.c_wchar * (length + 1))()
-    user32.GetWindowTextW(hwnd, buf, length + 1)
-    return buf.value

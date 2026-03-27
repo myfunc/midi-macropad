@@ -12,6 +12,23 @@ _on_mic_cap_change = None
 
 _output_device_ids: list[str] = []
 _input_device_ids: list[str] = []
+_mute_btn_muted = None
+_mute_btn_unmuted = None
+
+
+def _get_mute_btn_theme(muted: bool):
+    global _mute_btn_muted, _mute_btn_unmuted
+    if _mute_btn_muted is None:
+        with dpg.theme() as t:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (220, 60, 60, 255))
+        _mute_btn_muted = t
+    if _mute_btn_unmuted is None:
+        with dpg.theme() as t:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (40, 40, 52, 255))
+        _mute_btn_unmuted = t
+    return _mute_btn_muted if muted else _mute_btn_unmuted
 
 
 def create_volume_panel(
@@ -140,15 +157,7 @@ def set_master_cap_display(cap): dpg.set_value("master_cap_slider", max(1, int(c
 def set_mic_cap_display(cap): dpg.set_value("mic_cap_slider", max(1, int(cap * 100)))
 
 def set_master_mute_display(muted):
-    c = (220, 60, 60, 255) if muted else (40, 40, 52, 255)
-    with dpg.theme() as t:
-        with dpg.theme_component(dpg.mvButton):
-            dpg.add_theme_color(dpg.mvThemeCol_Button, c)
-    dpg.bind_item_theme("master_mute_btn", t)
+    dpg.bind_item_theme("master_mute_btn", _get_mute_btn_theme(muted))
 
 def set_mic_mute_display(muted):
-    c = (220, 60, 60, 255) if muted else (40, 40, 52, 255)
-    with dpg.theme() as t:
-        with dpg.theme_component(dpg.mvButton):
-            dpg.add_theme_color(dpg.mvThemeCol_Button, c)
-    dpg.bind_item_theme("mic_mute_btn", t)
+    dpg.bind_item_theme("mic_mute_btn", _get_mute_btn_theme(muted))

@@ -14,7 +14,14 @@ class Plugin(ABC):
     version: str = "0.0.0"
     description: str = ""
     _log_fn = None
+    _logger = None
     _runtime_services: dict[str, object] = {}
+
+    def _log(self, tag: str, message: str, *, color=(200, 200, 200), level="info"):
+        if self._log_fn:
+            self._log_fn(tag, message, color=color)
+        elif self._logger:
+            getattr(self._logger, level, self._logger.info)("%s | %s", tag, message)
 
     @abstractmethod
     def on_load(self, config: dict) -> None:

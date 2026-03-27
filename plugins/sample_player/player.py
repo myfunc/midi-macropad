@@ -1,10 +1,7 @@
 """Sample Player plugin — trigger WAV samples from MIDI pads with velocity sensitivity."""
 
-import sys
-import os
 import threading
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base import Plugin
 
 import numpy as np
@@ -127,7 +124,7 @@ class SamplePlayerPlugin(Plugin):
         except Exception as exc:
             self._stream = None
             self._stream_error = str(exc)
-            log.error("Sample player output stream failed: %s", exc)
+            self._log("SAMPLE", f"Output stream failed: {exc}", color=(255, 80, 80), level="error")
             return False
 
     def _stop_stream(self):
