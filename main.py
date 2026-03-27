@@ -47,7 +47,7 @@ def _remove_pid() -> None:
 import dearpygui.dearpygui as dpg
 import settings
 from midi_listener import MidiListener, MidiEvent
-from mapper import Mapper, load_config
+from mapper import Mapper, load_config, JOYSTICK_CC
 from executor import execute_keystroke, execute_shell, execute_launch, execute_scroll
 from audio import AudioController, enumerate_output_devices, enumerate_input_devices
 from app_detector import get_foreground_process
@@ -287,6 +287,9 @@ def handle_midi_event(event: MidiEvent):
             release_pad(event.note)
 
         elif event.type == "knob":
+            if event.cc == JOYSTICK_CC:
+                _handle_joystick_mode_switch(event.value)
+                return
             update_knob_display(event.cc, event.value)
             if plugin_manager.on_knob(event.cc, event.value):
                 return
@@ -302,7 +305,7 @@ def handle_midi_event(event: MidiEvent):
                               color=(150, 150, 160))
 
         elif event.type == "pitch_bend":
-            _handle_joystick_mode_switch(event.pitch)
+            pass
     except Exception as exc:
         log.error("Unhandled MIDI event %s: %s\n%s",
                   event, exc, traceback.format_exc())
@@ -312,17 +315,20 @@ def handle_midi_event(event: MidiEvent):
 _joy_last_switch_time = 0.0
 _joy_armed = True
 
-_JOY_THRESHOLD = 2000
-_JOY_CENTER_ZONE = 800
+_JOY_CENTER = 64
+_JOY_THRESHOLD = 20
+_JOY_CENTER_ZONE = 10
 _JOY_COOLDOWN = 0.30
 
 
-def _handle_joystick_mode_switch(pitch: int):
-    """pitch from mido: -8192 (full left/down) to +8191 (full right/up), 0 = center."""
+def _handle_joystick_mode_switch(value: int):
+    """CC16 joystick Y-axis: 0 = full down, 64 = center, 127 = full up."""
     global _joy_last_switch_time, _joy_armed
     import time as _t
 
-    if abs(pitch) < _JOY_CENTER_ZONE:
+    offset = value - _JOY_CENTER
+
+    if abs(offset) < _JOY_CENTER_ZONE:
         _joy_armed = True
         return
 
@@ -338,10 +344,10 @@ def _handle_joystick_mode_switch(pitch: int):
         return
 
     current = mapper.current_mode_index
-    if pitch > _JOY_THRESHOLD:
-        new_index = (current + 1) % total
-    elif pitch < -_JOY_THRESHOLD:
+    if offset > _JOY_THRESHOLD:
         new_index = (current - 1) % total
+    elif offset < -_JOY_THRESHOLD:
+        new_index = (current + 1) % total
     else:
         return
 
