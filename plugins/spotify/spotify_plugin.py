@@ -583,6 +583,7 @@ class SpotifyPlugin(Plugin):
             tag="sp_center_btn_like",
             label="Like",
             width=120,
+            parent=parent_tag,
             callback=lambda: self._center_like(),
         )
 
