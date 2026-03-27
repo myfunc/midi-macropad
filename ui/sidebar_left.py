@@ -74,7 +74,7 @@ def create_left_sidebar(parent="panel_left", *, mode_names, mode_colors,
             def _make_cb(idx):
                 return lambda: _on_mode_click(idx)
 
-            with dpg.group(horizontal=True, parent=parent):
+            with dpg.group(horizontal=True):
                 dpg.add_spacer(width=4)
                 dpg.add_button(
                     tag=icon_tag,
@@ -87,7 +87,7 @@ def create_left_sidebar(parent="panel_left", *, mode_names, mode_colors,
                     tag=btn_tag, width=-1, height=32,
                     callback=_make_cb(i),
                 )
-            dpg.add_spacer(height=2, parent=parent)
+            dpg.add_spacer(height=2)
 
             _mode_btn_tags.append(btn_tag)
             _mode_icon_tags.append(icon_tag)

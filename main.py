@@ -310,20 +310,19 @@ def handle_midi_event(event: MidiEvent):
 
 
 _joy_last_switch_time = 0.0
-_joy_armed = True  # becomes False after a switch, re-arms when joystick returns near center
+_joy_armed = True
 
-_JOY_THRESHOLD = 3000
-_JOY_CENTER_ZONE = 1500
-_JOY_COOLDOWN = 0.35
+_JOY_THRESHOLD = 2000
+_JOY_CENTER_ZONE = 800
+_JOY_COOLDOWN = 0.30
 
 
 def _handle_joystick_mode_switch(pitch: int):
+    """pitch from mido: -8192 (full left/down) to +8191 (full right/up), 0 = center."""
     global _joy_last_switch_time, _joy_armed
     import time as _t
 
-    offset = pitch - 8192
-
-    if abs(offset) < _JOY_CENTER_ZONE:
+    if abs(pitch) < _JOY_CENTER_ZONE:
         _joy_armed = True
         return
 
@@ -339,9 +338,9 @@ def _handle_joystick_mode_switch(pitch: int):
         return
 
     current = mapper.current_mode_index
-    if offset > _JOY_THRESHOLD:
+    if pitch > _JOY_THRESHOLD:
         new_index = (current + 1) % total
-    elif offset < -_JOY_THRESHOLD:
+    elif pitch < -_JOY_THRESHOLD:
         new_index = (current - 1) % total
     else:
         return
