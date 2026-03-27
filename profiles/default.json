@@ -1,6 +1,6 @@
 {
   "output_device_id": "{0.0.0.00000000}.{8f2c64b1-fe39-4b8b-8a61-511ddef7d1a3}",
-  "mode_index": 5,
+  "mode_index": 1,
   "input_device_id": "{0.0.1.00000000}.{fc1e2edd-ea12-4119-af98-99f02d7cc244}",
   "inverted": false,
   "midi_volume_cap": 0.25,
@@ -9,6 +9,7 @@
   "performance_feedback_enabled": false,
   "active_profile": "default",
   "enabled_plugins": [
+    "OBS Session",
     "Voice Scribe",
     "Voicemeeter"
   ],
@@ -23,5 +24,19 @@
     "duck_amount": -18.0,
     "duck_hold": 0.6,
     "duck_attack_time": 0.7400000095367432
+  },
+  "obs_session_plugin": {
+    "host": "127.0.0.1",
+    "port": 4455,
+    "password": "",
+    "working_scene": "MM_Session",
+    "right_screen_source": "MM_Right Screen",
+    "camera_source": "MM_Camera",
+    "mic_source": "MM_Microphone",
+    "output_dir": "",
+    "auto_setup_scene": true,
+    "postprocess_stitch": true,
+    "postprocess_transcript": false,
+    "postprocess_open_folder": true
   }
 }

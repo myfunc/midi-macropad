@@ -51,7 +51,7 @@ from mapper import Mapper, load_config, JOYSTICK_CC
 from executor import execute_keystroke, execute_shell, execute_launch, execute_scroll
 from audio import AudioController, enumerate_output_devices, enumerate_input_devices
 from app_detector import get_foreground_process
-from feedback import FeedbackService
+from feedback import FeedbackService, set_transpose, get_transpose
 from ui.dashboard import (
     create_dashboard, setup_theme, hex_to_rgb,
     create_layout, create_center_content, add_plugin_tab,
@@ -305,7 +305,7 @@ def handle_midi_event(event: MidiEvent):
                               color=(150, 150, 160))
 
         elif event.type == "pitch_bend":
-            pass
+            _handle_pitch_bend_transpose(event.pitch)
     except Exception as exc:
         log.error("Unhandled MIDI event %s: %s\n%s",
                   event, exc, traceback.format_exc())
@@ -319,6 +319,50 @@ _JOY_CENTER = 64
 _JOY_THRESHOLD = 20
 _JOY_CENTER_ZONE = 10
 _JOY_COOLDOWN = 0.30
+
+_pb_last_switch_time = 0.0
+_pb_armed = True
+_PB_THRESHOLD = 3000
+_PB_CENTER_ZONE = 1500
+_PB_COOLDOWN = 0.18
+
+
+def _handle_pitch_bend_transpose(pitch: int):
+    """Pitch bend X-axis: right (+) = transpose up, left (-) = transpose down."""
+    global _pb_last_switch_time, _pb_armed
+    import time as _t
+
+    if abs(pitch) < _PB_CENTER_ZONE:
+        _pb_armed = True
+        return
+
+    if not _pb_armed:
+        return
+
+    now = _t.monotonic()
+    if now - _pb_last_switch_time < _PB_COOLDOWN:
+        return
+
+    current = get_transpose()
+    if pitch > _PB_THRESHOLD:
+        new_val = current + 1
+    elif pitch < -_PB_THRESHOLD:
+        new_val = current - 1
+    else:
+        return
+
+    new_val = max(-24, min(24, new_val))
+    _pb_armed = False
+    _pb_last_switch_time = now
+
+    set_transpose(new_val)
+    settings.put("melody_transpose", new_val)
+
+    cue_id = _MODE_CUE_MAP.get(mapper.current_mode.name.lower(), "action.default")
+    feedback.emit(cue_id)
+    add_log_entry("KEY",
+                  f"Transpose: {new_val:+d} semitones",
+                  color=(255, 200, 100))
 
 
 def _handle_joystick_mode_switch(value: int):
@@ -662,6 +706,10 @@ def main():
             settings.put("mode_index", saved_mode)
         mapper.set_mode(saved_mode)
         set_active_mode(saved_mode)
+
+    # Restore saved transpose
+    saved_transpose = int(settings.get("melody_transpose", 0))
+    set_transpose(saved_transpose)
 
     # Sync volume display
     set_master_volume_display(audio.get_master_volume())

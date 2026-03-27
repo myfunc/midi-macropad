@@ -28,6 +28,18 @@ class MidiCue:
     expression: int = 112
 
 
+_transpose: int = 0
+
+
+def set_transpose(semitones: int) -> None:
+    global _transpose
+    _transpose = max(-24, min(24, semitones))
+
+
+def get_transpose() -> int:
+    return _transpose
+
+
 MIDI_CUES: dict[str, MidiCue] = {
     # Favor steel/clean guitar-style arpeggios and simple intervals.
     # On MPK Mini Play these longer low-mid phrases read more musically than
@@ -181,91 +193,92 @@ MIDI_CUES: dict[str, MidiCue] = {
         volume=122,
         expression=127,
     ),
-    # ── Mode mini-melodies ─────────────────────────────────────────────────
-    # Each ~1.5-2s, unique rhythm/key so you recognise the mode by ear.
+    # ── Mode mini-melodies (all in C major, transposable) ──────────────────
+    # Each ~1.5-2s, unique rhythm so you recognise the mode by ear.
+    # Transpose via set_transpose() shifts all mode.* cues equally.
 
-    # Spotify — warm bouncy Fmaj arpeggio, steel guitar
+    # Spotify — bouncy ascending arpeggio, steel guitar
     "mode.spotify": MidiCue(
         program=25,
         steps=(
-            MidiStep((53,), 80, velocity=88, gap_ms=40),   # F3
-            MidiStep((57,), 80, velocity=92, gap_ms=40),   # A3
-            MidiStep((60,), 80, velocity=96, gap_ms=40),   # C4
-            MidiStep((65,), 100, velocity=100, gap_ms=50),  # F4
-            MidiStep((69,), 80, velocity=96, gap_ms=40),   # A4
-            MidiStep((65, 72), 280, velocity=104, gap_ms=0), # F4+C5 ring
+            MidiStep((48,), 80, velocity=88, gap_ms=40),    # C3
+            MidiStep((52,), 80, velocity=92, gap_ms=40),    # E3
+            MidiStep((55,), 80, velocity=96, gap_ms=40),    # G3
+            MidiStep((60,), 100, velocity=100, gap_ms=50),  # C4
+            MidiStep((64,), 80, velocity=96, gap_ms=40),    # E4
+            MidiStep((60, 67), 280, velocity=104, gap_ms=0),  # C4+G4 ring
         ),
         volume=112,
         expression=124,
     ),
 
-    # Voicemeeter — cool Cm7 descend then resolve up, clean guitar
+    # Voicemeeter — descending then resolve up, clean guitar
     "mode.voicemeeter": MidiCue(
         program=27,
         steps=(
-            MidiStep((70,), 90, velocity=90, gap_ms=30),   # Bb4
-            MidiStep((67,), 90, velocity=88, gap_ms=30),   # G4
-            MidiStep((63,), 90, velocity=86, gap_ms=30),   # Eb4
-            MidiStep((60,), 110, velocity=84, gap_ms=50),  # C4
-            MidiStep((58,), 80, velocity=88, gap_ms=30),   # Bb3
-            MidiStep((60, 67), 300, velocity=96, gap_ms=0), # C4+G4 resolve
+            MidiStep((71,), 90, velocity=90, gap_ms=30),    # B4
+            MidiStep((67,), 90, velocity=88, gap_ms=30),    # G4
+            MidiStep((64,), 90, velocity=86, gap_ms=30),    # E4
+            MidiStep((60,), 110, velocity=84, gap_ms=50),   # C4
+            MidiStep((59,), 80, velocity=88, gap_ms=30),    # B3
+            MidiStep((60, 67), 300, velocity=96, gap_ms=0),   # C4+G4 resolve
         ),
         volume=110,
         expression=122,
     ),
 
-    # Voice Scribe — gentle Am->C rising phrase, jazz guitar
+    # Voice Scribe — gentle rising phrase, jazz guitar
     "mode.voice_scribe": MidiCue(
         program=26,
         steps=(
-            MidiStep((57,), 100, velocity=82, gap_ms=40),  # A3
-            MidiStep((60,), 80, velocity=86, gap_ms=35),   # C4
-            MidiStep((64,), 80, velocity=90, gap_ms=35),   # E4
-            MidiStep((67,), 100, velocity=94, gap_ms=45),  # G4
-            MidiStep((69,), 120, velocity=98, gap_ms=50),  # A4
-            MidiStep((72, 76), 320, velocity=102, gap_ms=0), # C5+E5 bloom
+            MidiStep((57,), 100, velocity=82, gap_ms=40),   # A3
+            MidiStep((60,), 80, velocity=86, gap_ms=35),    # C4
+            MidiStep((64,), 80, velocity=90, gap_ms=35),    # E4
+            MidiStep((67,), 100, velocity=94, gap_ms=45),   # G4
+            MidiStep((69,), 120, velocity=98, gap_ms=50),   # A4
+            MidiStep((72, 76), 320, velocity=102, gap_ms=0),  # C5+E5 bloom
         ),
         volume=108,
         expression=122,
     ),
 
-    # OBS — punchy E5 power stab + harmonic ring, overdriven
+    # OBS — punchy power stab + harmonic ring, overdriven
     "mode.obs": MidiCue(
         program=29,
         steps=(
-            MidiStep((40, 47, 52), 60, velocity=110, gap_ms=50),  # E2+B2+E3
-            MidiStep((40, 47, 52), 60, velocity=114, gap_ms=80),  # repeat hit
-            MidiStep((52, 59, 64), 400, velocity=108, gap_ms=0),  # E3+B3+E4 ring
+            MidiStep((36, 43, 48), 60, velocity=110, gap_ms=50),  # C2+G2+C3
+            MidiStep((36, 43, 48), 60, velocity=114, gap_ms=80),  # repeat hit
+            MidiStep((48, 55, 60), 400, velocity=108, gap_ms=0),  # C3+G3+C4 ring
         ),
         volume=116,
         expression=126,
     ),
 
-    # OBS Session — mysterious ascending 4ths, clean guitar
+    # OBS Session — ascending thirds, clean guitar
     "mode.obs_session": MidiCue(
         program=27,
         steps=(
-            MidiStep((48,), 100, velocity=84, gap_ms=50),  # C3
-            MidiStep((53,), 100, velocity=88, gap_ms=50),  # F3
-            MidiStep((58,), 100, velocity=92, gap_ms=50),  # Bb3
-            MidiStep((63,), 120, velocity=96, gap_ms=60),  # Eb4
-            MidiStep((67, 72), 340, velocity=100, gap_ms=0), # G4+C5 open
+            MidiStep((48,), 100, velocity=84, gap_ms=50),   # C3
+            MidiStep((52,), 100, velocity=88, gap_ms=50),   # E3
+            MidiStep((55,), 100, velocity=92, gap_ms=50),   # G3
+            MidiStep((60,), 120, velocity=96, gap_ms=60),   # C4
+            MidiStep((64, 67), 340, velocity=100, gap_ms=0),  # E4+G4 open
         ),
         volume=110,
         expression=123,
     ),
 
-    # Sound Pads — funky staccato muted pattern, muted guitar
+    # Sound Pads — funky staccato pattern, muted guitar
     "mode.sound_pads": MidiCue(
         program=28,
         steps=(
-            MidiStep((50,), 40, velocity=100, gap_ms=40),  # D3
-            MidiStep((50,), 40, velocity=90, gap_ms=30),
-            MidiStep((53,), 40, velocity=102, gap_ms=40),  # F3
-            MidiStep((57,), 40, velocity=96, gap_ms=30),   # A3
-            MidiStep((57,), 40, velocity=88, gap_ms=40),
-            MidiStep((60,), 40, velocity=104, gap_ms=30),  # C4
-            MidiStep((62, 65), 250, velocity=108, gap_ms=0), # D4+F4 pop
+            MidiStep((48,), 40, velocity=100, gap_ms=40),   # C3
+            MidiStep((48,), 40, velocity=90, gap_ms=30),
+            MidiStep((52,), 40, velocity=102, gap_ms=40),   # E3
+            MidiStep((55,), 40, velocity=96, gap_ms=30),    # G3
+            MidiStep((55,), 40, velocity=88, gap_ms=40),
+            MidiStep((60,), 40, velocity=104, gap_ms=30),   # C4
+            MidiStep((62, 64), 250, velocity=108, gap_ms=0),  # D4+E4 pop
         ),
         volume=114,
         expression=125,
@@ -371,6 +384,7 @@ class MidiCuePlayer:
         cue = MIDI_CUES.get(cue_id)
         if cue is None:
             return
+        shift = _transpose if cue_id.startswith("mode.") else 0
         with self._lock:
             port = self._ensure_port()
             if port is None:
@@ -381,10 +395,11 @@ class MidiCuePlayer:
                 self._send_level_controls(cue)
                 for step in cue.steps:
                     channel = step.channel
-                    for note in step.notes:
+                    notes = [max(0, min(127, n + shift)) for n in step.notes]
+                    for note in notes:
                         port.send(mido.Message("note_on", channel=channel, note=note, velocity=step.velocity))
                     time.sleep(step.duration_ms / 1000.0)
-                    for note in step.notes:
+                    for note in notes:
                         port.send(mido.Message("note_off", channel=channel, note=note, velocity=0))
                     if step.gap_ms:
                         time.sleep(step.gap_ms / 1000.0)

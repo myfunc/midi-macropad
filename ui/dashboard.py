@@ -88,7 +88,7 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
 def create_dashboard():
     dpg.create_viewport(
         title="MIDI Macropad",
-        width=1200, height=780,
+        width=2400, height=1560,
         min_width=900, min_height=600,
         decorated=True,
     )
