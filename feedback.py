@@ -181,6 +181,56 @@ MIDI_CUES: dict[str, MidiCue] = {
         volume=122,
         expression=127,
     ),
+    # Mode-switch chords — each mode gets a unique short guitar voicing
+    # so the user can identify which mode they landed on by ear alone.
+    "mode.obs": MidiCue(
+        program=25,  # steel guitar
+        steps=(
+            MidiStep((40, 47, 52, 55), 180, velocity=100, gap_ms=30),
+        ),
+        volume=108,
+        expression=120,
+    ),
+    "mode.voice_scribe": MidiCue(
+        program=25,
+        steps=(
+            MidiStep((45, 52, 57, 61), 180, velocity=98, gap_ms=30),
+        ),
+        volume=108,
+        expression=120,
+    ),
+    "mode.sound_pads": MidiCue(
+        program=27,  # clean guitar
+        steps=(
+            MidiStep((50, 57, 62, 66), 180, velocity=96, gap_ms=30),
+        ),
+        volume=108,
+        expression=120,
+    ),
+    "mode.voicemeeter": MidiCue(
+        program=25,
+        steps=(
+            MidiStep((43, 50, 55, 59), 180, velocity=100, gap_ms=30),
+        ),
+        volume=108,
+        expression=120,
+    ),
+    "mode.obs_session": MidiCue(
+        program=27,
+        steps=(
+            MidiStep((48, 55, 60, 64), 180, velocity=98, gap_ms=30),
+        ),
+        volume=108,
+        expression=120,
+    ),
+    "mode.spotify": MidiCue(
+        program=25,
+        steps=(
+            MidiStep((41, 48, 53, 57), 180, velocity=102, gap_ms=30),
+        ),
+        volume=110,
+        expression=122,
+    ),
     "voice.error": MidiCue(
         program=None,
         channel=9,

@@ -70,7 +70,7 @@ from ui.volume_panel import (
 from ui.midi_log import create_midi_log, add_log_entry
 from ui.sidebar_left import (
     create_left_sidebar, populate_plugins, set_active_mode,
-    is_manual_override,
+    is_manual_override, get_mode_count,
 )
 from ui.sidebar_right import create_right_sidebar, set_rebuild_fn, rebuild, set_plugin_list
 from ui.pad_editor import build_pad_properties
@@ -165,10 +165,22 @@ def _apply_mode_ui():
     overlay_plugin_pad_labels(plugin_manager.get_all_pad_labels())
 
 
+_MODE_CUE_MAP = {
+    "obs": "mode.obs",
+    "voice scribe": "mode.voice_scribe",
+    "sound pads": "mode.sound_pads",
+    "voicemeeter": "mode.voicemeeter",
+    "obs session": "mode.obs_session",
+    "spotify": "mode.spotify",
+}
+
+
 def on_mode_tab_changed(index: int):
     mapper.set_mode(index)
     _apply_mode_ui()
     settings.put("mode_index", index)
+    cue_id = _MODE_CUE_MAP.get(mapper.current_mode.name.lower(), "action.default")
+    feedback.emit(cue_id)
 
 
 # ---- audio callbacks --------------------------------------------------------
@@ -290,13 +302,63 @@ def handle_midi_event(event: MidiEvent):
                               color=(150, 150, 160))
 
         elif event.type == "pitch_bend":
-            if plugin_manager.on_pitch_bend(event.pitch):
-                return
-            add_log_entry("JOY", f"pitch={event.pitch}", color=(180, 140, 255))
+            _handle_joystick_mode_switch(event.pitch)
     except Exception as exc:
         log.error("Unhandled MIDI event %s: %s\n%s",
                   event, exc, traceback.format_exc())
         _runtime_log("ERR", f"Unhandled MIDI event: {exc}", color=(255, 80, 80))
+
+
+_joy_last_switch_time = 0.0
+_joy_armed = True  # becomes False after a switch, re-arms when joystick returns near center
+
+_JOY_THRESHOLD = 3000
+_JOY_CENTER_ZONE = 1500
+_JOY_COOLDOWN = 0.35
+
+
+def _handle_joystick_mode_switch(pitch: int):
+    global _joy_last_switch_time, _joy_armed
+    import time as _t
+
+    offset = pitch - 8192
+
+    if abs(offset) < _JOY_CENTER_ZONE:
+        _joy_armed = True
+        return
+
+    if not _joy_armed:
+        return
+
+    now = _t.monotonic()
+    if now - _joy_last_switch_time < _JOY_COOLDOWN:
+        return
+
+    total = get_mode_count()
+    if total <= 1:
+        return
+
+    current = mapper.current_mode_index
+    if offset > _JOY_THRESHOLD:
+        new_index = (current + 1) % total
+    elif offset < -_JOY_THRESHOLD:
+        new_index = (current - 1) % total
+    else:
+        return
+
+    _joy_armed = False
+    _joy_last_switch_time = now
+
+    mapper.set_mode(new_index)
+    set_active_mode(new_index)
+    _apply_mode_ui()
+    settings.put("mode_index", new_index)
+
+    cue_id = _MODE_CUE_MAP.get(mapper.current_mode.name.lower(), "action.default")
+    feedback.emit(cue_id)
+    add_log_entry("JOY",
+                  f"Mode -> {mapper.current_mode.name}",
+                  color=(180, 140, 255))
 
 
 def _handle_knob(knob, value: int):
@@ -539,6 +601,7 @@ def main():
     create_left_sidebar(
         mode_names=[m.name for m in config.modes],
         mode_colors=[m.color for m in config.modes],
+        mode_icons=[m.icon for m in config.modes],
         callback=on_mode_tab_changed,
         plugin_toggle_callback=on_plugin_toggle,
     )

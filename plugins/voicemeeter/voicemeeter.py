@@ -243,8 +243,7 @@ class VoicemeeterPlugin(Plugin):
         self._monitor = bool(g("Strip[0].A1") or 0)
         self._mic_gain = g("Strip[0].Gain") or 0.0
         self._audibility = g("Strip[0].Audibility") or 0.0
-        if abs(self._joy_offset) < 0.5:
-            self._b1_baseline = g("Bus[3].Gain") or 0.0
+        self._b1_baseline = g("Bus[3].Gain") or 0.0
 
         gv = g("Strip[0].Gate") or 0.0
         self._gate_on = gv > 0.1
@@ -406,16 +405,7 @@ class VoicemeeterPlugin(Plugin):
 
         return False
 
-    # ── MIDI joystick ──────────────────────────────────────────────────────────
-
-    def on_pitch_bend(self, value: int) -> bool:
-        if not self._active or not self._vm.connected:
-            return False
-        self._joy_offset = ((value - 8192) / 8192.0) * 12.0
-        gain = max(-60.0, min(12.0, self._b1_baseline + self._joy_offset))
-        self._vm.set("Bus[3].Gain", gain)
-        self._ui_dirty = True
-        return True
+    # Joystick is now used globally for mode switching (see main.py)
 
     # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -849,7 +839,7 @@ class VoicemeeterPlugin(Plugin):
         dpg.add_text("Bus B1 (Mic Out):", parent=parent_tag, color=(140, 140, 170))
         dpg.add_text(f"  EQ: {'ON' if self._eq_on else 'OFF'}", parent=parent_tag)
         dpg.add_text(f"  Gain: {self._b1_baseline:+.1f} dB", parent=parent_tag)
-        dpg.add_text(f"  Joy offset: {self._joy_offset:+.1f} dB", parent=parent_tag)
+        dpg.add_text("  Joystick: mode switcher (global)", parent=parent_tag)
 
         # ── routing summary ──
         dpg.add_spacer(height=8, parent=parent_tag)

@@ -31,6 +31,7 @@ class KnobMapping:
 class Mode:
     name: str
     color: str
+    icon: str = ""
     pads: list[PadMapping] = field(default_factory=list)
 
 @dataclass
@@ -63,6 +64,7 @@ def load_config(path: str | Path) -> AppConfig:
         mode = Mode(
             name=mode_data["name"],
             color=mode_data.get("color", "#888888"),
+            icon=mode_data.get("icon", ""),
         )
         for pad_data in mode_data.get("pads", []):
             act = pad_data["action"]
@@ -148,7 +150,7 @@ class Mapper:
     @property
     def current_mode(self) -> Mode:
         if not self.config.modes:
-            return Mode(name="Default", color="#888888")
+            return Mode(name="Default", color="#888888", icon="DEF")
         return self.config.modes[self.current_mode_index]
     
     @property

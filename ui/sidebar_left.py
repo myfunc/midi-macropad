@@ -7,18 +7,28 @@ from ui import selection
 _mode_callback = None
 _plugin_toggle_callback = None
 _mode_btn_tags: list[str] = []
+_mode_icon_tags: list[str] = []
 _mode_colors: list[tuple[int, int, int]] = []
+_mode_icons: list[str] = []
 _active_index: int = 0
 _manual_override: bool = False
+_mode_count: int = 0
 
 
 def create_left_sidebar(parent="panel_left", *, mode_names, mode_colors,
-                        callback=None, plugin_toggle_callback=None):
-    global _mode_callback, _plugin_toggle_callback
+                        mode_icons=None, callback=None,
+                        plugin_toggle_callback=None):
+    global _mode_callback, _plugin_toggle_callback, _mode_count
     _mode_callback = callback
     _plugin_toggle_callback = plugin_toggle_callback
     _mode_btn_tags.clear()
+    _mode_icon_tags.clear()
     _mode_colors.clear()
+    _mode_icons.clear()
+
+    if mode_icons is None:
+        mode_icons = [""] * len(mode_names)
+    _mode_count = len(mode_names)
 
     with dpg.child_window(parent=parent, border=False):
         dpg.add_spacer(height=6)
@@ -52,21 +62,37 @@ def create_left_sidebar(parent="panel_left", *, mode_names, mode_colors,
 
         dpg.add_spacer(height=10)
         dpg.add_text("  MODES", color=(75, 78, 95))
-        dpg.add_spacer(height=4)
+        dpg.add_spacer(height=6)
 
-        for i, (name, color) in enumerate(zip(mode_names, mode_colors)):
-            tag = f"sl_mode_{i}"
+        for i, (name, color, icon) in enumerate(zip(mode_names, mode_colors, mode_icons)):
+            btn_tag = f"sl_mode_{i}"
+            icon_tag = f"sl_mode_icon_{i}"
             r, g, b = hex_to_rgb(color)
             _mode_colors.append((r, g, b))
+            _mode_icons.append(icon)
 
             def _make_cb(idx):
                 return lambda: _on_mode_click(idx)
 
-            dpg.add_button(label=f"   {name}", tag=tag, width=-1, height=28,
-                           callback=_make_cb(i))
-            _mode_btn_tags.append(tag)
+            with dpg.group(horizontal=True, parent=parent):
+                dpg.add_spacer(width=4)
+                dpg.add_button(
+                    tag=icon_tag,
+                    label=f" {icon} " if icon else "   ",
+                    width=42, height=32,
+                    callback=_make_cb(i),
+                )
+                dpg.add_button(
+                    label=f" {name}",
+                    tag=btn_tag, width=-1, height=32,
+                    callback=_make_cb(i),
+                )
+            dpg.add_spacer(height=2, parent=parent)
 
-        dpg.add_spacer(height=10)
+            _mode_btn_tags.append(btn_tag)
+            _mode_icon_tags.append(icon_tag)
+
+        dpg.add_spacer(height=8)
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=6)
             dpg.add_text("Flip:", color=(75, 78, 95))
@@ -131,7 +157,7 @@ def _on_profile_copy(sender, app_data):
     dpg.configure_item("sl_profile_combo", items=settings.list_profiles())
     dpg.set_value("sl_profile_name_input", "")
     if dpg.does_item_exist("sl_profile_status"):
-        dpg.set_value("sl_profile_status", f"Copied → {new_name}")
+        dpg.set_value("sl_profile_status", f"Copied -> {new_name}")
         dpg.configure_item("sl_profile_status", color=(100, 255, 150))
 
 
@@ -145,33 +171,59 @@ def _on_mode_click(index):
 
 
 def _update_mode_highlight(index):
-    for i, tag in enumerate(_mode_btn_tags):
-        if not dpg.does_item_exist(tag):
+    for i, (btn_tag, icon_tag) in enumerate(zip(_mode_btn_tags, _mode_icon_tags)):
+        if not dpg.does_item_exist(btn_tag):
             continue
         r, g, b = _mode_colors[i] if i < len(_mode_colors) else (100, 100, 120)
-        if i == index:
-            with dpg.theme() as t:
+        active = i == index
+
+        if active:
+            with dpg.theme() as btn_t:
                 with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 40))
-                    dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 255))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
-                                        (r, g, b, 60))
-            dpg.bind_item_theme(tag, t)
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 45))
+                    dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 65))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 80))
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
+            with dpg.theme() as icon_t:
+                with dpg.theme_component(dpg.mvButton):
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 120))
+                    dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 150))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 180))
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 4)
         else:
-            with dpg.theme() as t:
+            with dpg.theme() as btn_t:
                 with dpg.theme_component(dpg.mvButton):
                     dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
-                    dpg.add_theme_color(dpg.mvThemeCol_Text,
-                                        (r, g, b, 140))
-                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
-                                        (r, g, b, 28))
-            dpg.bind_item_theme(tag, t)
+                    dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 140))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 28))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 45))
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
+            with dpg.theme() as icon_t:
+                with dpg.theme_component(dpg.mvButton):
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 25))
+                    dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 140))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 45))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 65))
+                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 4)
+
+        dpg.bind_item_theme(btn_tag, btn_t)
+        dpg.bind_item_theme(icon_tag, icon_t)
 
 
 def set_active_mode(index):
     global _active_index
     _active_index = index
     _update_mode_highlight(index)
+
+
+def get_mode_count() -> int:
+    return _mode_count
 
 
 def is_manual_override():
