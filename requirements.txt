@@ -5,7 +5,7 @@ pycaw
 dearpygui
 comtypes
 toml
-obs-websocket-py
+obsws-python
 sounddevice
 soundfile
 numpy

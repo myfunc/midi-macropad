@@ -122,9 +122,9 @@ class OBSSessionPlugin(Plugin):
         self.scene_screen = "MM_Screen"
         self.scene_camera = "MM_Camera"
         self.scene_pip = "MM_ScreenPiP"
-        self.right_screen_source = "MM_Right Screen"
-        self.camera_source = "MM_Webcam"
-        self.mic_source = "MM_Microphone"
+        self.right_screen_source = "Display Capture"
+        self.camera_source = "WebCam"
+        self.mic_source = "Mic/Aux"
         self.output_dir = ""
         self.auto_setup_scene = True
         self.postprocess_stitch = True
@@ -699,21 +699,21 @@ class OBSSessionPlugin(Plugin):
 
     # -- OBS callbacks (recv thread) ---------------------------------------
 
-    def _on_record_state_changed(self, message) -> None:
+    def _on_record_state_changed(self, data) -> None:
         try:
-            active = None
-            if hasattr(message, "getOutputActive"):
-                active = bool(message.getOutputActive())
+            active = getattr(data, "output_active", None)
+            if active is None and isinstance(data, dict):
+                active = data.get("outputActive")
             if active is not None:
-                self.recording = active
+                self.recording = bool(active)
         except Exception as exc:
             log.debug("RecordStateChanged parse: %s", exc)
 
-    def _on_record_file_changed(self, message) -> None:
+    def _on_record_file_changed(self, data) -> None:
         try:
-            path = message.getNewOutputPath() if hasattr(message, "getNewOutputPath") else None
-            if not path and hasattr(message, "getOutputPath"):
-                path = message.getOutputPath()
+            path = getattr(data, "output_path", None)
+            if path is None and isinstance(data, dict):
+                path = data.get("outputPath") or data.get("newOutputPath")
             if path:
                 p = str(path)
                 self._latest_record_path = p
