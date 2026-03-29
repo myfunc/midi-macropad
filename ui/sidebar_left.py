@@ -158,11 +158,6 @@ def create_left_sidebar(parent="panel_left", *, mode_names, mode_colors,
             _mode_icon_tags.append(icon_tag)
 
         dpg.add_spacer(height=8)
-        with dpg.group(horizontal=True):
-            dpg.add_spacer(width=6)
-            dpg.add_text("Flip:", color=(75, 78, 95))
-            dpg.add_button(label=" Normal ", tag="inverted_btn", small=True)
-
         dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=6)

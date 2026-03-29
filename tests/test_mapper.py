@@ -1,10 +1,8 @@
-from types import SimpleNamespace
+
 
 import pytest
 
 from mapper import (
-    PAD_NOTE_MAX,
-    PAD_NOTE_MIN,
     ActionDef,
     AppConfig,
     KnobMapping,
@@ -74,28 +72,6 @@ def test_load_config_missing_file(tmp_path):
     missing = tmp_path / "nope.toml"
     with pytest.raises(FileNotFoundError):
         load_config(missing)
-
-
-def test_remap_pad_notes_when_inverted():
-    cfg = AppConfig()
-    cfg.modes = [Mode(name="m", color="#000")]
-    m = Mapper(cfg)
-    m.inverted = True
-    ev = SimpleNamespace(type="pad_press", note=PAD_NOTE_MIN)
-    m.remap_event(ev)
-    assert ev.note == PAD_NOTE_MAX
-    ev2 = SimpleNamespace(type="pad_release", note=PAD_NOTE_MAX)
-    m.remap_event(ev2)
-    assert ev2.note == PAD_NOTE_MIN
-
-
-def test_remap_identity_when_not_inverted():
-    cfg = AppConfig()
-    m = Mapper(cfg)
-    m.inverted = False
-    ev = SimpleNamespace(type="pad_press", note=20)
-    m.remap_event(ev)
-    assert ev.note == 20
 
 
 def test_lookup_pad_mapped():

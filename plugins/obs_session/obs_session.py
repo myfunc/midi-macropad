@@ -24,12 +24,27 @@ log = get_logger("obs_session")
 MODE_NAME = "OBS"
 SETTINGS_KEY = "obs_session_plugin"
 
-PAD_SCENE_SCREEN = 16
-PAD_SCENE_CAMERA = 17
-PAD_SCENE_PIP = 18
-PAD_MUTE_MIC = 19
-PAD_SESSION = 20
-PAD_RECORD = 21
+PAD_ACTIONS = [
+    {"id": "scene_screen", "label": "Screen", "color": (100, 180, 255), "desc": "Right half of monitor"},
+    {"id": "scene_camera", "label": "Camera", "color": (100, 180, 255), "desc": "Webcam fullscreen"},
+    {"id": "scene_pip", "label": "PiP", "color": (100, 180, 255), "desc": "Screen + camera corner"},
+    {"id": "mute_mic", "label": "Mute Mic", "color": (150, 150, 165), "desc": "Toggle microphone"},
+    {"id": "session", "label": "Session", "color": (255, 200, 90), "desc": "Start or stop diary session"},
+    {"id": "record", "label": "Record", "color": (255, 120, 120), "desc": "Record or toggle segment"},
+]
+PAD_ACTION_IDS = [a["id"] for a in PAD_ACTIONS]
+
+DEFAULT_SLOT_MAP: dict[int, str | None] = {
+    16: "scene_screen",
+    17: "scene_camera",
+    18: "scene_pip",
+    19: "mute_mic",
+    20: "session",
+    21: "record",
+    22: None,
+    23: None,
+}
+ALL_NOTES = [16, 17, 18, 19, 20, 21, 22, 23]
 
 _CONNECTED_OK = (100, 255, 150)
 _CONNECTED_BAD = (255, 90, 90)
@@ -122,7 +137,7 @@ class OBSSessionPlugin(Plugin):
         self.scene_screen = "MM_Screen"
         self.scene_camera = "MM_Camera"
         self.scene_pip = "MM_ScreenPiP"
-        self.right_screen_source = "Display Capture"
+        self.right_screen_source = "Right Screen"
         self.camera_source = "WebCam"
         self.mic_source = "Mic/Aux"
         self.output_dir = ""
@@ -130,6 +145,7 @@ class OBSSessionPlugin(Plugin):
         self.postprocess_stitch = True
         self.postprocess_transcript = False
         self.postprocess_open_folder = True
+        self._slot_map: dict[int, str | None] = dict(DEFAULT_SLOT_MAP)
 
         self.connected = False
         self.session_state = "idle"
@@ -195,6 +211,16 @@ class OBSSessionPlugin(Plugin):
         self.postprocess_transcript = bool(_m("postprocess_transcript", self.postprocess_transcript))
         self.postprocess_open_folder = bool(_m("postprocess_open_folder", self.postprocess_open_folder))
 
+        saved_slots = saved.get("pad_slots")
+        if isinstance(saved_slots, dict):
+            for note in ALL_NOTES:
+                key = str(note)
+                if key in saved_slots:
+                    val = saved_slots[key]
+                    self._slot_map[note] = val if val in PAD_ACTION_IDS else None
+                else:
+                    self._slot_map[note] = DEFAULT_SLOT_MAP.get(note)
+
         # Migrate old single working_scene setting
         old_ws = saved.get("working_scene")
         if old_ws and not saved.get("scene_screen"):
@@ -235,40 +261,39 @@ class OBSSessionPlugin(Plugin):
             except Exception:
                 pass
 
+    def _note_to_action(self, note: int) -> str | None:
+        return self._slot_map.get(note)
+
     def on_pad_press(self, note: int, velocity: int) -> bool:
         if not self._active:
             return False
-        if note == PAD_SCENE_SCREEN:
+        action = self._note_to_action(note)
+        if action is None:
+            return False
+        if action == "scene_screen":
             self._action_switch_scene(self.scene_screen)
-            return True
-        if note == PAD_SCENE_CAMERA:
+        elif action == "scene_camera":
             self._action_switch_scene(self.scene_camera)
-            return True
-        if note == PAD_SCENE_PIP:
+        elif action == "scene_pip":
             self._action_switch_scene(self.scene_pip)
-            return True
-        if note == PAD_MUTE_MIC:
+        elif action == "mute_mic":
             self._action_toggle_mute_mic()
-            return True
-        if note == PAD_SESSION:
+        elif action == "session":
             if self.session_state == "running":
                 self._action_stop_session()
             else:
                 self._action_start_session()
-            return True
-        if note == PAD_RECORD:
+        elif action == "record":
             if self.session_state == "running":
                 self._action_toggle_record()
             else:
                 self._action_toggle_record_simple()
-            return True
-        return False
+        else:
+            return False
+        return True
 
     def on_pad_release(self, note: int) -> bool:
-        return self._active and note in {
-            PAD_SCENE_SCREEN, PAD_SCENE_CAMERA, PAD_SCENE_PIP,
-            PAD_MUTE_MIC, PAD_SESSION, PAD_RECORD,
-        }
+        return self._active and self._note_to_action(note) is not None
 
     def poll(self) -> None:
         now = time.monotonic()
@@ -296,22 +321,29 @@ class OBSSessionPlugin(Plugin):
 
     # -- status + pad labels ------------------------------------------------
 
+    def _dynamic_label(self, action_id: str) -> str:
+        in_session = self.session_state == "running"
+        if action_id == "session":
+            return "Stop Session" if in_session else "Start Session"
+        if action_id == "record":
+            if in_session and self.recording:
+                return "Stop Segment"
+            if in_session:
+                return "Record Segment"
+            return "Stop Rec" if self.recording else "Record"
+        for a in PAD_ACTIONS:
+            if a["id"] == action_id:
+                return a["label"]
+        return action_id
+
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:
             return {}
-        in_session = self.session_state == "running"
-        return {
-            PAD_SCENE_SCREEN: "Screen",
-            PAD_SCENE_CAMERA: "Camera",
-            PAD_SCENE_PIP: "PiP",
-            PAD_MUTE_MIC: "Mute Mic",
-            PAD_SESSION: "Stop Session" if in_session else "Start Session",
-            PAD_RECORD: "Stop Segment" if (in_session and self.recording) else (
-                "Record Segment" if in_session else (
-                    "Stop Rec" if self.recording else "Record"
-                )
-            ),
-        }
+        labels: dict[int, str] = {}
+        for note, action_id in self._slot_map.items():
+            if action_id:
+                labels[note] = self._dynamic_label(action_id)
+        return labels
 
     def get_status(self) -> tuple[str, tuple[int, int, int]] | None:
         if not self._active:
@@ -487,14 +519,13 @@ class OBSSessionPlugin(Plugin):
 
         dpg.add_spacer(height=10, parent=parent_tag)
         dpg.add_text("Pad Mapping", parent=parent_tag, color=(150, 150, 165))
-        dpg.add_text("Pad 1  Screen scene", parent=parent_tag)
-        dpg.add_text("Pad 2  Camera scene", parent=parent_tag)
-        dpg.add_text("Pad 3  Screen+PiP scene", parent=parent_tag)
-        dpg.add_text("Pad 4  Mute microphone", parent=parent_tag)
-        dpg.add_text("Pad 5  Start / Stop session", parent=parent_tag)
-        dpg.add_text("Pad 6  Record / Segment", parent=parent_tag)
+        for note in ALL_NOTES:
+            action_id = self._slot_map.get(note)
+            pad_name = self._note_label(note)
+            action_name = self._dynamic_label(action_id) if action_id else "(free)"
+            dpg.add_text(f"{pad_name}  {action_name}", parent=parent_tag)
         dpg.add_text(
-            "Pads 5-6 change behavior depending on whether a diary session is active.",
+            "Drag and drop pads in the main panel to rearrange.",
             parent=parent_tag,
             wrap=260,
             color=(120, 120, 140),
@@ -518,13 +549,127 @@ class OBSSessionPlugin(Plugin):
 
         self._refresh_ui()
 
+    def _action_for_id(self, action_id: str) -> dict | None:
+        for a in PAD_ACTIONS:
+            if a["id"] == action_id:
+                return a
+        return None
+
+    def _exec_action(self, action_id: str) -> None:
+        if action_id == "scene_screen":
+            self._action_switch_scene(self.scene_screen)
+        elif action_id == "scene_camera":
+            self._action_switch_scene(self.scene_camera)
+        elif action_id == "scene_pip":
+            self._action_switch_scene(self.scene_pip)
+        elif action_id == "mute_mic":
+            self._action_toggle_mute_mic()
+        elif action_id == "session":
+            if self.session_state == "running":
+                self._action_stop_session()
+            else:
+                self._action_start_session()
+        elif action_id == "record":
+            if self.session_state == "running":
+                self._action_toggle_record()
+            else:
+                self._action_toggle_record_simple()
+
+    def _swap_pads(self, note_a: int, note_b: int) -> None:
+        if note_a == note_b:
+            return
+        self._slot_map[note_a], self._slot_map[note_b] = (
+            self._slot_map[note_b],
+            self._slot_map[note_a],
+        )
+        self._persist_settings()
+        self._rebuild_pad_grid()
+
+    def _rebuild_pad_grid(self) -> None:
+        try:
+            import dearpygui.dearpygui as dpg
+        except Exception:
+            return
+        panel = "obs_session_pad_grid"
+        if not dpg.does_item_exist(panel):
+            return
+        dpg.delete_item(panel, children_only=True)
+        self._build_pad_grid_contents(dpg, panel)
+        self._refresh_ui()
+
+    def _note_label(self, note: int) -> str:
+        row_top = [20, 21, 22, 23]
+        row_bot = [16, 17, 18, 19]
+        if note in row_top:
+            return f"Pad {row_top.index(note) + 5}"
+        if note in row_bot:
+            return f"Pad {row_bot.index(note) + 1}"
+        return f"N{note}"
+
+    def _build_pad_grid_contents(self, dpg, parent: str) -> None:
+        top_row = [20, 21, 22, 23]
+        bot_row = [16, 17, 18, 19]
+
+        def _make_drop_cb(target_note):
+            def cb(sender, app_data):
+                source_note = app_data
+                if isinstance(source_note, int):
+                    self._swap_pads(source_note, target_note)
+            return cb
+
+        def _make_exec_cb(note):
+            def cb():
+                aid = self._slot_map.get(note)
+                if aid:
+                    self._exec_action(aid)
+            return cb
+
+        for row_notes in (top_row, bot_row):
+            with dpg.group(horizontal=True, parent=parent):
+                for note in row_notes:
+                    action_id = self._slot_map.get(note)
+                    info = self._action_for_id(action_id) if action_id else None
+                    label = self._note_label(note)
+                    color = info["color"] if info else (60, 60, 75)
+                    title = self._dynamic_label(action_id) if action_id else "(free)"
+                    desc = info["desc"] if info else "Drag a pad here to assign"
+                    card_tag = f"obs_pad_card_{note}"
+                    btn_tag = f"obs_pad_btn_{note}"
+                    lbl_tag = f"obs_pad_lbl_{note}"
+
+                    with dpg.child_window(
+                        tag=card_tag,
+                        width=160,
+                        height=100,
+                        border=True,
+                        drop_callback=_make_drop_cb(note),
+                        payload_type="obs_pad",
+                    ):
+                        dpg.add_text(label, color=color)
+                        dpg.add_text(title, tag=lbl_tag, color=(230, 232, 238))
+                        dpg.add_text(desc, wrap=140, color=(120, 120, 140))
+                        if action_id:
+                            dpg.add_button(
+                                tag=btn_tag,
+                                label=title,
+                                width=-1,
+                                callback=_make_exec_cb(note),
+                            )
+                        with dpg.drag_payload(
+                            parent=card_tag,
+                            drag_data=note,
+                            payload_type="obs_pad",
+                        ):
+                            dpg.add_text(f"{label}: {title}")
+            dpg.add_spacer(height=4, parent=parent)
+
     def build_ui(self, parent_tag: str) -> None:
         import dearpygui.dearpygui as dpg
 
         dpg.add_text("OBS Workflow", parent=parent_tag, color=(110, 190, 255))
         dpg.add_text(
-            "Switch scenes with Pads 1-3, mute mic on Pad 4. "
-            "Start a diary session on Pad 5, record segments on Pad 6.",
+            "Drag and drop pad cards to rearrange assignments. "
+            "Pads 5-6 change behavior depending on whether a diary session is active.",
             parent=parent_tag,
             wrap=720,
             color=(120, 120, 140),
@@ -562,82 +707,13 @@ class OBSSessionPlugin(Plugin):
                         )
 
         dpg.add_spacer(height=6, parent=parent_tag)
-        with dpg.group(horizontal=True, parent=parent_tag):
-            with dpg.child_window(width=160, height=100, border=True):
-                dpg.add_text("PAD 1", color=(100, 180, 255))
-                dpg.add_text("Screen", color=(230, 232, 238))
-                dpg.add_text("Right half of monitor", wrap=140, color=(120, 120, 140))
-                dpg.add_button(
-                    tag="obs_session_btn_scene_screen",
-                    label="Screen",
-                    width=-1,
-                    callback=lambda: self._action_switch_scene(self.scene_screen),
-                )
-            with dpg.child_window(width=160, height=100, border=True):
-                dpg.add_text("PAD 2", color=(100, 180, 255))
-                dpg.add_text("Camera", color=(230, 232, 238))
-                dpg.add_text("Webcam fullscreen", wrap=140, color=(120, 120, 140))
-                dpg.add_button(
-                    tag="obs_session_btn_scene_camera",
-                    label="Camera",
-                    width=-1,
-                    callback=lambda: self._action_switch_scene(self.scene_camera),
-                )
-            with dpg.child_window(width=160, height=100, border=True):
-                dpg.add_text("PAD 3", color=(100, 180, 255))
-                dpg.add_text("Screen+PiP", color=(230, 232, 238))
-                dpg.add_text("Screen + camera corner", wrap=140, color=(120, 120, 140))
-                dpg.add_button(
-                    tag="obs_session_btn_scene_pip",
-                    label="PiP",
-                    width=-1,
-                    callback=lambda: self._action_switch_scene(self.scene_pip),
-                )
-            with dpg.child_window(width=-1, height=100, border=True):
-                dpg.add_text("PAD 4", color=(150, 150, 165))
-                dpg.add_text("Mute Mic", color=(230, 232, 238))
-                dpg.add_text("Toggle microphone", wrap=140, color=(120, 120, 140))
-                dpg.add_button(
-                    tag="obs_session_btn_mute",
-                    label="Mute Mic",
-                    width=-1,
-                    callback=self._action_toggle_mute_mic,
-                )
-        with dpg.group(horizontal=True, parent=parent_tag):
-            with dpg.child_window(width=240, height=100, border=True):
-                dpg.add_text("PAD 5", color=(255, 200, 90))
-                dpg.add_text("", tag="obs_session_lbl_pad5", color=(230, 232, 238))
-                dpg.add_text(
-                    "Start or stop the diary session",
-                    wrap=220,
-                    color=(120, 120, 140),
-                )
-                dpg.add_button(
-                    tag="obs_session_btn_session",
-                    label="Start Session",
-                    width=-1,
-                    callback=lambda: (
-                        self._action_stop_session() if self.session_state == "running"
-                        else self._action_start_session()
-                    ),
-                )
-            with dpg.child_window(width=240, height=100, border=True):
-                dpg.add_text("PAD 6", color=(255, 120, 120))
-                dpg.add_text("", tag="obs_session_lbl_pad6", color=(230, 232, 238))
-                dpg.add_text(
-                    "Record or toggle segment",
-                    wrap=220,
-                    color=(120, 120, 140),
-                )
-                dpg.add_button(
-                    tag="obs_session_btn_record",
-                    label="Record",
-                    width=-1,
-                    callback=lambda: (
-                        self._action_toggle_record() if self.session_state == "running"
-                        else self._action_toggle_record_simple()
-                    ),
-                )
+        dpg.add_child_window(
+            tag="obs_session_pad_grid",
+            parent=parent_tag,
+            height=220,
+            border=False,
+        )
+        self._build_pad_grid_contents(dpg, "obs_session_pad_grid")
 
         dpg.add_spacer(height=6, parent=parent_tag)
         dpg.add_text("Segment Timeline", parent=parent_tag, color=(150, 150, 165))
@@ -1285,6 +1361,7 @@ class OBSSessionPlugin(Plugin):
                 "postprocess_stitch": self.postprocess_stitch,
                 "postprocess_transcript": self.postprocess_transcript,
                 "postprocess_open_folder": self.postprocess_open_folder,
+                "pad_slots": {str(k): v for k, v in self._slot_map.items()},
             },
         )
 
@@ -1702,38 +1779,21 @@ class OBSSessionPlugin(Plugin):
         self._render_segments_panel(dpg)
         self._render_catalog_panel(dpg)
 
-        # Dynamic pad labels
-        pad5_label = "Stop Session" if in_session else "Start Session"
-        if in_session and self.recording:
-            pad6_label = "Stop Segment"
-        elif in_session:
-            pad6_label = "Record Segment"
-        elif self.recording:
-            pad6_label = "Stop Rec"
-        else:
-            pad6_label = "Record"
-
-        self._set_text_if_exists(dpg, "obs_session_lbl_pad5", pad5_label, (230, 232, 238))
-        self._set_text_if_exists(dpg, "obs_session_lbl_pad6", pad6_label, (230, 232, 238))
-
-        if dpg.does_item_exist("obs_session_btn_session"):
-            dpg.configure_item("obs_session_btn_session", label=pad5_label)
-        if dpg.does_item_exist("obs_session_btn_record"):
-            dpg.configure_item("obs_session_btn_record", label=pad6_label)
+        for note in ALL_NOTES:
+            action_id = self._slot_map.get(note)
+            if action_id:
+                lbl = self._dynamic_label(action_id)
+                self._set_text_if_exists(dpg, f"obs_pad_lbl_{note}", lbl, (230, 232, 238))
+                btn_tag = f"obs_pad_btn_{note}"
+                if dpg.does_item_exist(btn_tag):
+                    dpg.configure_item(btn_tag, label=lbl)
+                    can_use = ui_connected and not self._postprocess_running
+                    if action_id in ("scene_screen", "scene_camera", "scene_pip", "mute_mic"):
+                        can_use = ui_connected
+                    dpg.configure_item(btn_tag, enabled=can_use)
 
         self._set_button_enabled_if_exists(dpg, "obs_session_btn_connect", not ui_connected)
         self._set_button_enabled_if_exists(dpg, "obs_session_btn_disconnect", ui_connected)
-        for btn in ("obs_session_btn_scene_screen", "obs_session_btn_scene_camera",
-                     "obs_session_btn_scene_pip", "obs_session_btn_mute"):
-            self._set_button_enabled_if_exists(dpg, btn, ui_connected)
-        self._set_button_enabled_if_exists(
-            dpg, "obs_session_btn_session",
-            ui_connected and not self._postprocess_running,
-        )
-        self._set_button_enabled_if_exists(
-            dpg, "obs_session_btn_record",
-            ui_connected and not self._postprocess_running,
-        )
 
     @staticmethod
     def _set_text_if_exists(dpg, tag: str, value: str, color: tuple[int, int, int]) -> None:

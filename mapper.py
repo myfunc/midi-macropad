@@ -108,33 +108,8 @@ class Mapper:
     def __init__(self, config: AppConfig):
         self.config = config
         self.current_mode_index = 0
-        self._inverted = False
         self._pad_maps = []
         self._rebuild_pad_maps()
-
-    @property
-    def inverted(self) -> bool:
-        return self._inverted
-
-    @inverted.setter
-    def inverted(self, value: bool):
-        self._inverted = value
-
-    def remap_event(self, event):
-        """Apply 180° physical rotation: remap pad notes and invert joystick.
-
-        Mutates the event in place. Knobs are left untouched — physical
-        rotation direction stays intuitive for pots.
-        """
-        if not self._inverted:
-            return
-        if event.type in ("pad_press", "pad_release"):
-            if PAD_NOTE_MIN <= event.note <= PAD_NOTE_MAX:
-                event.note = PAD_NOTE_MIN + PAD_NOTE_MAX - event.note
-        elif event.type == "pitch_bend":
-            event.pitch = max(-8192, min(8191, -event.pitch))
-        elif event.type == "knob" and event.cc == JOYSTICK_CC:
-            event.value = 127 - event.value
     
     def _rebuild_pad_maps(self):
         self._pad_maps = []

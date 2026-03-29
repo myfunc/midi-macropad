@@ -247,26 +247,10 @@ def on_plugin_toggle(name, info, enabled):
 
 # ---- MIDI event handling ----------------------------------------------------
 
-def on_inverted_toggle():
-    mapper.inverted = not mapper.inverted
-    settings.put("inverted", mapper.inverted)
-    if mapper.inverted:
-        dpg.set_item_label("inverted_btn", " FLIPPED ")
-        dpg.bind_item_theme("inverted_btn", _flipped_btn_theme)
-    else:
-        dpg.set_item_label("inverted_btn", " Normal ")
-        dpg.bind_item_theme("inverted_btn", 0)
-    add_log_entry("SYS",
-                  f"Flipped mode {'ON' if mapper.inverted else 'OFF'}",
-                  color=(255, 160, 60))
-
-
 def handle_midi_event(event: MidiEvent):
     global _midi_event_count
     _midi_event_count += 1
     try:
-        mapper.remap_event(event)
-
         if event.type == "pad_press":
             flash_pad(event.note, event.velocity)
             leds.pad_on(event.note, event.velocity)
@@ -688,21 +672,6 @@ def main():
     set_master_cap_display(audio.midi_master_cap)
     set_mic_cap_display(audio.midi_mic_cap)
 
-    # Flipped-mode theme
-    global _flipped_btn_theme
-    with dpg.theme() as _flipped_btn_theme:
-        with dpg.theme_component(dpg.mvButton):
-            dpg.add_theme_color(dpg.mvThemeCol_Button, (180, 90, 20, 255))
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (210, 110, 30, 255))
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (230, 130, 40, 255))
-            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-    dpg.set_item_callback("inverted_btn", on_inverted_toggle)
-
-    mapper.inverted = settings.get("inverted", False)
-    if mapper.inverted:
-        dpg.set_item_label("inverted_btn", " FLIPPED ")
-        dpg.bind_item_theme("inverted_btn", _flipped_btn_theme)
-
     set_rebuild_fn(_on_selection_changed)
 
     # Restore saved mode (clamp after config/mode list changes)
@@ -747,8 +716,6 @@ def main():
     log_startup_banner(list(plugin_manager.enabled))
 
     # Tooltips
-    register_tooltip("inverted_btn",
-                     "Flip pad layout 180\u00b0 for upside-down use")
     register_tooltip("master_vol_slider",
                      "Master volume -- also controlled by MIDI Knob 1 (CC 48)")
     register_tooltip("mic_vol_slider",

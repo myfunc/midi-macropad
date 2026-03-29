@@ -1,0 +1,638 @@
+{
+  "obs_version": "32.1.0",
+  "websocket_version": "5.7.2",
+  "video_settings": {
+    "base_width": 1920,
+    "base_height": 1080,
+    "output_width": 1920,
+    "output_height": 1080
+  },
+  "current_scene": "MM_ScreenPiP",
+  "scenes": [
+    {
+      "sceneName": "OLD",
+      "sceneIndex": 0,
+      "items": [
+        {
+          "sceneItemId": 14,
+          "sourceName": "Receiver 2",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "game_capture",
+          "sceneItemEnabled": false,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.7942523956298828,
+            "scaleY": 0.7941176295280457,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 10,
+          "sourceName": "Display Capture",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "monitor_capture",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 2560,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.75,
+            "scaleY": 0.75,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 9,
+          "sourceName": "Of Ash and Steel",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "game_capture",
+          "sceneItemEnabled": false,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.75,
+            "scaleY": 0.75,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 7,
+          "sourceName": "Buckshot Roulette",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "game_capture",
+          "sceneItemEnabled": false,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.7939444780349731,
+            "scaleY": 0.7941176295280457,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 1,
+          "sourceName": "CloverPit",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "game_capture",
+          "sceneItemEnabled": false,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.7938251495361328,
+            "scaleY": 0.7941176891326904,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 4,
+          "sourceName": "WebView (BR)",
+          "sourceType": "OBS_SOURCE_TYPE_SCENE",
+          "inputKind": null,
+          "sceneItemEnabled": false,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 359.409423828125,
+            "positionX": 1665.0,
+            "positionY": 816.0,
+            "rotation": 0.0,
+            "scaleX": 0.6692913174629211,
+            "scaleY": 0.6692913174629211,
+            "sourceHeight": 537.0,
+            "sourceWidth": 381.0,
+            "width": 254.99998474121094
+          }
+        },
+        {
+          "sceneItemId": 6,
+          "sourceName": "WebView",
+          "sourceType": "OBS_SOURCE_TYPE_SCENE",
+          "inputKind": null,
+          "sceneItemEnabled": false,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 603.8306274414062,
+            "positionX": -0.00048828125,
+            "positionY": 481.00079345703125,
+            "rotation": 0.0,
+            "scaleX": 4.831818103790283,
+            "scaleY": 4.8306450843811035,
+            "sourceHeight": 125.0,
+            "sourceWidth": 397.0,
+            "width": 1918.2318115234375
+          }
+        },
+        {
+          "sceneItemId": 12,
+          "sourceName": "ARC Raiders",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "game_capture",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.75,
+            "scaleY": 0.75,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 13,
+          "sourceName": "GPT",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "window_capture",
+          "sceneItemEnabled": false,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 466.0,
+            "positionY": 261.0,
+            "rotation": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 15,
+          "sourceName": "Chrome",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "window_capture",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 152.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.7754807472229004,
+            "scaleY": 0.7757009267807007,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "sceneName": "MM_Screen",
+      "sceneIndex": 1,
+      "items": [
+        {
+          "sceneItemId": 2,
+          "sourceName": "Mic/Aux",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "wasapi_input_capture",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 3,
+          "sourceName": "Right Screen",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "monitor_capture",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 1080.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.75,
+            "scaleY": 0.75,
+            "sourceHeight": 1440.0,
+            "sourceWidth": 5120.0,
+            "width": 3840.0
+          }
+        }
+      ]
+    },
+    {
+      "sceneName": "MM_Camera",
+      "sceneIndex": 2,
+      "items": [
+        {
+          "sceneItemId": 1,
+          "sourceName": "WebCam",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "dshow_input",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 1080.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.75,
+            "scaleY": 0.75,
+            "sourceHeight": 1440.0,
+            "sourceWidth": 2560.0,
+            "width": 1920.0
+          }
+        },
+        {
+          "sceneItemId": 2,
+          "sourceName": "Mic/Aux",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "wasapi_input_capture",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "sceneName": "MM_ScreenPiP",
+      "sceneIndex": 3,
+      "items": [
+        {
+          "sceneItemId": 1,
+          "sourceName": "Mic/Aux",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "wasapi_input_capture",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 0.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "sourceHeight": 0.0,
+            "sourceWidth": 0.0,
+            "width": 0.0
+          }
+        },
+        {
+          "sceneItemId": 4,
+          "sourceName": "Right Screen",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "monitor_capture",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 0.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 0.0,
+            "cropBottom": 0,
+            "cropLeft": 0,
+            "cropRight": 0,
+            "cropToBounds": false,
+            "cropTop": 0,
+            "height": 1080.0,
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "rotation": 0.0,
+            "scaleX": 0.75,
+            "scaleY": 0.75,
+            "sourceHeight": 1440.0,
+            "sourceWidth": 5120.0,
+            "width": 3840.0
+          }
+        },
+        {
+          "sceneItemId": 3,
+          "sourceName": "WebCam",
+          "sourceType": "OBS_SOURCE_TYPE_INPUT",
+          "inputKind": "dshow_input",
+          "sceneItemEnabled": true,
+          "sceneItemTransform": {
+            "alignment": 5,
+            "boundsAlignment": 0,
+            "boundsHeight": 282.0,
+            "boundsType": "OBS_BOUNDS_NONE",
+            "boundsWidth": 501.5,
+            "cropBottom": 200,
+            "cropLeft": 800,
+            "cropRight": 700,
+            "cropToBounds": false,
+            "cropTop": 300,
+            "height": 315.574462890625,
+            "positionX": 1662.0,
+            "positionY": 29.0,
+            "rotation": 0.0,
+            "scaleX": 0.2188679277896881,
+            "scaleY": 0.2191489338874817,
+            "sourceHeight": 1440.0,
+            "sourceWidth": 2560.0,
+            "width": 560.3018798828125
+          }
+        }
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "inputName": "Desktop Audio",
+      "inputKind": "wasapi_output_capture",
+      "inputSettings": {
+        "device_id": "{0.0.0.00000000}.{b04471ee-bf00-4f3c-8608-db06456705ba}"
+      }
+    },
+    {
+      "inputName": "Mic/Aux",
+      "inputKind": "wasapi_input_capture",
+      "inputSettings": {
+        "device_id": "{0.0.1.00000000}.{4a190e13-1c77-4782-84b8-6e7fda5bb3d3}"
+      }
+    },
+    {
+      "inputName": "Display Capture",
+      "inputKind": "monitor_capture",
+      "inputSettings": {
+        "monitor": 0,
+        "monitor_id": "\\\\?\\DISPLAY#SAM7053#4&ea5e0e5&0&UID20550#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}"
+      }
+    },
+    {
+      "inputName": "CloverPit",
+      "inputKind": "game_capture",
+      "inputSettings": {
+        "anti_cheat_hook": false,
+        "capture_mode": "window",
+        "capture_overlays": true,
+        "window": "CloverPit:UnityWndClass:CloverPit.exe"
+      }
+    },
+    {
+      "inputName": "WebCam",
+      "inputKind": "dshow_input",
+      "inputSettings": {
+        "active": true,
+        "color_space": "default",
+        "last_video_device_id": "Anker PowerConf C200:\\\\?\\usb#22vid_291a&pid_3369&mi_00#226&1e9250f4&0&0000#22{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global",
+        "video_device_id": "Anker PowerConf C200:\\\\?\\usb#22vid_291a&pid_3369&mi_00#226&1e9250f4&0&0000#22{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global"
+      }
+    },
+    {
+      "inputName": "Ava border",
+      "inputKind": "image_source",
+      "inputSettings": {
+        "file": "C:/Users/de517/OneDrive/Изображения/av.png"
+      }
+    },
+    {
+      "inputName": "Buckshot Roulette",
+      "inputKind": "game_capture",
+      "inputSettings": {
+        "capture_mode": "window",
+        "window": "Buckshot Roulette:Engine:Buckshot Roulette.exe"
+      }
+    },
+    {
+      "inputName": "Loop",
+      "inputKind": "text_gdiplus_v3",
+      "inputSettings": {
+        "font": {
+          "face": "Calibri",
+          "flags": 0,
+          "size": 256,
+          "style": "Regular"
+        },
+        "text": "Loop: 2\nPB: 3"
+      }
+    },
+    {
+      "inputName": "Of Ash and Steel",
+      "inputKind": "game_capture",
+      "inputSettings": {
+        "capture_mode": "window",
+        "window": "Of Ash and Steel  :UnrealWindow:ofAshAndSteelData-Win64-Shipping.exe"
+      }
+    },
+    {
+      "inputName": "ARC Raiders",
+      "inputKind": "game_capture",
+      "inputSettings": {
+        "capture_mode": "window",
+        "window": "​﻿​A​R﻿​​C Ra​​i﻿﻿d​​e﻿​﻿​​​​rs:DefensivePig_0486b62c:PioneerGame.exe"
+      }
+    },
+    {
+      "inputName": "GPT",
+      "inputKind": "window_capture",
+      "inputSettings": {
+        "window": "ChatGPT:Chrome_WidgetWin_1:ChatGPT.exe"
+      }
+    },
+    {
+      "inputName": "Receiver 2",
+      "inputKind": "game_capture",
+      "inputSettings": {
+        "capture_mode": "window",
+        "window": "Receiver2:UnityWndClass:Receiver2.exe"
+      }
+    },
+    {
+      "inputName": "Chrome",
+      "inputKind": "window_capture",
+      "inputSettings": {
+        "window": "Untitled scene — Excalidraw Plus - Google Chrome:Chrome_WidgetWin_1:chrome.exe"
+      }
+    },
+    {
+      "inputName": "Right Screen",
+      "inputKind": "monitor_capture",
+      "inputSettings": {
+        "monitor_id": "\\\\?\\DISPLAY#SAM7053#4&ea5e0e5&0&UID16454#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}"
+      }
+    }
+  ],
+  "record_directory": "C:/Records",
+  "record_status": {
+    "output_active": false,
+    "output_paused": false
+  },
+  "stream_status": {
+    "output_active": false
+  }
+}
