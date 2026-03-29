@@ -151,7 +151,7 @@ icon = "SND"
 # ========== Context Overrides ==========
 [[contexts]]
 process = "obs64.exe"
-mode = "OBS"
+mode = "OBS Session"
 
 [[contexts]]
 process = "voicemeeterpro_x64.exe"

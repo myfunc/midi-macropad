@@ -7,6 +7,7 @@ import json
 import os
 import queue
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -601,6 +602,26 @@ class OBSSessionPlugin(Plugin):
             tag="obs_session_segments_panel",
             parent=parent_tag,
             height=250,
+            border=True,
+        )
+        dpg.add_spacer(height=8, parent=parent_tag)
+        dpg.add_text("Sessions Catalog", parent=parent_tag, color=(150, 150, 165))
+        dpg.add_text(
+            "Recent sessions under the output folder (newest first, up to 20). Rescans every few seconds; use Refresh to update now.",
+            parent=parent_tag,
+            wrap=720,
+            color=(120, 120, 140),
+        )
+        with dpg.group(horizontal=True, parent=parent_tag):
+            dpg.add_button(
+                label="Refresh",
+                width=100,
+                callback=lambda: self._catalog_refresh_clicked(),
+            )
+        dpg.add_child_window(
+            tag="obs_session_catalog_panel",
+            parent=parent_tag,
+            height=220,
             border=True,
         )
         dpg.add_spacer(height=8, parent=parent_tag)
@@ -1280,11 +1301,194 @@ class OBSSessionPlugin(Plugin):
                         wrap=360,
                     )
 
+    def _scan_sessions_catalog(self) -> list[dict]:
+        base = self._resolve_output_base()
+        rows: list[dict] = []
+        if not base.exists():
+            self._catalog_state = "no_dir"
+            return rows
+        if not base.is_dir():
+            self._catalog_state = "not_a_dir"
+            return rows
+        try:
+            candidates = sorted(base.iterdir(), key=lambda p: p.name)
+        except OSError as exc:
+            self._catalog_state = f"scan_error: {exc}"
+            return rows
+        for path in candidates:
+            if not path.is_dir() or not path.name.startswith("session_"):
+                continue
+            manifest_path = path / "session_manifest.json"
+            created_utc = ""
+            segments_count = 0
+            status = "unknown"
+            has_final_video = False
+            if manifest_path.is_file():
+                try:
+                    data = json.loads(
+                        manifest_path.read_text(encoding="utf-8")
+                    )
+                    created_utc = str(data.get("created_utc") or "")
+                    segs = data.get("segments") or []
+                    segments_count = len(segs) if isinstance(segs, list) else 0
+                    status = str(data.get("session_state") or "unknown")
+                    post = data.get("postprocess") or {}
+                    artifacts = post.get("artifacts") or {}
+                    final_ref = artifacts.get("final")
+                    has_final_video = bool(final_ref) or (
+                        path / "session_final.mp4"
+                    ).is_file()
+                except (OSError, json.JSONDecodeError, TypeError):
+                    status = "manifest error"
+                    has_final_video = (path / "session_final.mp4").is_file()
+            else:
+                status = "no manifest"
+                has_final_video = (path / "session_final.mp4").is_file()
+            rows.append(
+                {
+                    "folder_name": path.name,
+                    "folder_path": str(path.resolve()),
+                    "created_utc": created_utc,
+                    "segments_count": segments_count,
+                    "status": status,
+                    "has_final_video": has_final_video,
+                }
+            )
+
+        def sort_key(row: dict) -> tuple:
+            iso = row.get("created_utc") or ""
+            if iso:
+                try:
+                    dt = datetime.fromisoformat(
+                        iso.replace("Z", "+00:00")
+                    )
+                    return (True, dt)
+                except ValueError:
+                    pass
+            name = row.get("folder_name") or ""
+            if name.startswith("session_") and "_" in name[8:]:
+                rest = name[8:]
+                try:
+                    date_part, time_part = rest.split("_", 1)
+                    dt = datetime.strptime(
+                        f"{date_part}_{time_part}", "%Y%m%d_%H%M%S"
+                    ).replace(tzinfo=timezone.utc)
+                    return (True, dt)
+                except ValueError:
+                    pass
+            return (False, datetime.min.replace(tzinfo=timezone.utc))
+
+        rows.sort(key=sort_key, reverse=True)
+        self._catalog_state = "ok" if rows else "empty"
+        return rows[:20]
+
+    def _catalog_refresh_clicked(self) -> None:
+        self._catalog_force_rescan = True
+        self._refresh_ui()
+
+    def _open_session_folder_explorer(self, sender, app_data, user_data) -> None:
+        path = user_data
+        if not path or not isinstance(path, str):
+            return
+        if sys.platform == "win32":
+            try:
+                subprocess.Popen(["explorer", path])
+            except OSError as exc:
+                log.warning("OBS Session catalog: open folder failed: %s", exc)
+
+    def _format_catalog_date(self, created_utc: str) -> str:
+        if not created_utc:
+            return "-"
+        try:
+            dt = datetime.fromisoformat(created_utc.replace("Z", "+00:00"))
+            return dt.astimezone().strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            return created_utc
+
+    def _render_catalog_panel(self, dpg) -> None:
+        panel_tag = "obs_session_catalog_panel"
+        if not dpg.does_item_exist(panel_tag):
+            return
+        dpg.delete_item(panel_tag, children_only=True)
+        entries = getattr(self, "_catalog_entries", None) or []
+        state = getattr(self, "_catalog_state", "empty")
+        if not entries:
+            if state == "no_dir":
+                msg = f"Output directory does not exist yet: {self._resolve_output_base()}"
+                clr = _STATUS_WARN
+            elif state == "not_a_dir":
+                msg = f"Output path exists but is not a directory: {self._resolve_output_base()}"
+                clr = _CONNECTED_BAD
+            elif state.startswith("scan_error"):
+                msg = f"Cannot read output directory: {state}"
+                clr = _CONNECTED_BAD
+            else:
+                msg = "No session folders found. Start a session to create recordings here."
+                clr = (120, 120, 140)
+            dpg.add_text(msg, parent=panel_tag, wrap=700, color=clr)
+            return
+        with dpg.table(
+            parent=panel_tag,
+            header_row=True,
+            borders_outerH=True,
+            borders_outerV=True,
+            borders_innerH=True,
+            borders_innerV=True,
+            row_background=True,
+            resizable=True,
+            policy=dpg.mvTable_SizingStretchProp,
+        ):
+            dpg.add_table_column(label="Date")
+            dpg.add_table_column(
+                label="Segments", width_fixed=True, init_width_or_weight=70
+            )
+            dpg.add_table_column(label="Status")
+            dpg.add_table_column(label="Folder")
+            dpg.add_table_column(
+                label="", width_fixed=True, init_width_or_weight=96
+            )
+            for entry in entries:
+                date_s = self._format_catalog_date(entry.get("created_utc", ""))
+                seg_n = entry.get("segments_count", 0)
+                st = entry.get("status", "")
+                if entry.get("has_final_video"):
+                    st_disp = f"{st} · final video"
+                else:
+                    st_disp = str(st)
+                folder_s = entry.get("folder_name", "-")
+                fpath = entry.get("folder_path", "")
+                with dpg.table_row():
+                    dpg.add_text(date_s)
+                    dpg.add_text(str(seg_n))
+                    dpg.add_text(st_disp)
+                    dpg.add_text(folder_s, wrap=280)
+                    dpg.add_button(
+                        label="Open Folder",
+                        width=-1,
+                        user_data=fpath,
+                        callback=self._open_session_folder_explorer,
+                    )
+
     def _refresh_ui(self) -> None:
         try:
             import dearpygui.dearpygui as dpg
         except Exception:
             return
+
+        if self._active:
+            now_cat = time.monotonic()
+            last_scan = getattr(self, "_last_catalog_scan", 0.0)
+            force = getattr(self, "_catalog_force_rescan", False)
+            if force:
+                self._catalog_force_rescan = False
+                self._last_catalog_scan = now_cat
+                self._catalog_entries = self._scan_sessions_catalog()
+            elif now_cat - last_scan >= 5.0:
+                self._last_catalog_scan = now_cat
+                self._catalog_entries = self._scan_sessions_catalog()
+            elif not hasattr(self, "_catalog_entries"):
+                self._last_catalog_scan = now_cat
+                self._catalog_entries = self._scan_sessions_catalog()
 
         obs = self._get_obs()
         live = obs.connected if obs else False
@@ -1432,6 +1636,7 @@ class OBSSessionPlugin(Plugin):
             hint_color,
         )
         self._render_segments_panel(dpg)
+        self._render_catalog_panel(dpg)
         if dpg.does_item_exist("obs_session_btn_record"):
             dpg.configure_item("obs_session_btn_record", label=record_button_label)
         self._set_button_enabled_if_exists(dpg, "obs_session_btn_connect", not ui_connected)

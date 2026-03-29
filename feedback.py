@@ -300,6 +300,8 @@ MIDI_CUES: dict[str, MidiCue] = {
 class MidiCuePlayer:
     """Serial MIDI-out helper for short notification phrases."""
 
+    _RECONNECT_DELAYS = (0.1, 0.3, 1.0, 3.0)
+
     def __init__(self, device_name: str, log_fn=None):
         self.device_name = device_name.lower()
         self._log = log_fn or (lambda *args, **kwargs: None)
@@ -308,6 +310,7 @@ class MidiCuePlayer:
         self._port = None
         self._port_name: str | None = None
         self._warned_missing = False
+        self._consecutive_failures = 0
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
 
@@ -333,11 +336,24 @@ class MidiCuePlayer:
             self._port = mido.open_output(port_name)
             self._port_name = port_name
             self._warned_missing = False
-            self._log("FEEDBACK", f"MIDI cue output connected: {port_name}", color=(100, 255, 150))
+            if self._consecutive_failures > 0:
+                self._log("FEEDBACK", f"MIDI cue output reconnected: {port_name}", color=(100, 255, 150))
+            else:
+                self._log("FEEDBACK", f"MIDI cue output connected: {port_name}", color=(100, 255, 150))
+            self._consecutive_failures = 0
             return self._port
         except Exception as exc:
             self._log("FEEDBACK", f"Failed to open MIDI output '{port_name}': {exc}", color=(255, 80, 80))
             return None
+
+    def _reconnect_with_retry(self) -> bool:
+        """Try to reopen the MIDI output port with exponential backoff."""
+        for delay in self._RECONNECT_DELAYS:
+            time.sleep(delay)
+            port = self._ensure_port()
+            if port is not None:
+                return True
+        return False
 
     def play(self, cue_id: str) -> bool:
         if cue_id not in MIDI_CUES:
@@ -348,6 +364,7 @@ class MidiCuePlayer:
     def send_messages(self, *messages: mido.Message) -> bool:
         if not messages:
             return False
+        need_reconnect = False
         with self._lock:
             port = self._ensure_port()
             if port is None:
@@ -355,11 +372,20 @@ class MidiCuePlayer:
             try:
                 for message in messages:
                     port.send(message)
+                self._consecutive_failures = 0
                 return True
             except Exception as exc:
+                self._consecutive_failures += 1
                 self._log("FEEDBACK", f"Direct MIDI send failed: {exc}", color=(255, 80, 80))
+                try:
+                    self._port.close()
+                except Exception:
+                    pass
                 self._port = None
-                return False
+                need_reconnect = True
+        if need_reconnect:
+            self._reconnect_with_retry()
+        return False
 
     def _run(self) -> None:
         while True:
@@ -380,11 +406,12 @@ class MidiCuePlayer:
         except Exception:
             self._port = None
 
-    def _play_cue(self, cue_id: str) -> None:
+    def _play_cue(self, cue_id: str, _retry: bool = False) -> None:
         cue = MIDI_CUES.get(cue_id)
         if cue is None:
             return
         shift = _transpose if cue_id.startswith("mode.") else 0
+        need_reconnect = False
         with self._lock:
             port = self._ensure_port()
             if port is None:
@@ -403,11 +430,26 @@ class MidiCuePlayer:
                         port.send(mido.Message("note_off", channel=channel, note=note, velocity=0))
                     if step.gap_ms:
                         time.sleep(step.gap_ms / 1000.0)
+                self._consecutive_failures = 0
             except Exception as exc:
-                self._log("FEEDBACK", f"MIDI cue playback failed: {exc}", color=(255, 80, 80))
+                self._consecutive_failures += 1
+                self._log(
+                    "FEEDBACK",
+                    f"MIDI cue playback failed (attempt {self._consecutive_failures}): {exc}",
+                    color=(255, 80, 80),
+                )
+                try:
+                    self._port.close()
+                except Exception:
+                    pass
                 self._port = None
+                need_reconnect = True
             finally:
                 self.all_notes_off()
+
+        if need_reconnect and not _retry:
+            if self._reconnect_with_retry():
+                self._play_cue(cue_id, _retry=True)
 
     def all_notes_off(self, channels: tuple[int, ...] = (0, 9)) -> None:
         if self._port is None:
