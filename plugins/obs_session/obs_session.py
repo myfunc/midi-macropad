@@ -137,9 +137,9 @@ class OBSSessionPlugin(Plugin):
         self.scene_screen = "MM_Screen"
         self.scene_camera = "MM_Camera"
         self.scene_pip = "MM_ScreenPiP"
-        self.right_screen_source = "Right Screen"
-        self.camera_source = "WebCam"
-        self.mic_source = "Mic/Aux"
+        self.right_screen_source = "Right Screen"  # must match OBS input name exactly
+        self.camera_source = "WebCam"              # must match OBS input name exactly
+        self.mic_source = "Mic/Aux"                # must match OBS input name exactly
         self.output_dir = ""
         self.auto_setup_scene = True
         self.postprocess_stitch = True
@@ -310,8 +310,7 @@ class OBSSessionPlugin(Plugin):
                 log.warning("OBS Session: ping failed; marked disconnected")
             else:
                 obs.refresh_recording_state()
-                if self.session_state == "running":
-                    self.recording = obs.is_recording
+                self.recording = obs.is_recording
         elif obs and not obs.connected and self.connected:
             self.connected = False
             self._connection_detail = "Connection lost"
@@ -606,6 +605,15 @@ class OBSSessionPlugin(Plugin):
             return f"Pad {row_bot.index(note) + 1}"
         return f"N{note}"
 
+    def _pad_number(self, note: int) -> int:
+        row_top = [20, 21, 22, 23]
+        row_bot = [16, 17, 18, 19]
+        if note in row_top:
+            return row_top.index(note) + 5
+        if note in row_bot:
+            return row_bot.index(note) + 1
+        return note
+
     def _build_pad_grid_contents(self, dpg, parent: str) -> None:
         top_row = [20, 21, 22, 23]
         bot_row = [16, 17, 18, 19]
@@ -629,13 +637,14 @@ class OBSSessionPlugin(Plugin):
                 for note in row_notes:
                     action_id = self._slot_map.get(note)
                     info = self._action_for_id(action_id) if action_id else None
-                    label = self._note_label(note)
+                    pad_num = self._pad_number(note)
                     color = info["color"] if info else (60, 60, 75)
-                    title = self._dynamic_label(action_id) if action_id else "(free)"
-                    desc = info["desc"] if info else "Drag a pad here to assign"
+                    title = self._dynamic_label(action_id) if action_id else "—"
+                    desc = info["desc"] if info else ""
                     card_tag = f"obs_pad_card_{note}"
                     btn_tag = f"obs_pad_btn_{note}"
                     lbl_tag = f"obs_pad_lbl_{note}"
+                    drag_tag = f"obs_pad_drag_{note}"
 
                     with dpg.child_window(
                         tag=card_tag,
@@ -645,22 +654,35 @@ class OBSSessionPlugin(Plugin):
                         drop_callback=_make_drop_cb(note),
                         payload_type="obs_pad",
                     ):
-                        dpg.add_text(label, color=color)
+                        with dpg.group(horizontal=True):
+                            dpg.add_button(
+                                tag=drag_tag,
+                                label=title if action_id else "—",
+                                width=130,
+                                small=True,
+                                callback=_make_exec_cb(note) if action_id else None,
+                            )
+                            with dpg.drag_payload(
+                                parent=drag_tag,
+                                drag_data=note,
+                                payload_type="obs_pad",
+                            ):
+                                dpg.add_text(f"Pad {pad_num}: {title}")
+                            dpg.add_text(
+                                str(pad_num),
+                                color=(45, 45, 55),
+                            )
                         dpg.add_text(title, tag=lbl_tag, color=(230, 232, 238))
-                        dpg.add_text(desc, wrap=140, color=(120, 120, 140))
+                        if desc:
+                            dpg.add_text(desc, wrap=140, color=(120, 120, 140))
                         if action_id:
                             dpg.add_button(
                                 tag=btn_tag,
                                 label=title,
                                 width=-1,
+                                small=True,
                                 callback=_make_exec_cb(note),
                             )
-                        with dpg.drag_payload(
-                            parent=card_tag,
-                            drag_data=note,
-                            payload_type="obs_pad",
-                        ):
-                            dpg.add_text(f"{label}: {title}")
             dpg.add_spacer(height=4, parent=parent)
 
     def build_ui(self, parent_tag: str) -> None:
@@ -668,8 +690,8 @@ class OBSSessionPlugin(Plugin):
 
         dpg.add_text("OBS Workflow", parent=parent_tag, color=(110, 190, 255))
         dpg.add_text(
-            "Drag and drop pad cards to rearrange assignments. "
-            "Pads 5-6 change behavior depending on whether a diary session is active.",
+            "Drag pads to rearrange assignments. "
+            "Session and Record pads change behavior depending on whether a diary session is active.",
             parent=parent_tag,
             wrap=720,
             color=(120, 120, 140),
@@ -865,7 +887,6 @@ class OBSSessionPlugin(Plugin):
         obs.refresh_recording_state()
         was_recording = obs.is_recording
         if obs.toggle_recording():
-            obs.refresh_recording_state()
             self.recording = obs.is_recording
             if was_recording:
                 self._last_action = "Recording stopped"
@@ -1122,7 +1143,7 @@ class OBSSessionPlugin(Plugin):
 
     def _action_toggle_record(self) -> None:
         if self.session_state != "running":
-            self._last_action = "Start a session first with Pad 5"
+            self._last_action = "Start a session first with the Session pad"
             self._refresh_ui()
             return
         if not self._ensure_connected():
@@ -1219,7 +1240,7 @@ class OBSSessionPlugin(Plugin):
             self._refresh_ui()
             return
         if self.session_state != "running":
-            self._last_action = "Start a session first with Pad 5"
+            self._last_action = "Start a session first with the Session pad"
             self._refresh_ui()
             return
 
@@ -1402,7 +1423,7 @@ class OBSSessionPlugin(Plugin):
 
         if not self._segments and not self.recording:
             dpg.add_text(
-                "No segments yet. Start a session on Pad 5, then use Pad 6 to create the first recorded segment.",
+                "No segments yet. Start a session, then use the Record pad to create the first recorded segment.",
                 parent=panel_tag,
                 wrap=700,
                 color=(120, 120, 140),
@@ -1411,7 +1432,7 @@ class OBSSessionPlugin(Plugin):
 
         if self.recording and self._pending_segment_start:
             dpg.add_text(
-                f"Recording now since {_format_local_clock(self._pending_segment_start)}. Press Pad 6 again to close this segment.",
+                f"Recording now since {_format_local_clock(self._pending_segment_start)}. Press Record again to close this segment.",
                 parent=panel_tag,
                 wrap=700,
                 color=_STATUS_RECORDING,
@@ -1781,9 +1802,12 @@ class OBSSessionPlugin(Plugin):
 
         for note in ALL_NOTES:
             action_id = self._slot_map.get(note)
+            lbl = self._dynamic_label(action_id) if action_id else "—"
+            self._set_text_if_exists(dpg, f"obs_pad_lbl_{note}", lbl, (230, 232, 238))
+            drag_tag = f"obs_pad_drag_{note}"
+            if dpg.does_item_exist(drag_tag):
+                dpg.configure_item(drag_tag, label=lbl)
             if action_id:
-                lbl = self._dynamic_label(action_id)
-                self._set_text_if_exists(dpg, f"obs_pad_lbl_{note}", lbl, (230, 232, 238))
                 btn_tag = f"obs_pad_btn_{note}"
                 if dpg.does_item_exist(btn_tag):
                     dpg.configure_item(btn_tag, label=lbl)

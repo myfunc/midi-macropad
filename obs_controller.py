@@ -191,6 +191,7 @@ class OBSController:
             return False
         try:
             self._req.start_record()
+            time.sleep(0.3)
             self.refresh_recording_state()
             return True
         except Exception:
@@ -201,6 +202,7 @@ class OBSController:
             return False
         try:
             self._req.stop_record()
+            time.sleep(0.3)
             self.refresh_recording_state()
             return True
         except Exception:
@@ -211,6 +213,7 @@ class OBSController:
             return False
         try:
             self._req.toggle_record()
+            time.sleep(0.3)
             self.refresh_recording_state()
             return True
         except Exception:
