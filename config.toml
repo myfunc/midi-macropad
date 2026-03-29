@@ -29,6 +29,14 @@ label = "Spotify"
 type = "volume"
 target = "spotify"
 
+[[knobs]]
+cc = 51
+label = "App"
+
+[knobs.action]
+type = "volume"
+target = "foreground"
+
 # ========== Pad Presets ==========
 
 [[pad_presets]]

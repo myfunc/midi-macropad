@@ -4,46 +4,64 @@ import time
 
 import dearpygui.dearpygui as dpg
 
-PAD_W = 88
-PAD_H = 86
-PAD_SPACING = 6
-BANK_GAP = 16
+PAD_W = 110
+PAD_H = 108
+PAD_SPACING = 8
+BANK_GAP = 20
 
 PAD_NOTES_BANK_A = [16, 17, 18, 19, 20, 21, 22, 23]
 PAD_NOTES_BANK_B = [24, 25, 26, 27, 28, 29, 30, 31]
 PAD_NOTES = PAD_NOTES_BANK_A + PAD_NOTES_BANK_B
-# UI rows: top = pads 1-4 + 9-12, bottom = 5-8 + 13-16 (see project spec).
-TOP_ROW_NOTES = [16, 17, 18, 19, 24, 25, 26, 27]
-BOT_ROW_NOTES = [20, 21, 22, 23, 28, 29, 30, 31]
+# Physical top row = MIDI 20–23 (A) / 28–31 (B); bottom = 16–19 / 24–27.
+TOP_ROW_NOTES = [20, 21, 22, 23, 28, 29, 30, 31]
+BOT_ROW_NOTES = [16, 17, 18, 19, 24, 25, 26, 27]
 
-TOP_ROW_H = 18
-BOT_ROW_H = 18
+TOP_ROW_H = 20
+BOT_ROW_H = 20
 
-KNOB_RADIUS = 28
-KNOB_ARC_SEGMENTS = 40
-# Arc from 225° (CCW from +x, math convention) to -45° = 270° sweep (DAW-style).
+KNOB_RADIUS = 32
+KNOB_ARC_SEGMENTS = 48
+KNOB_VALUE_SEGMENTS = 14
+KNOB_WIDGET_W = 100
+KNOB_DRAWLIST_W = 100
+KNOB_DRAWLIST_H = 72
+KNOB_TOPBAR_H = TOP_ROW_H
+# Match column height when a 2×2 cell has no knob (keeps Bank B grid aligned).
+KNOB_BLOCK_H = KNOB_TOPBAR_H + KNOB_DRAWLIST_H + 22
+# Pad column top inset when knobs are shown (aligns pad rows with knob 2×2 rows).
+KNOB_HEADER_PAD = 28
+
+# Arc from 225° to -45° = 270° sweep (DAW-style).
 KNOB_ANGLE_MIN_DEG = 225.0
 KNOB_ANGLE_MAX_DEG = -45.0
+
+KNOB_TRACK_COLOR = (55, 55, 72, 255)
+KNOB_VALUE_COLOR_A = (100, 140, 255, 255)
+KNOB_VALUE_COLOR_B = (160, 120, 255, 255)
+KNOB_PCT_TEXT_COLOR = (140, 145, 160, 255)
+KNOB_GLOW_FILL = (160, 120, 255, 90)
+KNOB_POINTER_FILL = (235, 240, 255, 255)
+KNOB_POINTER_OUTLINE = (100, 110, 180, 255)
+KNOB_GLOW_RADIUS = 7.0
+KNOB_POINTER_RADIUS = 4.0
+KNOB_TRACK_THICKNESS = 6.0
+KNOB_VALUE_THICKNESS = 7.0
+
+CHILD_ROUNDING = 8
 
 _pad_tags: dict[int, dict] = {}
 _pad_press_times: dict[int, float] = {}
 _knob_draw_tags: dict[int, dict] = {}
 
 _default_color = (40, 40, 52, 255)
-_press_color = (100, 180, 255, 255)
 _swap_highlight = (180, 130, 60, 255)
 _release_theme = None
 _flash_themes: dict[int, int] = {}
 
-_knob_track_color = (50, 50, 65, 255)
-_knob_value_color = (130, 150, 255, 255)
-_knob_glow_fill = (160, 180, 255, 100)
-_knob_pointer_fill = (235, 240, 255, 255)
-_knob_pointer_outline = (90, 110, 200, 255)
-
 _on_pad_click_cb = None
 _on_pad_edit_cb = None
 _on_pad_swap_cb = None
+_on_knob_edit_cb = None
 
 _swap_mode_note: int | None = None
 
@@ -63,8 +81,21 @@ def set_pad_swap_callback(cb):
     _on_pad_swap_cb = cb
 
 
+def set_knob_edit_callback(cb):
+    global _on_knob_edit_cb
+    _on_knob_edit_cb = cb
+
+
 def _note_to_human(note: int) -> int:
     return note - 15
+
+
+def _lerp_rgb(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int, int]:
+    t = max(0.0, min(1.0, t))
+    r = int(a[0] + (b[0] - a[0]) * t)
+    g = int(a[1] + (b[1] - a[1]) * t)
+    bl = int(a[2] + (b[2] - a[2]) * t)
+    return (r, g, bl, 255)
 
 
 def _get_release_theme():
@@ -75,7 +106,7 @@ def _get_release_theme():
                 dpg.add_theme_color(dpg.mvThemeCol_Button, _default_color)
                 dpg.add_theme_color(dpg.mvThemeCol_ChildBg, _default_color)
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
-                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 5)
+                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, CHILD_ROUNDING)
         _release_theme = t
     return _release_theme
 
@@ -92,7 +123,7 @@ def _get_flash_theme(velocity: int):
             dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 255))
             dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (r, g, b, 255))
             dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
-            dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 5)
+            dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, CHILD_ROUNDING)
     _flash_themes[velocity] = t
     return t
 
@@ -108,7 +139,7 @@ def _get_swap_theme():
                 dpg.add_theme_color(dpg.mvThemeCol_Border, _swap_highlight)
                 dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (55, 48, 30, 255))
                 dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize, 2)
-                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 5)
+                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, CHILD_ROUNDING)
         _swap_theme = t
     return _swap_theme
 
@@ -124,7 +155,7 @@ def _get_swap_target_theme():
                 dpg.add_theme_color(dpg.mvThemeCol_Border, (180, 130, 60, 120))
                 dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (45, 42, 35, 255))
                 dpg.add_theme_style(dpg.mvStyleVar_ChildBorderSize, 2)
-                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 5)
+                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, CHILD_ROUNDING)
         _swap_target_theme = t
     return _swap_target_theme
 
@@ -182,11 +213,9 @@ def _knob_value_angle(value: int) -> float:
     )
 
 
-def _knob_pointer_xy(cx: float, cy: float, radius: float, angle_deg: float,
-                     inset: float = 6.0) -> tuple[float, float]:
-    r = max(4.0, radius - inset)
+def _knob_pointer_xy(cx: float, cy: float, radius: float, angle_deg: float) -> tuple[float, float]:
     rad = math.radians(angle_deg)
-    return cx + r * math.cos(rad), cy - r * math.sin(rad)
+    return cx + radius * math.cos(rad), cy - radius * math.sin(rad)
 
 
 def _value_arc_segments(angle_deg: float) -> int:
@@ -194,8 +223,14 @@ def _value_arc_segments(angle_deg: float) -> int:
     return max(3, min(KNOB_ARC_SEGMENTS, int(span / 270.0 * KNOB_ARC_SEGMENTS) + 3))
 
 
+def _knob_cx_cy() -> tuple[float, float]:
+    cx = KNOB_DRAWLIST_W / 2.0
+    cy = float(KNOB_RADIUS) + 10.0
+    return cx, cy
+
+
 def create_pad_grid(parent="pad_area", knobs=None):
-    """Build 2x8 pads, DAW-style CC knobs, and mixer slot below."""
+    """Build 2x8 pads, DAW-style CC knobs (2x2 + bank gap), and mixer slot below."""
     _pad_tags.clear()
     _pad_press_times.clear()
     _knob_draw_tags.clear()
@@ -205,49 +240,118 @@ def create_pad_grid(parent="pad_area", knobs=None):
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=8)
             with dpg.group():
+                if knobs:
+                    dpg.add_spacer(height=KNOB_HEADER_PAD)
                 with dpg.group(horizontal=True):
                     _add_pad_row(TOP_ROW_NOTES)
                 dpg.add_spacer(height=PAD_SPACING)
                 with dpg.group(horizontal=True):
                     _add_pad_row(BOT_ROW_NOTES)
 
-            dpg.add_spacer(width=16)
             if knobs:
-                with dpg.group():
-                    dpg.add_text("KNOBS", color=(75, 78, 95))
-                    dpg.add_spacer(height=6)
-                    for i, knob in enumerate(knobs):
-                        _create_knob_widget(knob)
-                        if i < len(knobs) - 1:
-                            dpg.add_spacer(height=8)
+                dpg.add_spacer(width=BANK_GAP)
+                _create_knobs_panel(knobs)
 
         dpg.add_spacer(height=8)
         dpg.add_child_window(tag="mixer_content", width=-1, height=-1, border=False)
+
+
+def _partition_knobs_for_banks(knobs) -> tuple[list, list]:
+    """Split knob mappings into Bank A vs B when `bank` is set on the mapping; else all → A."""
+    a, b = [], []
+    for k in knobs:
+        bank = getattr(k, "bank", None)
+        if bank in ("b", "B", "bank_b", 1):
+            b.append(k)
+        else:
+            a.append(k)
+    return a, b
+
+
+def _create_knob_bank_grid(knobs_four: list) -> None:
+    """Lay out up to four knobs in a 2×2. Empty slots keep alignment."""
+    slots = list(knobs_four[:4])
+    while len(slots) < 4:
+        slots.append(None)
+
+    def _cell(k):
+        if k is not None:
+            _create_knob_widget(k)
+        else:
+            dpg.add_spacer(width=KNOB_WIDGET_W, height=KNOB_BLOCK_H)
+
+    with dpg.group(horizontal=False):
+        with dpg.group(horizontal=True):
+            _cell(slots[0])
+            dpg.add_spacer(width=PAD_SPACING)
+            _cell(slots[1])
+        dpg.add_spacer(height=PAD_SPACING)
+        with dpg.group(horizontal=True):
+            _cell(slots[2])
+            dpg.add_spacer(width=PAD_SPACING)
+            _cell(slots[3])
+
+
+def _create_knobs_panel(knobs) -> None:
+    bank_a, bank_b = _partition_knobs_for_banks(knobs)
+    with dpg.group(horizontal=False):
+        dpg.add_text("KNOBS", color=(75, 78, 95))
+        dpg.add_spacer(height=6)
+        with dpg.group(horizontal=True):
+            _create_knob_bank_grid(bank_a)
+            if bank_b:
+                dpg.add_spacer(width=BANK_GAP)
+                _create_knob_bank_grid(bank_b)
 
 
 def update_knob_display(cc: int, value: int):
     info = _knob_draw_tags.get(cc)
     if not info:
         return
-    val_tag = info["value_arc"]
-    dot_tag = info["dot"]
+    seg_tags: list = info["seg_tags"]
     glow_tag = info["glow"]
-    if not dpg.does_item_exist(val_tag):
+    dot_tag = info["dot"]
+    pct_tag = info["pct_text"]
+    if not seg_tags or not dpg.does_item_exist(seg_tags[0]):
         return
 
     cx, cy, radius = info["cx"], info["cy"], info["radius"]
     angle = _knob_value_angle(value)
+    pct = round(value / 127.0 * 100) if value > 0 else 0
+    pct_str = f"{pct}%"
+    if dpg.does_item_exist(pct_tag):
+        tw, th = dpg.calc_text_size(pct_str)
+        dpg.configure_item(
+            pct_tag,
+            text=pct_str,
+            pos=[cx - tw / 2.0, cy - th / 2.0],
+        )
+
+    col_a = KNOB_VALUE_COLOR_A[:3]
+    col_b = KNOB_VALUE_COLOR_B[:3]
 
     if value <= 0:
-        dpg.configure_item(val_tag, points=[])
+        for tag in seg_tags:
+            dpg.configure_item(tag, points=[])
+        px, py = _knob_pointer_xy(cx, cy, radius, KNOB_ANGLE_MIN_DEG)
     else:
-        segs = _value_arc_segments(angle)
-        pts = _arc_point_pairs(cx, cy, radius, KNOB_ANGLE_MIN_DEG, angle, segs)
-        dpg.configure_item(val_tag, points=pts)
+        n = len(seg_tags)
+        start_deg = KNOB_ANGLE_MIN_DEG
+        span = angle - start_deg
+        for i, tag in enumerate(seg_tags):
+            t0 = i / n
+            t1 = (i + 1) / n
+            a0 = start_deg + span * t0
+            a1 = start_deg + span * t1
+            sub = max(2, _value_arc_segments(a1) // n + 1)
+            pts = _arc_point_pairs(cx, cy, radius, a0, a1, sub)
+            tm = (t0 + t1) / 2.0
+            c = _lerp_rgb(col_a, col_b, tm)
+            dpg.configure_item(tag, points=pts, color=c)
+        px, py = _knob_pointer_xy(cx, cy, radius, angle)
 
-    px, py = _knob_pointer_xy(cx, cy, radius, angle)
-    dpg.configure_item(dot_tag, center=[float(px), float(py)])
     dpg.configure_item(glow_tag, center=[float(px), float(py)])
+    dpg.configure_item(dot_tag, center=[float(px), float(py)])
 
 
 def _add_pad_row(row_notes: list[int]):
@@ -259,61 +363,84 @@ def _add_pad_row(row_notes: list[int]):
             dpg.add_spacer(width=PAD_SPACING)
 
 
+def _on_knob_edit_click(cc: int):
+    if _on_knob_edit_cb:
+        _on_knob_edit_cb(cc)
+
+
 def _create_knob_widget(knob):
-    """Rotary level indicator driven by update_knob_display (no MIDI interaction here)."""
+    """Rotary control; driven by update_knob_display."""
     cc = knob.cc
     r = float(KNOB_RADIUS)
-    dl_w = int(r * 2.0 + 20.0)
-    dl_h = int(r * 2.0 + 14.0)
-    cx = dl_w / 2.0
-    cy = r + 8.0
+    cx, cy = _knob_cx_cy()
 
     bg_pts = _arc_point_pairs(
         cx, cy, r, KNOB_ANGLE_MIN_DEG, KNOB_ANGLE_MAX_DEG, KNOB_ARC_SEGMENTS
     )
 
-    val_tag = f"knob_val_arc_{cc}"
-    dot_tag = f"knob_dot_{cc}"
+    seg_tags: list[str] = []
+    for i in range(KNOB_VALUE_SEGMENTS):
+        seg_tags.append(f"knob_val_seg_{cc}_{i}")
+
     glow_tag = f"knob_glow_{cc}"
+    dot_tag = f"knob_dot_{cc}"
+    pct_tag = f"knob_pct_{cc}"
+    dl_tag = f"knob_drawlist_{cc}"
 
     with dpg.group():
-        with dpg.drawlist(width=dl_w, height=dl_h, tag=f"knob_drawlist_{cc}"):
+        with dpg.group(horizontal=True):
+            dpg.add_spacer(width=max(1, KNOB_WIDGET_W - 26))
+            edit_btn = dpg.add_button(
+                label="\u270E",
+                width=26,
+                height=KNOB_TOPBAR_H,
+                callback=lambda *_a, c=cc: _on_knob_edit_click(c),
+            )
+            dpg.bind_item_theme(edit_btn, _get_icon_btn_theme())
+
+        with dpg.drawlist(width=KNOB_DRAWLIST_W, height=KNOB_DRAWLIST_H, tag=dl_tag):
             dpg.draw_polyline(
                 bg_pts,
-                color=_knob_track_color,
-                thickness=5,
+                color=KNOB_TRACK_COLOR,
+                thickness=KNOB_TRACK_THICKNESS,
                 tag=f"knob_bg_arc_{cc}",
             )
-            dpg.draw_polyline(
-                [],
-                color=_knob_value_color,
-                thickness=6,
-                tag=val_tag,
+            for i, st in enumerate(seg_tags):
+                dpg.draw_polyline([], color=KNOB_VALUE_COLOR_A, thickness=KNOB_VALUE_THICKNESS, tag=st)
+            tw0, th0 = dpg.calc_text_size("0%")
+            dpg.draw_text(
+                (cx - tw0 / 2.0, cy - th0 / 2.0),
+                "0%",
+                color=KNOB_PCT_TEXT_COLOR,
+                size=13,
+                tag=pct_tag,
             )
             dpg.draw_circle(
-                (cx, cy),
-                10.0,
+                (0.0, 0.0),
+                KNOB_GLOW_RADIUS,
                 color=(0, 0, 0, 0),
-                fill=_knob_glow_fill,
+                fill=KNOB_GLOW_FILL,
                 tag=glow_tag,
             )
             dpg.draw_circle(
-                (cx, cy),
-                4.5,
-                color=_knob_pointer_outline,
-                fill=_knob_pointer_fill,
+                (0.0, 0.0),
+                KNOB_POINTER_RADIUS,
+                color=KNOB_POINTER_OUTLINE,
+                fill=KNOB_POINTER_FILL,
                 thickness=1,
                 tag=dot_tag,
             )
-        dpg.add_text(knob.label, color=(120, 120, 140))
+
+        dpg.add_text(knob.label, color=(120, 120, 140), wrap=KNOB_WIDGET_W)
 
     _knob_draw_tags[cc] = {
         "cx": cx,
         "cy": cy,
         "radius": r,
-        "value_arc": val_tag,
-        "dot": dot_tag,
+        "seg_tags": seg_tags,
         "glow": glow_tag,
+        "dot": dot_tag,
+        "pct_text": pct_tag,
     }
     update_knob_display(cc, 0)
 
@@ -343,7 +470,7 @@ def _create_pad_widget(note: int, default_label: str):
             dpg.add_table_column(init_width_or_weight=0.3)
             with dpg.table_row():
                 edit_btn = dpg.add_button(
-                    label="\u270E", width=22, height=TOP_ROW_H, callback=make_edit_cb()
+                    label="\u270E", width=26, height=TOP_ROW_H, callback=make_edit_cb()
                 )
                 dpg.bind_item_theme(edit_btn, _get_icon_btn_theme())
                 dpg.add_spacer()
@@ -367,7 +494,7 @@ def _create_pad_widget(note: int, default_label: str):
                 swap_btn = dpg.add_button(
                     label="\u21C4",
                     tag=f"pad_swap_{note}",
-                    width=22,
+                    width=26,
                     height=BOT_ROW_H,
                     callback=make_swap_cb(),
                 )
@@ -472,3 +599,33 @@ def release_pad(note: int):
     if not tags:
         return
     dpg.bind_item_theme(tags["container"], _get_release_theme())
+
+
+def get_release_theme():
+    """Theme for pad idle / released state (ChildRounding matches grid)."""
+    return _get_release_theme()
+
+
+def get_flash_theme(velocity: int):
+    """Velocity-tinted flash theme for MIDI/visual feedback."""
+    return _get_flash_theme(velocity)
+
+
+def get_swap_theme():
+    """Theme when a pad is selected as swap source."""
+    return _get_swap_theme()
+
+
+def get_swap_target_theme():
+    """Theme for valid swap targets while in swap mode."""
+    return _get_swap_target_theme()
+
+
+def get_icon_btn_theme():
+    """Transparent icon button theme (edit / swap)."""
+    return _get_icon_btn_theme()
+
+
+def get_body_btn_theme():
+    """Pad body click area theme."""
+    return _get_body_btn_theme()

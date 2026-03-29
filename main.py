@@ -61,6 +61,7 @@ from ui.pad_grid import (
     create_pad_grid, update_pad_labels, flash_pad, release_pad,
     clear_pad_labels, overlay_plugin_pad_labels, update_knob_display,
     set_pad_click_callback, set_pad_edit_callback, set_pad_swap_callback,
+    set_knob_edit_callback,
 )
 from ui.volume_panel import (
     create_volume_panel, set_master_volume_display, set_mic_volume_display,
@@ -342,6 +343,13 @@ def _handle_knob(knob, value: int):
             level = audio.midi_to_mic_volume(value)
             audio.set_mic_volume(level)
             set_mic_volume_display(level)
+        elif action.target == "foreground":
+            from app_detector import get_foreground_process
+            proc = get_foreground_process()
+            if proc:
+                audio.set_app_volume(proc.lower().replace(".exe", ""), value / 127.0)
+            else:
+                log.debug("Foreground knob: no active process detected")
         else:
             audio.set_app_volume(action.target, value / 127.0)
     elif action.type == "scroll":
@@ -485,6 +493,16 @@ def _on_pad_edit(note: int):
     mapping = mapper.lookup_pad(note)
     rebuild(lambda parent: build_pad_properties(
         parent, note, mapping, on_save=_on_pad_save))
+
+
+def _on_knob_edit(cc: int):
+    """TODO(developer): open knob mapping editor when CC UI exists."""
+    knob = mapper.lookup_knob(cc)
+    if knob:
+        add_log_entry("KNOB", f"Edit knob CC {cc} ({knob.label}) — editor not wired yet",
+                      color=(150, 150, 170))
+    else:
+        add_log_entry("KNOB", f"Edit knob CC {cc} (unmapped)", color=(150, 150, 160))
 
 
 def _toml_pad_section_key(raw: dict) -> str:
@@ -677,6 +695,7 @@ def main():
     set_pad_click_callback(_on_pad_click)
     set_pad_edit_callback(_on_pad_edit)
     set_pad_swap_callback(_on_pad_swap)
+    set_knob_edit_callback(_on_knob_edit)
     create_pad_grid(knobs=config.knobs)
     create_volume_panel(
         master_callback=on_master_volume_slider,
