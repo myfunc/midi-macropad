@@ -7,7 +7,7 @@ if not exist .venv\Scripts\python.exe (
     call .venv\Scripts\activate.bat
     pip install --upgrade pip --quiet
     pip install -r requirements.txt --quiet 2>nul
-    pip install mido python-rtmidi pynput pycaw dearpygui comtypes toml obs-websocket-py sounddevice soundfile numpy requests --quiet
+    pip install mido python-rtmidi pynput pycaw dearpygui comtypes toml obsws-python sounddevice soundfile numpy requests --quiet
     echo Setup complete!
 )
 
