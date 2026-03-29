@@ -254,20 +254,6 @@ MIDI_CUES: dict[str, MidiCue] = {
         expression=126,
     ),
 
-    # OBS Session — ascending thirds, clean guitar
-    "mode.obs_session": MidiCue(
-        program=27,
-        steps=(
-            MidiStep((48,), 100, velocity=84, gap_ms=50),   # C3
-            MidiStep((52,), 100, velocity=88, gap_ms=50),   # E3
-            MidiStep((55,), 100, velocity=92, gap_ms=50),   # G3
-            MidiStep((60,), 120, velocity=96, gap_ms=60),   # C4
-            MidiStep((64, 67), 340, velocity=100, gap_ms=0),  # E4+G4 open
-        ),
-        volume=110,
-        expression=123,
-    ),
-
     # Sound Pads — funky staccato pattern, muted guitar
     "mode.sound_pads": MidiCue(
         program=28,
@@ -281,6 +267,48 @@ MIDI_CUES: dict[str, MidiCue] = {
             MidiStep((62, 64), 250, velocity=108, gap_ms=0),  # D4+E4 pop
         ),
         volume=114,
+        expression=125,
+    ),
+
+    # Session — steel guitar, low-mid; mirrors voice record_start/stop energy
+    "session.start": MidiCue(
+        program=25,
+        steps=(
+            MidiStep((48,), 70, velocity=90, gap_ms=16),
+            MidiStep((52,), 72, velocity=94, gap_ms=16),
+            MidiStep((55,), 74, velocity=98, gap_ms=16),
+            MidiStep((57, 60), 142, velocity=104, gap_ms=24),
+        ),
+        volume=118,
+        expression=126,
+    ),
+    "session.stop": MidiCue(
+        program=25,
+        steps=(
+            MidiStep((60,), 68, velocity=88, gap_ms=16),
+            MidiStep((55,), 70, velocity=86, gap_ms=16),
+            MidiStep((52,), 72, velocity=84, gap_ms=16),
+            MidiStep((48,), 132, velocity=90, gap_ms=24),
+        ),
+        volume=114,
+        expression=124,
+    ),
+    "session.segment_start": MidiCue(
+        program=25,
+        steps=(
+            MidiStep((50,), 58, velocity=92, gap_ms=14),
+            MidiStep((57,), 78, velocity=100, gap_ms=18),
+        ),
+        volume=116,
+        expression=125,
+    ),
+    "session.segment_stop": MidiCue(
+        program=25,
+        steps=(
+            MidiStep((48,), 54, velocity=94, gap_ms=12),
+            MidiStep((55,), 68, velocity=100, gap_ms=20),
+        ),
+        volume=116,
         expression=125,
     ),
     "voice.error": MidiCue(

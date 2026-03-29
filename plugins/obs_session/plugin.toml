@@ -1,16 +1,18 @@
 [plugin]
-name = "OBS Session"
-version = "0.3.0"
-description = "Session recording workflow for OBS"
+name = "OBS"
+version = "0.4.0"
+description = "Unified OBS mode — scene switching, recording, session diary, MIDI feedback"
 entry = "obs_session.OBSSessionPlugin"
 
 [settings]
 host = "127.0.0.1"
 port = 4455
 password = ""
-working_scene = "MM_Session"
+scene_screen = "MM_Screen"
+scene_camera = "MM_Camera"
+scene_pip = "MM_ScreenPiP"
 right_screen_source = "MM_Right Screen"
-camera_source = "MM_Camera"
+camera_source = "MM_Webcam"
 mic_source = "MM_Microphone"
 output_dir = ""
 auto_setup_scene = true

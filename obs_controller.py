@@ -1,6 +1,7 @@
 """OBS WebSocket controller — scene switching, recording, streaming."""
 from __future__ import annotations
 
+import sys
 import time
 from typing import Any, Callable
 
@@ -522,3 +523,99 @@ class OBSController:
             return True, f"pip scale={scale} pos=({pos_x:.0f},{pos_y:.0f})"
         except Exception as exc:
             return False, str(exc)
+
+    def setup_three_scenes(
+        self,
+        scene_screen: str,
+        scene_camera: str,
+        scene_pip: str,
+        right_source: str,
+        camera_source: str,
+        mic_source: str,
+    ) -> tuple[bool, list[str]]:
+        """
+        Build three OBS scenes for a unified screen / camera / PiP workflow.
+
+        Reuses global inputs via add_source_to_scene where they already exist.
+        """
+        notes: list[str] = []
+        if not self.connected:
+            return False, ["not connected"]
+
+        if sys.platform == "darwin":
+            kind_right, kind_cam, kind_mic = (
+                "monitor_capture",
+                "av_capture_input",
+                "coreaudio_input_capture",
+            )
+            notes.append("platform=darwin input kinds: monitor_capture, av_capture_input, coreaudio_input_capture")
+        else:
+            kind_right, kind_cam, kind_mic = (
+                "monitor_capture",
+                "dshow_input",
+                "wasapi_input_capture",
+            )
+            plat = "win32" if sys.platform == "win32" else sys.platform
+            notes.append(
+                f"platform={plat} input kinds: monitor_capture, dshow_input, wasapi_input_capture"
+            )
+
+        success = True
+
+        for label, name in (
+            ("scene_screen", scene_screen),
+            ("scene_camera", scene_camera),
+            ("scene_pip", scene_pip),
+        ):
+            if self.ensure_scene_exists(name):
+                notes.append(f"{label} ({name}): scene ready")
+            else:
+                success = False
+                notes.append(f"{label} ({name}): ensure_scene_exists failed")
+
+        ok, msg = self.add_source_to_scene(scene_screen, right_source, kind_right)
+        if not ok:
+            success = False
+        notes.append(f"scene_screen add {right_source}: {msg}")
+
+        ok, msg = self.crop_source_to_right_half(scene_screen, right_source)
+        if not ok:
+            success = False
+        notes.append(f"scene_screen crop {right_source}: {msg}")
+
+        ok, msg = self.add_source_to_scene(scene_camera, camera_source, kind_cam)
+        if not ok:
+            success = False
+        notes.append(f"scene_camera add {camera_source}: {msg}")
+
+        for lbl, sn in (
+            ("scene_screen", scene_screen),
+            ("scene_camera", scene_camera),
+            ("scene_pip", scene_pip),
+        ):
+            ok, msg = self.add_source_to_scene(sn, mic_source, kind_mic)
+            if not ok:
+                success = False
+            notes.append(f"{lbl} add {mic_source}: {msg}")
+
+        ok, msg = self.add_source_to_scene(scene_pip, right_source, kind_right)
+        if not ok:
+            success = False
+        notes.append(f"scene_pip add {right_source}: {msg}")
+
+        ok, msg = self.crop_source_to_right_half(scene_pip, right_source)
+        if not ok:
+            success = False
+        notes.append(f"scene_pip crop {right_source}: {msg}")
+
+        ok, msg = self.add_source_to_scene(scene_pip, camera_source, kind_cam)
+        if not ok:
+            success = False
+        notes.append(f"scene_pip add {camera_source}: {msg}")
+
+        ok, msg = self.position_camera_pip(scene_pip, camera_source)
+        if not ok:
+            success = False
+        notes.append(f"scene_pip position_camera_pip {camera_source}: {msg}")
+
+        return success, notes

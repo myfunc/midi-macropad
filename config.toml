@@ -89,57 +89,11 @@ icon = "MIC"
 # ========== Mode: OBS ==========
 [[modes]]
 name = "OBS"
-color = "#EF4444"
-icon = "REC"
-
-[[modes.pads]]
-note = 16
-label = "Rec"
-action = { type = "obs", target = "toggle_recording" }
-
-[[modes.pads]]
-note = 17
-label = "Stream"
-action = { type = "obs", target = "toggle_streaming" }
-
-[[modes.pads]]
-note = 18
-label = "Prev Scene"
-action = { type = "obs", target = "prev_scene" }
-
-[[modes.pads]]
-note = 19
-label = "Next Scene"
-action = { type = "obs", target = "next_scene" }
-
-[[modes.pads]]
-note = 20
-label = "Mute Mic"
-action = { type = "obs", target = "mute:Mic/Aux" }
-
-[[modes.pads]]
-note = 21
-label = "Mute Desktop"
-action = { type = "obs", target = "mute:Desktop Audio" }
-
-[[modes.pads]]
-note = 22
-label = "Screenshot"
-action = { type = "keystroke", keys = "win+shift+s" }
-
-[[modes.pads]]
-note = 23
-label = "Play/Pause"
-action = { type = "keystroke", keys = "playpause" }
-
-# ========== Mode: OBS Session ==========
-[[modes]]
-name = "OBS Session"
 color = "#8B5CF6"
 icon = "CAM"
-# Pads are handled by the obs_session plugin
-# Top row (active): Start Session | Record | Stop Session | free
-# Bottom row: reserved for future session utilities
+# Pads are handled by the obs_session plugin (unified OBS mode)
+# Top row:  Screen | Camera | PiP | Mute Mic
+# Bot row:  Start/Stop Session | Rec/Segment | (free) | (free)
 
 # ========== Mode: Sound Pads ==========
 [[modes]]
@@ -151,7 +105,7 @@ icon = "SND"
 # ========== Context Overrides ==========
 [[contexts]]
 process = "obs64.exe"
-mode = "OBS Session"
+mode = "OBS"
 
 [[contexts]]
 process = "voicemeeterpro_x64.exe"

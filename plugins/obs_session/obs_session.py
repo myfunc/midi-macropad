@@ -1,4 +1,4 @@
-"""OBS Session plugin — connect, auto scene setup, segmented recording, session manifest."""
+"""Unified OBS plugin — scene switching, segmented recording, session diary, MIDI feedback."""
 
 from __future__ import annotations
 
@@ -21,12 +21,15 @@ import settings
 
 log = get_logger("obs_session")
 
-MODE_NAME = "OBS Session"
+MODE_NAME = "OBS"
 SETTINGS_KEY = "obs_session_plugin"
 
-PAD_START_SESSION = 16
-PAD_RECORD_TOGGLE = 17
-PAD_STOP_SESSION = 18
+PAD_SCENE_SCREEN = 16
+PAD_SCENE_CAMERA = 17
+PAD_SCENE_PIP = 18
+PAD_MUTE_MIC = 19
+PAD_SESSION = 20
+PAD_RECORD = 21
 
 _CONNECTED_OK = (100, 255, 150)
 _CONNECTED_BAD = (255, 90, 90)
@@ -103,27 +106,11 @@ def _has_openai_api_key() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY", "").strip())
 
 
-def _session_source_plan() -> list[tuple[str, str]]:
-    """(source_label, obs_input_kind) for auto-setup; Windows-focused, safe on others."""
-    if sys.platform == "win32":
-        return [
-            ("__right__", "monitor_capture"),
-            ("__camera__", "dshow_input"),
-            ("__mic__", "wasapi_input_capture"),
-        ]
-    if sys.platform == "darwin":
-        return [
-            ("__right__", "monitor_capture"),
-            ("__camera__", "av_capture_input"),
-            ("__mic__", "coreaudio_input_capture"),
-        ]
-    return []
-
 
 class OBSSessionPlugin(Plugin):
-    name = "OBS Session"
-    version = "0.3.0"
-    description = "Session recording workflow for OBS (connect, scene setup, segments, manifest)"
+    name = "OBS"
+    version = "0.4.0"
+    description = "Unified OBS mode — scene switching, recording, session diary, MIDI feedback"
     mode_name = MODE_NAME
 
     def __init__(self):
@@ -132,9 +119,11 @@ class OBSSessionPlugin(Plugin):
         self.host = "127.0.0.1"
         self.port = 4455
         self.password = ""
-        self.working_scene = "MM_Session"
+        self.scene_screen = "MM_Screen"
+        self.scene_camera = "MM_Camera"
+        self.scene_pip = "MM_ScreenPiP"
         self.right_screen_source = "MM_Right Screen"
-        self.camera_source = "MM_Camera"
+        self.camera_source = "MM_Webcam"
         self.mic_source = "MM_Microphone"
         self.output_dir = ""
         self.auto_setup_scene = True
@@ -146,10 +135,10 @@ class OBSSessionPlugin(Plugin):
         self.session_state = "idle"
         self.recording = False
         self.segments_count = 0
-        self._last_action = "Waiting for session start"
+        self._last_action = "Waiting"
         self._connection_detail = ""
 
-        self._obs = None  # lazy: OBSController from project root
+        self._obs = None
         self._session_folder: Path | None = None
         self._segments: list[SegmentEntry] = []
         self._record_paths: queue.Queue[str] = queue.Queue()
@@ -187,60 +176,37 @@ class OBSSessionPlugin(Plugin):
 
     def on_load(self, config: dict) -> None:
         saved = settings.get(SETTINGS_KEY, {})
-        merged = {
-            "host": saved.get("host", config.get("host", self.host)),
-            "port": saved.get("port", config.get("port", self.port)),
-            "password": saved.get("password", config.get("password", self.password)),
-            "working_scene": saved.get(
-                "working_scene", config.get("working_scene", self.working_scene)
-            ),
-            "right_screen_source": saved.get(
-                "right_screen_source",
-                config.get("right_screen_source", self.right_screen_source),
-            ),
-            "camera_source": saved.get(
-                "camera_source", config.get("camera_source", self.camera_source)
-            ),
-            "mic_source": saved.get(
-                "mic_source", config.get("mic_source", self.mic_source)
-            ),
-            "output_dir": saved.get("output_dir", config.get("output_dir", self.output_dir)),
-            "auto_setup_scene": saved.get(
-                "auto_setup_scene",
-                config.get("auto_setup_scene", self.auto_setup_scene),
-            ),
-            "postprocess_stitch": saved.get(
-                "postprocess_stitch",
-                config.get("postprocess_stitch", self.postprocess_stitch),
-            ),
-            "postprocess_transcript": saved.get(
-                "postprocess_transcript",
-                config.get("postprocess_transcript", self.postprocess_transcript),
-            ),
-            "postprocess_open_folder": saved.get(
-                "postprocess_open_folder",
-                config.get("postprocess_open_folder", self.postprocess_open_folder),
-            ),
-        }
-        self.host = str(merged["host"]).strip()
-        self.port = int(merged["port"])
-        self.password = str(merged["password"])
-        self.working_scene = str(merged["working_scene"]).strip()
-        self.right_screen_source = str(merged["right_screen_source"]).strip()
-        self.camera_source = str(merged["camera_source"]).strip()
-        self.mic_source = str(merged["mic_source"]).strip()
-        self.output_dir = str(merged["output_dir"]).strip()
-        self.auto_setup_scene = bool(merged["auto_setup_scene"])
-        self.postprocess_stitch = bool(merged["postprocess_stitch"])
-        self.postprocess_transcript = bool(merged["postprocess_transcript"])
-        self.postprocess_open_folder = bool(merged["postprocess_open_folder"])
+
+        def _m(key, default):
+            return saved.get(key, config.get(key, default))
+
+        self.host = str(_m("host", self.host)).strip()
+        self.port = int(_m("port", self.port))
+        self.password = str(_m("password", self.password))
+        self.scene_screen = str(_m("scene_screen", self.scene_screen)).strip()
+        self.scene_camera = str(_m("scene_camera", self.scene_camera)).strip()
+        self.scene_pip = str(_m("scene_pip", self.scene_pip)).strip()
+        self.right_screen_source = str(_m("right_screen_source", self.right_screen_source)).strip()
+        self.camera_source = str(_m("camera_source", self.camera_source)).strip()
+        self.mic_source = str(_m("mic_source", self.mic_source)).strip()
+        self.output_dir = str(_m("output_dir", self.output_dir)).strip()
+        self.auto_setup_scene = bool(_m("auto_setup_scene", self.auto_setup_scene))
+        self.postprocess_stitch = bool(_m("postprocess_stitch", self.postprocess_stitch))
+        self.postprocess_transcript = bool(_m("postprocess_transcript", self.postprocess_transcript))
+        self.postprocess_open_folder = bool(_m("postprocess_open_folder", self.postprocess_open_folder))
+
+        # Migrate old single working_scene setting
+        old_ws = saved.get("working_scene")
+        if old_ws and not saved.get("scene_screen"):
+            self.scene_pip = str(old_ws).strip()
+
         self._persist_settings()
 
         self.connected = False
         self.session_state = "idle"
         self.recording = False
         self.segments_count = 0
-        self._last_action = "Configured; use Connect or Start Session when OBS is running"
+        self._last_action = "Configured; use Connect when OBS is running"
         self._connection_detail = ""
 
     def on_unload(self) -> None:
@@ -261,25 +227,47 @@ class OBSSessionPlugin(Plugin):
 
     # -- MIDI hooks --------------------------------------------------------
 
+    def _play_cue(self, cue_id: str) -> None:
+        fb = getattr(self, "_runtime_services", {}).get("feedback")
+        if fb:
+            try:
+                fb.emit(cue_id)
+            except Exception:
+                pass
+
     def on_pad_press(self, note: int, velocity: int) -> bool:
         if not self._active:
             return False
-        if note == PAD_START_SESSION:
-            self._action_start_session()
+        if note == PAD_SCENE_SCREEN:
+            self._action_switch_scene(self.scene_screen)
             return True
-        if note == PAD_RECORD_TOGGLE:
-            self._action_toggle_record()
+        if note == PAD_SCENE_CAMERA:
+            self._action_switch_scene(self.scene_camera)
             return True
-        if note == PAD_STOP_SESSION:
-            self._action_stop_session()
+        if note == PAD_SCENE_PIP:
+            self._action_switch_scene(self.scene_pip)
+            return True
+        if note == PAD_MUTE_MIC:
+            self._action_toggle_mute_mic()
+            return True
+        if note == PAD_SESSION:
+            if self.session_state == "running":
+                self._action_stop_session()
+            else:
+                self._action_start_session()
+            return True
+        if note == PAD_RECORD:
+            if self.session_state == "running":
+                self._action_toggle_record()
+            else:
+                self._action_toggle_record_simple()
             return True
         return False
 
     def on_pad_release(self, note: int) -> bool:
         return self._active and note in {
-            PAD_START_SESSION,
-            PAD_RECORD_TOGGLE,
-            PAD_STOP_SESSION,
+            PAD_SCENE_SCREEN, PAD_SCENE_CAMERA, PAD_SCENE_PIP,
+            PAD_MUTE_MIC, PAD_SESSION, PAD_RECORD,
         }
 
     def poll(self) -> None:
@@ -311,10 +299,18 @@ class OBSSessionPlugin(Plugin):
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:
             return {}
+        in_session = self.session_state == "running"
         return {
-            PAD_START_SESSION: "Start Session",
-            PAD_RECORD_TOGGLE: "Record Segment",
-            PAD_STOP_SESSION: "Stop Session",
+            PAD_SCENE_SCREEN: "Screen",
+            PAD_SCENE_CAMERA: "Camera",
+            PAD_SCENE_PIP: "PiP",
+            PAD_MUTE_MIC: "Mute Mic",
+            PAD_SESSION: "Stop Session" if in_session else "Start Session",
+            PAD_RECORD: "Stop Segment" if (in_session and self.recording) else (
+                "Record Segment" if in_session else (
+                    "Stop Rec" if self.recording else "Record"
+                )
+            ),
         }
 
     def get_status(self) -> tuple[str, tuple[int, int, int]] | None:
@@ -322,8 +318,10 @@ class OBSSessionPlugin(Plugin):
             return None
         connection = "OK" if self.connected else "Off"
         recording = "REC" if self.recording else "Standby"
+        obs = self._get_obs()
+        scene = obs.current_scene if obs and obs.connected else "?"
         text = (
-            f"OBS Session | {connection} | Session: {self._ui_session_state().title()} | "
+            f"OBS | {connection} | Scene: {scene} | Session: {self._ui_session_state().title()} | "
             f"{recording} | Segments: {self.segments_count}"
         )
         if self.recording:
@@ -339,10 +337,9 @@ class OBSSessionPlugin(Plugin):
     def build_properties(self, parent_tag: str) -> None:
         import dearpygui.dearpygui as dpg
 
-        dpg.add_text("OBS Session Settings", parent=parent_tag, color=(110, 190, 255))
+        dpg.add_text("OBS Settings", parent=parent_tag, color=(110, 190, 255))
         dpg.add_text(
-            "Configure the names OBS should use, where session folders are saved, "
-            "and which postprocessing steps should appear in the workflow.",
+            "Scenes, sources, session output, and postprocessing.",
             parent=parent_tag,
             wrap=260,
             color=(120, 120, 140),
@@ -378,15 +375,34 @@ class OBSSessionPlugin(Plugin):
             )
 
         dpg.add_spacer(height=8, parent=parent_tag)
-        dpg.add_text("Capture Sources", parent=parent_tag, color=(150, 150, 165))
+        dpg.add_text("Scenes", parent=parent_tag, color=(150, 150, 165))
         dpg.add_input_text(
-            tag="obs_session_working_scene",
+            tag="obs_session_scene_screen",
             parent=parent_tag,
-            default_value=self.working_scene,
-            hint="Prefixed scene name (e.g. MM_Session)",
+            default_value=self.scene_screen,
+            hint="Screen-only scene (e.g. MM_Screen)",
             width=-1,
-            callback=lambda sender, app_data: self._save_text("working_scene", app_data),
+            callback=lambda sender, app_data: self._save_text("scene_screen", app_data),
         )
+        dpg.add_input_text(
+            tag="obs_session_scene_camera",
+            parent=parent_tag,
+            default_value=self.scene_camera,
+            hint="Camera-only scene (e.g. MM_Camera)",
+            width=-1,
+            callback=lambda sender, app_data: self._save_text("scene_camera", app_data),
+        )
+        dpg.add_input_text(
+            tag="obs_session_scene_pip",
+            parent=parent_tag,
+            default_value=self.scene_pip,
+            hint="Screen + PiP scene (e.g. MM_ScreenPiP)",
+            width=-1,
+            callback=lambda sender, app_data: self._save_text("scene_pip", app_data),
+        )
+
+        dpg.add_spacer(height=8, parent=parent_tag)
+        dpg.add_text("Capture Sources", parent=parent_tag, color=(150, 150, 165))
         dpg.add_input_text(
             tag="obs_session_right_source",
             parent=parent_tag,
@@ -424,7 +440,7 @@ class OBSSessionPlugin(Plugin):
         )
         dpg.add_checkbox(
             tag="obs_session_auto_setup",
-            label="Auto-setup scene",
+            label="Auto-setup scenes on session start",
             parent=parent_tag,
             default_value=self.auto_setup_scene,
             callback=lambda sender, app_data: self._save_bool("auto_setup_scene", app_data),
@@ -471,12 +487,14 @@ class OBSSessionPlugin(Plugin):
 
         dpg.add_spacer(height=10, parent=parent_tag)
         dpg.add_text("Pad Mapping", parent=parent_tag, color=(150, 150, 165))
-        dpg.add_text("Pad 1  Start session", parent=parent_tag)
-        dpg.add_text("Pad 2  Toggle record segment", parent=parent_tag)
-        dpg.add_text("Pad 3  Stop session", parent=parent_tag)
+        dpg.add_text("Pad 1  Screen scene", parent=parent_tag)
+        dpg.add_text("Pad 2  Camera scene", parent=parent_tag)
+        dpg.add_text("Pad 3  Screen+PiP scene", parent=parent_tag)
+        dpg.add_text("Pad 4  Mute microphone", parent=parent_tag)
+        dpg.add_text("Pad 5  Start / Stop session", parent=parent_tag)
+        dpg.add_text("Pad 6  Record / Segment", parent=parent_tag)
         dpg.add_text(
-            f"MIDI notes {PAD_START_SESSION}/{PAD_RECORD_TOGGLE}/{PAD_STOP_SESSION} "
-            "are currently assigned to pads 1-3 in the session workflow.",
+            "Pads 5-6 change behavior depending on whether a diary session is active.",
             parent=parent_tag,
             wrap=260,
             color=(120, 120, 140),
@@ -485,14 +503,14 @@ class OBSSessionPlugin(Plugin):
         dpg.add_spacer(height=10, parent=parent_tag)
         dpg.add_text(
             "",
-            tag="obs_session_last_action",
+            tag="obs_session_props_last_action",
             parent=parent_tag,
             wrap=260,
             color=(120, 120, 140),
         )
         dpg.add_text(
             "",
-            tag="obs_session_postprocess_hint",
+            tag="obs_session_props_postprocess_hint",
             parent=parent_tag,
             wrap=260,
             color=(255, 200, 120),
@@ -503,10 +521,10 @@ class OBSSessionPlugin(Plugin):
     def build_ui(self, parent_tag: str) -> None:
         import dearpygui.dearpygui as dpg
 
-        dpg.add_text("OBS Session Workflow", parent=parent_tag, color=(110, 190, 255))
+        dpg.add_text("OBS Workflow", parent=parent_tag, color=(110, 190, 255))
         dpg.add_text(
-            "Run the session from left to right: connect OBS, start the session on Pad 1, "
-            "toggle segments on Pad 2, then finish on Pad 3.",
+            "Switch scenes with Pads 1-3, mute mic on Pad 4. "
+            "Start a diary session on Pad 5, record segments on Pad 6.",
             parent=parent_tag,
             wrap=720,
             color=(120, 120, 140),
@@ -516,7 +534,8 @@ class OBSSessionPlugin(Plugin):
         with dpg.child_window(parent=parent_tag, height=136, border=True):
             with dpg.group(horizontal=True):
                 with dpg.group():
-                    dpg.add_text("Session Overview", color=(150, 150, 165))
+                    dpg.add_text("Status", color=(150, 150, 165))
+                    self._add_status_row(parent_tag=None, label="Scene", value_tag="obs_session_overview_scene")
                     self._add_status_row(parent_tag=None, label="State", value_tag="obs_session_overview_state")
                     self._add_status_row(parent_tag=None, label="Recording", value_tag="obs_session_overview_recording")
                     self._add_status_row(parent_tag=None, label="Segments", value_tag="obs_session_overview_segments")
@@ -544,50 +563,80 @@ class OBSSessionPlugin(Plugin):
 
         dpg.add_spacer(height=6, parent=parent_tag)
         with dpg.group(horizontal=True, parent=parent_tag):
-            with dpg.child_window(width=220, height=144, border=True):
+            with dpg.child_window(width=160, height=100, border=True):
                 dpg.add_text("PAD 1", color=(100, 180, 255))
-                dpg.add_text("Start session", color=(230, 232, 238))
+                dpg.add_text("Screen", color=(230, 232, 238))
+                dpg.add_text("Right half of monitor", wrap=140, color=(120, 120, 140))
+                dpg.add_button(
+                    tag="obs_session_btn_scene_screen",
+                    label="Screen",
+                    width=-1,
+                    callback=lambda: self._action_switch_scene(self.scene_screen),
+                )
+            with dpg.child_window(width=160, height=100, border=True):
+                dpg.add_text("PAD 2", color=(100, 180, 255))
+                dpg.add_text("Camera", color=(230, 232, 238))
+                dpg.add_text("Webcam fullscreen", wrap=140, color=(120, 120, 140))
+                dpg.add_button(
+                    tag="obs_session_btn_scene_camera",
+                    label="Camera",
+                    width=-1,
+                    callback=lambda: self._action_switch_scene(self.scene_camera),
+                )
+            with dpg.child_window(width=160, height=100, border=True):
+                dpg.add_text("PAD 3", color=(100, 180, 255))
+                dpg.add_text("Screen+PiP", color=(230, 232, 238))
+                dpg.add_text("Screen + camera corner", wrap=140, color=(120, 120, 140))
+                dpg.add_button(
+                    tag="obs_session_btn_scene_pip",
+                    label="PiP",
+                    width=-1,
+                    callback=lambda: self._action_switch_scene(self.scene_pip),
+                )
+            with dpg.child_window(width=-1, height=100, border=True):
+                dpg.add_text("PAD 4", color=(150, 150, 165))
+                dpg.add_text("Mute Mic", color=(230, 232, 238))
+                dpg.add_text("Toggle microphone", wrap=140, color=(120, 120, 140))
+                dpg.add_button(
+                    tag="obs_session_btn_mute",
+                    label="Mute Mic",
+                    width=-1,
+                    callback=self._action_toggle_mute_mic,
+                )
+        with dpg.group(horizontal=True, parent=parent_tag):
+            with dpg.child_window(width=240, height=100, border=True):
+                dpg.add_text("PAD 5", color=(255, 200, 90))
+                dpg.add_text("", tag="obs_session_lbl_pad5", color=(230, 232, 238))
                 dpg.add_text(
-                    "Create the session folder, switch OBS to the working scene, and prepare capture sources.",
-                    wrap=200,
+                    "Start or stop the diary session",
+                    wrap=220,
                     color=(120, 120, 140),
                 )
-                dpg.add_spacer(height=6)
                 dpg.add_button(
-                    tag="obs_session_btn_start",
+                    tag="obs_session_btn_session",
                     label="Start Session",
                     width=-1,
-                    callback=self._action_start_session,
+                    callback=lambda: (
+                        self._action_stop_session() if self.session_state == "running"
+                        else self._action_start_session()
+                    ),
                 )
-            with dpg.child_window(width=220, height=144, border=True):
-                dpg.add_text("PAD 2", color=(255, 200, 90))
-                dpg.add_text("Record segment", color=(230, 232, 238))
+            with dpg.child_window(width=240, height=100, border=True):
+                dpg.add_text("PAD 6", color=(255, 120, 120))
+                dpg.add_text("", tag="obs_session_lbl_pad6", color=(230, 232, 238))
                 dpg.add_text(
-                    "Use this once to begin a take, then press again to close and save that segment into the session folder.",
-                    wrap=200,
+                    "Record or toggle segment",
+                    wrap=220,
                     color=(120, 120, 140),
                 )
-                dpg.add_spacer(height=6)
                 dpg.add_button(
                     tag="obs_session_btn_record",
-                    label="Start Segment",
+                    label="Record",
                     width=-1,
-                    callback=self._action_toggle_record,
-                )
-            with dpg.child_window(width=-1, height=144, border=True):
-                dpg.add_text("PAD 3", color=(255, 120, 120))
-                dpg.add_text("Stop session", color=(230, 232, 238))
-                dpg.add_text(
-                    "Finalize the session, close any open recording, and hand off to the postprocessing stage.",
-                    wrap=240,
-                    color=(120, 120, 140),
-                )
-                dpg.add_spacer(height=6)
-                dpg.add_button(
-                    tag="obs_session_btn_stop",
-                    label="Stop Session",
-                    width=-1,
-                    callback=self._action_stop_session,
+                    callback=lambda: (
+                        self._action_toggle_record() if self.session_state == "running"
+                        else self._action_toggle_record_simple()
+                    ),
                 )
 
         dpg.add_spacer(height=6, parent=parent_tag)
@@ -704,6 +753,53 @@ class OBSSessionPlugin(Plugin):
         self._record_cb_registered = False
 
     # -- actions -----------------------------------------------------------
+
+    def _action_switch_scene(self, scene_name: str) -> None:
+        if not self._ensure_connected():
+            self._refresh_ui()
+            return
+        obs = self._get_obs()
+        if obs and obs.switch_scene(scene_name):
+            self._last_action = f"Switched to scene: {scene_name}"
+            self._play_cue("action.navigation")
+        else:
+            self._last_action = f"Failed to switch to scene: {scene_name}"
+        self._refresh_ui()
+
+    def _action_toggle_mute_mic(self) -> None:
+        if not self._ensure_connected():
+            self._refresh_ui()
+            return
+        obs = self._get_obs()
+        if obs and obs.toggle_source_mute(self.mic_source):
+            self._last_action = f"Toggled mute: {self.mic_source}"
+            self._play_cue("action.toggle_on")
+        else:
+            self._last_action = f"Mute toggle failed: {self.mic_source}"
+        self._refresh_ui()
+
+    def _action_toggle_record_simple(self) -> None:
+        """Simple recording toggle (no session/segments)."""
+        if not self._ensure_connected():
+            self._refresh_ui()
+            return
+        obs = self._get_obs()
+        if obs is None:
+            return
+        obs.refresh_recording_state()
+        was_recording = obs.is_recording
+        if obs.toggle_recording():
+            obs.refresh_recording_state()
+            self.recording = obs.is_recording
+            if was_recording:
+                self._last_action = "Recording stopped"
+                self._play_cue("action.toggle_off")
+            else:
+                self._last_action = "Recording started"
+                self._play_cue("action.toggle_on")
+        else:
+            self._last_action = "Toggle recording failed"
+        self._refresh_ui()
 
     def _action_connect(self) -> None:
         obs = self._get_obs()
@@ -822,58 +918,19 @@ class OBSSessionPlugin(Plugin):
             self.session_state = "idle"
 
     def _auto_setup_workspace(self, obs) -> tuple[bool, list[str]]:
-        notes: list[str] = []
         if not self.auto_setup_scene:
             return True, ["auto-setup disabled"]
-        if not obs.ensure_scene_exists(self.working_scene):
-            msg = f"Could not create or find scene '{self.working_scene}'"
-            log.error(msg)
-            return False, [msg]
-
-        name_map = {
-            "__right__": self.right_screen_source,
-            "__camera__": self.camera_source,
-            "__mic__": self.mic_source,
-        }
-        plan = _session_source_plan()
-        if not plan:
-            notes.append(
-                "Auto-setup: scene only on this OS; add monitor, camera, and mic sources manually."
-            )
-            return True, notes
-
-        for key, kind in plan:
-            label = name_map[key]
-            defaults = obs.get_default_input_settings(kind)
-            ok, hint = obs.add_source_to_scene(
-                self.working_scene, label, kind, defaults
-            )
-            detail = f"{label} ({kind}): {hint}"
-            notes.append(detail)
-            if not ok:
-                log.error("OBS Session setup step failed: %s", detail)
-                notes.append(
-                    "You can create or rename sources in OBS to match the configured names."
-                )
-        crop_ok, crop_hint = obs.crop_source_to_right_half(
-            self.working_scene, self.right_screen_source
+        ok, notes = obs.setup_three_scenes(
+            scene_screen=self.scene_screen,
+            scene_camera=self.scene_camera,
+            scene_pip=self.scene_pip,
+            right_source=self.right_screen_source,
+            camera_source=self.camera_source,
+            mic_source=self.mic_source,
         )
-        if crop_ok:
-            notes.append(f"{self.right_screen_source}: right-half crop applied ({crop_hint})")
-        else:
-            notes.append(
-                f"{self.right_screen_source}: crop skipped ({crop_hint}); set crop manually if needed"
-            )
-        pip_ok, pip_hint = obs.position_camera_pip(
-            self.working_scene, self.camera_source, scale=0.28, margin=24.0
-        )
-        if pip_ok:
-            notes.append(f"{self.camera_source}: PiP layout ({pip_hint})")
-        else:
-            notes.append(
-                f"{self.camera_source}: PiP skipped ({pip_hint}); position camera manually if needed"
-            )
-        return True, notes
+        if not ok:
+            log.error("OBS auto-setup failed: %s", notes)
+        return ok, notes
 
     def _action_start_session(self) -> None:
         if self._postprocess_running or self.session_state == "postprocessing":
@@ -893,8 +950,8 @@ class OBSSessionPlugin(Plugin):
         obs.refresh_recording_state()
         if obs.is_recording:
             self._last_action = (
-                "OBS is already recording. Stop recording in OBS (or finish the current "
-                "take) before starting a session so Pad 2 start/stop stays one segment at a time."
+                "OBS is already recording. Stop recording first "
+                "so segment start/stop stays one segment at a time."
             )
             self._refresh_ui()
             return
@@ -905,8 +962,8 @@ class OBSSessionPlugin(Plugin):
             self._refresh_ui()
             return
 
-        if not obs.switch_scene(self.working_scene):
-            self._last_action = f"Could not switch to scene '{self.working_scene}'"
+        if not obs.switch_scene(self.scene_pip):
+            self._last_action = f"Could not switch to scene '{self.scene_pip}'"
             self._refresh_ui()
             return
 
@@ -962,6 +1019,7 @@ class OBSSessionPlugin(Plugin):
             self._session_folder,
             setup_notes,
         )
+        self._play_cue("session.start")
         self._refresh_ui()
 
     def _drain_record_path(self, timeout: float = 1.0) -> str | None:
@@ -988,7 +1046,7 @@ class OBSSessionPlugin(Plugin):
 
     def _action_toggle_record(self) -> None:
         if self.session_state != "running":
-            self._last_action = "Start a session first with Pad 1"
+            self._last_action = "Start a session first with Pad 5"
             self._refresh_ui()
             return
         if not self._ensure_connected():
@@ -1017,6 +1075,7 @@ class OBSSessionPlugin(Plugin):
             while self._segment_output_path is None and time.monotonic() < deadline:
                 time.sleep(0.05)
             self._last_action = "Recording segment started"
+            self._play_cue("session.segment_start")
             log.info("OBS Session segment start")
         else:
             if not obs.stop_recording():
@@ -1041,6 +1100,7 @@ class OBSSessionPlugin(Plugin):
             self.recording = obs.is_recording
             short = copied or path or "(path unknown)"
             self._last_action = f"Segment {self.segments_count} saved: {short}"
+            self._play_cue("session.segment_stop")
             log.info("OBS Session segment stop file=%s", path)
         self._refresh_ui()
 
@@ -1051,7 +1111,11 @@ class OBSSessionPlugin(Plugin):
         payload = {
             "schema": "midi-macropad.obs_session.v1",
             "created_utc": _utc_now_iso(),
-            "working_scene": self.working_scene,
+            "scenes": {
+                "screen": self.scene_screen,
+                "camera": self.scene_camera,
+                "pip": self.scene_pip,
+            },
             "sources": {
                 "right_screen": self.right_screen_source,
                 "camera": self.camera_source,
@@ -1079,7 +1143,7 @@ class OBSSessionPlugin(Plugin):
             self._refresh_ui()
             return
         if self.session_state != "running":
-            self._last_action = "Start a session first with Pad 1"
+            self._last_action = "Start a session first with Pad 5"
             self._refresh_ui()
             return
 
@@ -1135,6 +1199,7 @@ class OBSSessionPlugin(Plugin):
             self._last_action = "Session stopped (manifest not written)"
 
         log.info("OBS Session stopped manifest=%s segments=%s", mf, self.segments_count)
+        self._play_cue("session.stop")
 
         run_post = self.postprocess_stitch or self.postprocess_transcript
         if run_post and mf and self._session_folder:
@@ -1209,7 +1274,9 @@ class OBSSessionPlugin(Plugin):
                 "host": self.host,
                 "port": self.port,
                 "password": self.password,
-                "working_scene": self.working_scene,
+                "scene_screen": self.scene_screen,
+                "scene_camera": self.scene_camera,
+                "scene_pip": self.scene_pip,
                 "right_screen_source": self.right_screen_source,
                 "camera_source": self.camera_source,
                 "mic_source": self.mic_source,
@@ -1258,7 +1325,7 @@ class OBSSessionPlugin(Plugin):
 
         if not self._segments and not self.recording:
             dpg.add_text(
-                "No segments yet. Start the session on Pad 1, then use Pad 2 to create the first recorded segment.",
+                "No segments yet. Start a session on Pad 5, then use Pad 6 to create the first recorded segment.",
                 parent=panel_tag,
                 wrap=700,
                 color=(120, 120, 140),
@@ -1267,7 +1334,7 @@ class OBSSessionPlugin(Plugin):
 
         if self.recording and self._pending_segment_start:
             dpg.add_text(
-                f"Recording now since {_format_local_clock(self._pending_segment_start)}. Press Pad 2 again to close this segment.",
+                f"Recording now since {_format_local_clock(self._pending_segment_start)}. Press Pad 6 again to close this segment.",
                 parent=panel_tag,
                 wrap=700,
                 color=_STATUS_RECORDING,
@@ -1494,6 +1561,7 @@ class OBSSessionPlugin(Plugin):
         live = obs.connected if obs else False
         ui_connected = live
         ui_state = self._ui_session_state()
+        current_scene = obs.current_scene if obs and live else "?"
         connection_text = (
             f"Connected · {obs.obs_version}"
             if live and obs
@@ -1503,7 +1571,7 @@ class OBSSessionPlugin(Plugin):
         session_color = self._ui_session_state_color()
         recording_text = "Recording" if self.recording else "Standby"
         recording_color = _STATUS_RECORDING if self.recording else _STATUS_IDLE
-        record_button_label = "Stop Segment" if self.recording else "Start Segment"
+        in_session = self.session_state == "running"
         ffmpeg_ready = shutil.which("ffmpeg") is not None
         api_key_ready = _has_openai_api_key()
 
@@ -1558,26 +1626,22 @@ class OBSSessionPlugin(Plugin):
             _STATUS_POSTPROCESS if self._session_folder else _STATUS_IDLE,
         )
         self._set_text_if_exists(
-            dpg,
-            "obs_session_overview_state",
-            ui_state.title(),
-            session_color,
+            dpg, "obs_session_overview_scene", current_scene,
+            _CONNECTED_OK if ui_connected else _STATUS_IDLE,
         )
         self._set_text_if_exists(
-            dpg,
-            "obs_session_overview_recording",
-            recording_text,
-            recording_color,
+            dpg, "obs_session_overview_state", ui_state.title(), session_color,
         )
         self._set_text_if_exists(
-            dpg,
-            "obs_session_overview_segments",
+            dpg, "obs_session_overview_recording", recording_text, recording_color,
+        )
+        self._set_text_if_exists(
+            dpg, "obs_session_overview_segments",
             str(self.segments_count),
             _STATUS_ACTIVE if self.segments_count else _STATUS_IDLE,
         )
         self._set_text_if_exists(
-            dpg,
-            "obs_session_overview_folder",
+            dpg, "obs_session_overview_folder",
             self._session_folder_label(),
             _STATUS_POSTPROCESS if self._session_folder else _STATUS_IDLE,
         )
@@ -1600,10 +1664,10 @@ class OBSSessionPlugin(Plugin):
             api_color,
         )
         self._set_text_if_exists(
-            dpg,
-            "obs_session_last_action",
-            self._last_action,
-            (120, 120, 140),
+            dpg, "obs_session_last_action", self._last_action, (120, 120, 140),
+        )
+        self._set_text_if_exists(
+            dpg, "obs_session_props_last_action", self._last_action, (120, 120, 140),
         )
         self._set_text_if_exists(
             dpg,
@@ -1630,35 +1694,45 @@ class OBSSessionPlugin(Plugin):
             )
             hint_color = _STATUS_WARN
         self._set_text_if_exists(
-            dpg,
-            "obs_session_postprocess_hint",
-            hint,
-            hint_color,
+            dpg, "obs_session_postprocess_hint", hint, hint_color,
+        )
+        self._set_text_if_exists(
+            dpg, "obs_session_props_postprocess_hint", hint, hint_color,
         )
         self._render_segments_panel(dpg)
         self._render_catalog_panel(dpg)
+
+        # Dynamic pad labels
+        pad5_label = "Stop Session" if in_session else "Start Session"
+        if in_session and self.recording:
+            pad6_label = "Stop Segment"
+        elif in_session:
+            pad6_label = "Record Segment"
+        elif self.recording:
+            pad6_label = "Stop Rec"
+        else:
+            pad6_label = "Record"
+
+        self._set_text_if_exists(dpg, "obs_session_lbl_pad5", pad5_label, (230, 232, 238))
+        self._set_text_if_exists(dpg, "obs_session_lbl_pad6", pad6_label, (230, 232, 238))
+
+        if dpg.does_item_exist("obs_session_btn_session"):
+            dpg.configure_item("obs_session_btn_session", label=pad5_label)
         if dpg.does_item_exist("obs_session_btn_record"):
-            dpg.configure_item("obs_session_btn_record", label=record_button_label)
+            dpg.configure_item("obs_session_btn_record", label=pad6_label)
+
         self._set_button_enabled_if_exists(dpg, "obs_session_btn_connect", not ui_connected)
         self._set_button_enabled_if_exists(dpg, "obs_session_btn_disconnect", ui_connected)
+        for btn in ("obs_session_btn_scene_screen", "obs_session_btn_scene_camera",
+                     "obs_session_btn_scene_pip", "obs_session_btn_mute"):
+            self._set_button_enabled_if_exists(dpg, btn, ui_connected)
         self._set_button_enabled_if_exists(
-            dpg,
-            "obs_session_btn_start",
-            ui_connected
-            and self.session_state != "running"
-            and not self._postprocess_running,
+            dpg, "obs_session_btn_session",
+            ui_connected and not self._postprocess_running,
         )
         self._set_button_enabled_if_exists(
-            dpg,
-            "obs_session_btn_record",
-            ui_connected
-            and self.session_state == "running"
-            and not self._postprocess_running,
-        )
-        self._set_button_enabled_if_exists(
-            dpg,
-            "obs_session_btn_stop",
-            self.session_state == "running",
+            dpg, "obs_session_btn_record",
+            ui_connected and not self._postprocess_running,
         )
 
     @staticmethod

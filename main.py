@@ -177,7 +177,6 @@ _MODE_CUE_MAP = {
     "voice scribe": "mode.voice_scribe",
     "sound pads": "mode.sound_pads",
     "voicemeeter": "mode.voicemeeter",
-    "obs session": "mode.obs_session",
     "spotify": "mode.spotify",
 }
 
