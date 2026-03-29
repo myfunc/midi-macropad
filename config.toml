@@ -1,3 +1,10 @@
+[device]
+name = "MPK mini play"
+
+[settings]
+double_tap_ms = 300
+long_press_ms = 2000
+
 [[knobs]]
 cc = 48
 label = "Volume"
@@ -5,6 +12,7 @@ label = "Volume"
 [knobs.action]
 type = "volume"
 target = "master"
+
 [[knobs]]
 cc = 49
 label = "Mic"
@@ -12,6 +20,7 @@ label = "Mic"
 [knobs.action]
 type = "volume"
 target = "mic"
+
 [[knobs]]
 cc = 50
 label = "Spotify"
@@ -19,108 +28,346 @@ label = "Spotify"
 [knobs.action]
 type = "volume"
 target = "spotify"
-[[modes]]
+
+# ========== Pad Presets ==========
+
+[[pad_presets]]
 name = "Spotify"
-color = "#1DB954"
-icon = "SPT"
-[[modes.pads]]
+
+[[pad_presets.pads]]
 note = 16
 label = "Play/Pause"
 
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "app_keystroke"
 keys = "space"
 process = "Spotify.exe"
-[[modes.pads]]
+
+[[pad_presets.pads]]
 note = 17
 label = "Next"
 
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "app_keystroke"
 keys = "ctrl+right"
 process = "Spotify.exe"
-[[modes.pads]]
+
+[[pad_presets.pads]]
 note = 18
 label = "Prev"
 
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "app_keystroke"
 keys = "ctrl+left"
 process = "Spotify.exe"
-[[modes.pads]]
+
+[[pad_presets.pads]]
 note = 19
 label = "Like"
 
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "app_keystroke"
 keys = "alt+shift+b"
 process = "Spotify.exe"
-[[modes.pads]]
+
+[[pad_presets.pads]]
 note = 20
 label = "Shuffle"
 
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "app_keystroke"
 keys = "ctrl+s"
 process = "Spotify.exe"
-[[modes.pads]]
+
+[[pad_presets.pads]]
 note = 21
 label = "DJ Mix"
 
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "app_keystroke"
 keys = "ctrl+shift+j"
 process = "Spotify.exe"
-[[modes.pads]]
+
+[[pad_presets.pads]]
 note = 22
 label = "Add to PL"
 
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "plugin"
-target = "spotify:add_to_playlist"
-[[modes.pads]]
+target = "Spotify"
+
+[[pad_presets.pads]]
 note = 23
 label = "Remove PL"
 
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "plugin"
-target = "spotify:remove_from_playlist"
+target = "Spotify"
 
-[[modes]]
+[[pad_presets]]
 name = "Voicemeeter"
-color = "#06B6D4"
-icon = "MIX"
 
-[[modes]]
+[[pad_presets.pads]]
+note = 16
+label = "Pad 1"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voicemeeter"
+
+[[pad_presets.pads]]
+note = 17
+label = "Pad 2"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voicemeeter"
+
+[[pad_presets.pads]]
+note = 18
+label = "Pad 3"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voicemeeter"
+
+[[pad_presets.pads]]
+note = 19
+label = "Pad 4"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voicemeeter"
+
+[[pad_presets.pads]]
+note = 20
+label = "Pad 5"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voicemeeter"
+
+[[pad_presets.pads]]
+note = 21
+label = "Pad 6"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voicemeeter"
+
+[[pad_presets.pads]]
+note = 22
+label = "Pad 7"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voicemeeter"
+
+[[pad_presets.pads]]
+note = 23
+label = "Pad 8"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voicemeeter"
+
+[[pad_presets]]
 name = "Voice Scribe"
-color = "#EC4899"
-icon = "MIC"
 
-[[modes]]
+[[pad_presets.pads]]
+note = 16
+label = "Pad 1"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe"
+
+[[pad_presets.pads]]
+note = 17
+label = "Pad 2"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe"
+
+[[pad_presets.pads]]
+note = 18
+label = "Pad 3"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe"
+
+[[pad_presets.pads]]
+note = 19
+label = "Pad 4"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe"
+
+[[pad_presets.pads]]
+note = 20
+label = "Pad 5"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe"
+
+[[pad_presets.pads]]
+note = 21
+label = "Pad 6"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe"
+
+[[pad_presets.pads]]
+note = 22
+label = "Pad 7"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe"
+
+[[pad_presets.pads]]
+note = 23
+label = "Pad 8"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe"
+
+[[pad_presets]]
 name = "OBS"
-color = "#8B5CF6"
-icon = "CAM"
 
-[[modes]]
-name = "Sound Pads"
-color = "#F59E0B"
-icon = "SND"
+[[pad_presets.pads]]
+note = 16
+label = "Pad 1"
 
-[[contexts]]
-process = "obs64.exe"
-mode = "OBS"
+[pad_presets.pads.action]
+type = "plugin"
+target = "OBS"
 
-[[contexts]]
-process = "voicemeeterpro_x64.exe"
-mode = "Voicemeeter"
+[[pad_presets.pads]]
+note = 17
+label = "Pad 2"
 
-[[contexts]]
-process = "Spotify.exe"
-mode = "Spotify"
+[pad_presets.pads.action]
+type = "plugin"
+target = "OBS"
 
-[device]
-name = "MPK mini play"
+[[pad_presets.pads]]
+note = 18
+label = "Pad 3"
 
-[settings]
-double_tap_ms = 300
-long_press_ms = 2000
+[pad_presets.pads.action]
+type = "plugin"
+target = "OBS"
+
+[[pad_presets.pads]]
+note = 19
+label = "Pad 4"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "OBS"
+
+[[pad_presets.pads]]
+note = 20
+label = "Pad 5"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "OBS"
+
+[[pad_presets.pads]]
+note = 21
+label = "Pad 6"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "OBS"
+
+[[pad_presets.pads]]
+note = 22
+label = "Pad 7"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "OBS"
+
+[[pad_presets.pads]]
+note = 23
+label = "Pad 8"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "OBS"
+
+[[pad_presets]]
+name = "Sample Player"
+
+[[pad_presets.pads]]
+note = 16
+label = "Pad 1"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Sample Player"
+
+[[pad_presets.pads]]
+note = 17
+label = "Pad 2"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Sample Player"
+
+[[pad_presets.pads]]
+note = 18
+label = "Pad 3"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Sample Player"
+
+[[pad_presets.pads]]
+note = 19
+label = "Pad 4"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Sample Player"
+
+[[pad_presets.pads]]
+note = 20
+label = "Pad 5"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Sample Player"
+
+[[pad_presets.pads]]
+note = 21
+label = "Pad 6"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Sample Player"
+
+[[pad_presets.pads]]
+note = 22
+label = "Pad 7"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Sample Player"
+
+[[pad_presets.pads]]
+note = 23
+label = "Pad 8"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Sample Player"

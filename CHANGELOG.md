@@ -5,10 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-03-27
+## [Unreleased] - 2026-03-29
 
 ### Added
 
+- Pad editor: plugin action type includes a **Plugin Target** field; saved pad config stores the target in the action path
+- Plugin base API: `set_owned_notes`, `get_action_catalog`, `execute_plugin_action`, and `get_dynamic_label` for owned-note ranges, discoverable actions, and live pad labels
 - Spotify plugin with OAuth PKCE integration for Web API control
   - Play/Pause, Next, Previous, Like, Shuffle via Spotify API
   - DJ Mix pad (keyboard shortcut), Add to Playlist, Remove from Playlist (API)
@@ -26,8 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All mode melodies normalized to C major for consistent tonality
 - MIDI cues `session.start`, `session.stop`, `session.segment_start`, and `session.segment_stop` (steel guitar, low-mid) in `feedback.py`
 
+### Fixed
+
+- Plugin activation: `set_owned_notes()` now sets `self._active = bool(notes)` in Spotify, Voicemeeter, OBS Session, Voice Scribe, Sample Player, and Performance template plugins, fixing presets with arbitrary names where `on_mode_changed` left every plugin inactive
+
 ### Changed
 
+- Left sidebar: **PAD PRESET** dropdown replaces mode controls; device section shows the MIDI port; mode buttons and the current-mode line removed
+- PluginManager calls `notify_preset_changed(mapper)` on preset change so plugins receive updated owned note ranges
+- OBS, Spotify, Voicemeeter, Voice Scribe, Sample Player, and Performance Template plugins use dynamic pad-to-note mapping via `set_owned_notes` where applicable
 - Default window size doubled to 2400×1560 for high-resolution displays
 - Voicemeeter joystick binding removed; joystick is now global mode switcher
 - Mode order: Spotify, Voicemeeter, Voice Scribe placed first in the list

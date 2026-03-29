@@ -83,8 +83,10 @@ def _build_fields(note, action_type, mapping):
                      color=(120, 120, 140))
 
     elif action_type == "plugin":
-        dpg.add_text("Handled by plugin", parent=parent,
-                     color=(120, 120, 140))
+        target = mapping.action.target if mapping else ""
+        dpg.add_text("Plugin Target:", parent=parent, color=(150, 150, 160))
+        dpg.add_input_text(tag=f"pe_plugin_target_{note}", default_value=target,
+                           hint="e.g. Spotify or OBS:scene_screen", width=-1, parent=parent)
 
 
 def _on_type_changed(note, new_type):
@@ -132,4 +134,6 @@ def _collect(note) -> dict:
         data["target"] = dpg.get_value(f"pe_obs_{note}")
     elif atype == "volume" and dpg.does_item_exist(f"pe_vol_{note}"):
         data["target"] = dpg.get_value(f"pe_vol_{note}")
+    elif atype == "plugin" and dpg.does_item_exist(f"pe_plugin_target_{note}"):
+        data["target"] = dpg.get_value(f"pe_plugin_target_{note}")
     return data

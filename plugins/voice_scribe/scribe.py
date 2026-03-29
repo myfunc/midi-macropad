@@ -175,6 +175,8 @@ class VoiceScribePlugin(Plugin):
         self.mic_device: int | None = None
 
         self._prompts: dict[int, dict] = {}
+        self._prompt_list: list[dict] = []
+        self._owned_note_list: list[int] | None = None
         self._plugin_dir: Path = Path(__file__).parent
 
         self._active: bool = False
@@ -220,6 +222,12 @@ class VoiceScribePlugin(Plugin):
         if not self._active:
             self._hard_cancel(set_status=False)
 
+    def set_owned_notes(self, notes: set[int]) -> None:
+        self._active = bool(notes)
+        self._owned_note_list = sorted(notes)
+        if self._prompt_list:
+            self._remap_prompt_notes()
+
     # -- mic device persistence -----------------------------------------------
 
     def _load_mic_device(self):
@@ -247,15 +255,25 @@ class VoiceScribePlugin(Plugin):
         path = self._plugin_dir / "prompts.toml"
         if not path.exists():
             log.warning("prompts.toml not found, no pads configured")
+            self._prompt_list = []
+            self._prompts.clear()
             return
         data = toml.load(str(path))
         self._whisper_prompt = data.get("whisper_prompt", "")
+        self._prompt_list = list(data.get("prompts", []))
+        self._prompt_list.sort(key=lambda x: int(x["pad"]))
+        self._remap_prompt_notes()
+        log.info("Loaded %d prompt pads", len(self._prompts))
+
+    def _remap_prompt_notes(self) -> None:
         self._prompts.clear()
-        for p in data.get("prompts", []):
-            note = p["pad"] + PAD_NOTE_OFFSET
+        for i, p in enumerate(self._prompt_list):
+            if self._owned_note_list is not None and i < len(self._owned_note_list):
+                note = self._owned_note_list[i]
+            else:
+                note = int(p["pad"]) + PAD_NOTE_OFFSET
             p["_note"] = note
             self._prompts[note] = p
-        log.info("Loaded %d prompt pads", len(self._prompts))
 
     # -- MIDI hooks -----------------------------------------------------------
 

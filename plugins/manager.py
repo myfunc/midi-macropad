@@ -208,6 +208,17 @@ class PluginManager:
                           f"{name}.on_mode_changed error: {traceback.format_exc()}",
                           color=(255, 80, 80))
 
+    def notify_preset_changed(self, mapper) -> None:
+        for name in list(self.enabled):
+            plugin = self.plugins.get(name)
+            if plugin is None:
+                continue
+            notes = mapper.get_plugin_notes(name)
+            try:
+                plugin.set_owned_notes(notes)
+            except Exception:
+                pass
+
     def get_active_status(self) -> tuple[str, tuple[int, int, int]] | None:
         for name in list(self.enabled):
             plugin = self.plugins.get(name)

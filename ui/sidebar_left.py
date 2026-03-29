@@ -1,99 +1,25 @@
-"""Left sidebar -- mode switcher, device status, plugin toggles, profiles."""
+"""Left sidebar -- pad preset selector, device status, plugin toggles, profiles."""
 import dearpygui.dearpygui as dpg
 import settings
-from ui.dashboard import hex_to_rgb
-from ui import selection
 
-_mode_callback = None
+_preset_callback = None
 _plugin_toggle_callback = None
-_mode_btn_tags: list[str] = []
-_mode_icon_tags: list[str] = []
-_mode_colors: list[tuple[int, int, int]] = []
-_mode_icons: list[str] = []
-_active_index: int = 0
-_manual_override: bool = False
-_mode_count: int = 0
-_mode_themes: dict[tuple[int, bool, bool], int] = {}
+_preset_count: int = 0
+_preset_changing: bool = False
 
 
-def _get_mode_theme(mode_index: int, active: bool, is_icon: bool) -> int:
-    key = (mode_index, active, is_icon)
-    if key in _mode_themes:
-        return _mode_themes[key]
-    r, g, b = (
-        _mode_colors[mode_index]
-        if mode_index < len(_mode_colors)
-        else (100, 100, 120)
-    )
-    if is_icon:
-        if active:
-            with dpg.theme() as icon_t:
-                with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 120))
-                    dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
-                    dpg.add_theme_color(
-                        dpg.mvThemeCol_ButtonHovered, (r, g, b, 150)
-                    )
-                    dpg.add_theme_color(
-                        dpg.mvThemeCol_ButtonActive, (r, g, b, 180)
-                    )
-                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 4)
-        else:
-            with dpg.theme() as icon_t:
-                with dpg.theme_component(dpg.mvButton):
-                    dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 25))
-                    dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 140))
-                    dpg.add_theme_color(
-                        dpg.mvThemeCol_ButtonHovered, (r, g, b, 45)
-                    )
-                    dpg.add_theme_color(
-                        dpg.mvThemeCol_ButtonActive, (r, g, b, 65)
-                    )
-                    dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-                    dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 4, 4)
-        _mode_themes[key] = icon_t
-        return icon_t
-    if active:
-        with dpg.theme() as btn_t:
-            with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (r, g, b, 45))
-                dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 65))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 80))
-                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
-    else:
-        with dpg.theme() as btn_t:
-            with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
-                dpg.add_theme_color(dpg.mvThemeCol_Text, (r, g, b, 140))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (r, g, b, 28))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (r, g, b, 45))
-                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 6, 4)
-    _mode_themes[key] = btn_t
-    return btn_t
-
-
-def create_left_sidebar(parent="panel_left", *, mode_names, mode_colors,
-                        mode_icons=None, callback=None,
-                        plugin_toggle_callback=None):
-    global _mode_callback, _plugin_toggle_callback, _mode_count
-    for theme_id in _mode_themes.values():
-        if dpg.does_item_exist(theme_id):
-            dpg.delete_item(theme_id)
-    _mode_themes.clear()
-    _mode_callback = callback
+def create_left_sidebar(
+    parent="panel_left",
+    *,
+    preset_names,
+    callback=None,
+    plugin_toggle_callback=None,
+):
+    global _preset_callback, _plugin_toggle_callback, _preset_count
+    _preset_callback = callback
     _plugin_toggle_callback = plugin_toggle_callback
-    _mode_btn_tags.clear()
-    _mode_icon_tags.clear()
-    _mode_colors.clear()
-    _mode_icons.clear()
-
-    if mode_icons is None:
-        mode_icons = [""] * len(mode_names)
-    _mode_count = len(mode_names)
+    names = list(preset_names) if preset_names is not None else []
+    _preset_count = len(names)
 
     with dpg.child_window(parent=parent, border=False):
         dpg.add_spacer(height=6)
@@ -126,57 +52,35 @@ def create_left_sidebar(parent="panel_left", *, mode_names, mode_colors,
                 dpg.add_text("", tag="sl_profile_status", color=(100, 255, 150))
 
         dpg.add_spacer(height=10)
-        dpg.add_text("  MODES", color=(75, 78, 95))
-        dpg.add_spacer(height=6)
-
-        for i, (name, color, icon) in enumerate(zip(mode_names, mode_colors, mode_icons)):
-            btn_tag = f"sl_mode_{i}"
-            icon_tag = f"sl_mode_icon_{i}"
-            r, g, b = hex_to_rgb(color)
-            _mode_colors.append((r, g, b))
-            _mode_icons.append(icon)
-
-            def _make_cb(idx):
-                return lambda: _on_mode_click(idx)
-
-            with dpg.group(horizontal=True):
-                dpg.add_spacer(width=4)
-                dpg.add_button(
-                    tag=icon_tag,
-                    label=f" {icon} " if icon else "   ",
-                    width=42, height=32,
-                    callback=_make_cb(i),
-                )
-                dpg.add_button(
-                    label=f" {name}",
-                    tag=btn_tag, width=-1, height=32,
-                    callback=_make_cb(i),
-                )
-            dpg.add_spacer(height=2)
-
-            _mode_btn_tags.append(btn_tag)
-            _mode_icon_tags.append(icon_tag)
-
-        dpg.add_spacer(height=8)
+        dpg.add_text("  PAD PRESET", color=(75, 78, 95))
         dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=6)
-            dpg.add_text("", tag="current_mode_label", color=(100, 180, 255))
+            default_preset = names[0] if names else ""
+            dpg.add_combo(
+                tag="sl_preset_combo",
+                items=names,
+                default_value=default_preset,
+                width=-1,
+                callback=_on_preset_combo,
+            )
 
         dpg.add_spacer(height=14)
         dpg.add_text("  DEVICE", color=(75, 78, 95))
         dpg.add_spacer(height=4)
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=6)
-            dpg.add_text("", tag="active_app_label", color=(100, 102, 118),
-                         wrap=165)
+            dpg.add_text(
+                "",
+                tag="sl_midi_device",
+                color=(100, 102, 118),
+                wrap=165,
+            )
 
         dpg.add_spacer(height=14)
         dpg.add_text("  PLUGINS", color=(75, 78, 95))
         dpg.add_spacer(height=4)
         dpg.add_group(tag="sl_plugin_list")
-
-    _update_mode_highlight(0)
 
 
 def populate_plugins(discovered, loaded_names):
@@ -195,9 +99,45 @@ def populate_plugins(discovered, loaded_names):
 
         with dpg.group(horizontal=True, parent="sl_plugin_list"):
             dpg.add_spacer(width=6)
-            dpg.add_checkbox(label=name, tag=f"sl_plugin_{name}",
-                             default_value=is_loaded,
-                             callback=_make_cb(name, info))
+            dpg.add_checkbox(
+                label=name,
+                tag=f"sl_plugin_{name}",
+                default_value=is_loaded,
+                callback=_make_cb(name, info),
+            )
+
+
+def set_active_preset(index: int):
+    global _preset_changing
+    if not dpg.does_item_exist("sl_preset_combo"):
+        return
+    cfg = dpg.get_item_configuration("sl_preset_combo") or {}
+    items = list(cfg.get("items") or [])
+    if not items or index < 0 or index >= len(items):
+        return
+    _preset_changing = True
+    try:
+        dpg.set_value("sl_preset_combo", items[index])
+    finally:
+        _preset_changing = False
+
+
+def get_preset_count() -> int:
+    return _preset_count
+
+
+def _on_preset_combo(sender, app_data):
+    if _preset_changing or not _preset_callback:
+        return
+    cfg = dpg.get_item_configuration(sender) or {}
+    items = list(cfg.get("items") or [])
+    if not items:
+        return
+    try:
+        idx = items.index(app_data)
+    except (ValueError, TypeError):
+        return
+    _preset_callback(idx)
 
 
 def _on_profile_change(sender, app_data):
@@ -219,37 +159,3 @@ def _on_profile_copy(sender, app_data):
     if dpg.does_item_exist("sl_profile_status"):
         dpg.set_value("sl_profile_status", f"Copied -> {new_name}")
         dpg.configure_item("sl_profile_status", color=(100, 255, 150))
-
-
-def _on_mode_click(index):
-    global _manual_override, _active_index
-    _manual_override = True
-    _active_index = index
-    _update_mode_highlight(index)
-    if _mode_callback:
-        _mode_callback(index)
-
-
-def _update_mode_highlight(index):
-    for i, (btn_tag, icon_tag) in enumerate(zip(_mode_btn_tags, _mode_icon_tags)):
-        if not dpg.does_item_exist(btn_tag):
-            continue
-        active = i == index
-        btn_t = _get_mode_theme(i, active, False)
-        icon_t = _get_mode_theme(i, active, True)
-        dpg.bind_item_theme(btn_tag, btn_t)
-        dpg.bind_item_theme(icon_tag, icon_t)
-
-
-def set_active_mode(index):
-    global _active_index
-    _active_index = index
-    _update_mode_highlight(index)
-
-
-def get_mode_count() -> int:
-    return _mode_count
-
-
-def is_manual_override():
-    return _manual_override

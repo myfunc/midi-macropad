@@ -65,6 +65,18 @@ class Plugin(ABC):
     def on_mode_changed(self, mode_name: str) -> None:
         pass
 
+    def set_owned_notes(self, notes: set[int]) -> None:
+        pass
+
+    def get_action_catalog(self) -> list[dict]:
+        return []
+
+    def execute_plugin_action(self, action_id: str, note: int, velocity: int) -> bool:
+        return False
+
+    def get_dynamic_label(self, action_id: str, note: int) -> str | None:
+        return None
+
     def get_status(self) -> tuple[str, tuple[int, int, int]] | None:
         """Return (text, color) for the header status strip, or None."""
         return None

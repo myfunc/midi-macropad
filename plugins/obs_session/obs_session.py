@@ -44,7 +44,7 @@ DEFAULT_SLOT_MAP: dict[int, str | None] = {
     22: None,
     23: None,
 }
-ALL_NOTES = [16, 17, 18, 19, 20, 21, 22, 23]
+DEFAULT_NOTE_ORDER = sorted(DEFAULT_SLOT_MAP.keys())
 
 _CONNECTED_OK = (100, 255, 150)
 _CONNECTED_BAD = (255, 90, 90)
@@ -213,7 +213,7 @@ class OBSSessionPlugin(Plugin):
 
         saved_slots = saved.get("pad_slots")
         if isinstance(saved_slots, dict):
-            for note in ALL_NOTES:
+            for note in DEFAULT_NOTE_ORDER:
                 key = str(note)
                 if key in saved_slots:
                     val = saved_slots[key]
@@ -251,6 +251,21 @@ class OBSSessionPlugin(Plugin):
         self._active = mode_name == self.mode_name
         self._refresh_ui()
 
+    def set_owned_notes(self, notes: set[int]) -> None:
+        self._active = bool(notes)
+        if not notes:
+            self._slot_map = dict(DEFAULT_SLOT_MAP)
+            self._rebuild_pad_grid()
+            return
+        old_sorted = sorted(self._slot_map.keys())
+        vals = [self._slot_map.get(k) for k in old_sorted]
+        new_sorted = sorted(notes)
+        new_map: dict[int, str | None] = {}
+        for i, note in enumerate(new_sorted):
+            new_map[note] = vals[i] if i < len(vals) else None
+        self._slot_map = new_map
+        self._rebuild_pad_grid()
+
     # -- MIDI hooks --------------------------------------------------------
 
     def _play_cue(self, cue_id: str) -> None:
@@ -266,6 +281,8 @@ class OBSSessionPlugin(Plugin):
 
     def on_pad_press(self, note: int, velocity: int) -> bool:
         if not self._active:
+            return False
+        if note not in self._slot_map:
             return False
         action = self._note_to_action(note)
         if action is None:
@@ -518,7 +535,7 @@ class OBSSessionPlugin(Plugin):
 
         dpg.add_spacer(height=10, parent=parent_tag)
         dpg.add_text("Pad Mapping", parent=parent_tag, color=(150, 150, 165))
-        for note in ALL_NOTES:
+        for note in sorted(self._slot_map.keys()):
             action_id = self._slot_map.get(note)
             pad_name = self._note_label(note)
             action_name = self._dynamic_label(action_id) if action_id else "(free)"
@@ -596,27 +613,32 @@ class OBSSessionPlugin(Plugin):
         self._build_pad_grid_contents(dpg, panel)
         self._refresh_ui()
 
+    def _grid_rows(self) -> tuple[list[int], list[int]]:
+        notes = sorted(self._slot_map.keys())
+        if len(notes) <= 4:
+            return [], notes
+        return notes[4:8], notes[0:4]
+
     def _note_label(self, note: int) -> str:
-        row_top = [20, 21, 22, 23]
-        row_bot = [16, 17, 18, 19]
-        if note in row_top:
-            return f"Pad {row_top.index(note) + 5}"
-        if note in row_bot:
-            return f"Pad {row_bot.index(note) + 1}"
+        top_row, bot_row = self._grid_rows()
+        if note in top_row:
+            return f"Pad {len(bot_row) + top_row.index(note) + 1}"
+        if note in bot_row:
+            return f"Pad {bot_row.index(note) + 1}"
         return f"N{note}"
 
     def _pad_number(self, note: int) -> int:
-        row_top = [20, 21, 22, 23]
-        row_bot = [16, 17, 18, 19]
-        if note in row_top:
-            return row_top.index(note) + 5
-        if note in row_bot:
-            return row_bot.index(note) + 1
-        return note
+        top_row, bot_row = self._grid_rows()
+        if note in top_row:
+            return len(bot_row) + top_row.index(note) + 1
+        if note in bot_row:
+            return bot_row.index(note) + 1
+        idx = sorted(self._slot_map.keys()).index(note)
+        return idx + 1
 
     def _build_pad_grid_contents(self, dpg, parent: str) -> None:
-        top_row = [20, 21, 22, 23]
-        bot_row = [16, 17, 18, 19]
+        top_row, bot_row = self._grid_rows()
+        rows: list[list[int]] = [r for r in (bot_row, top_row) if r]
 
         def _make_drop_cb(target_note):
             def cb(sender, app_data):
@@ -632,7 +654,7 @@ class OBSSessionPlugin(Plugin):
                     self._exec_action(aid)
             return cb
 
-        for row_notes in (top_row, bot_row):
+        for row_notes in rows:
             with dpg.group(horizontal=True, parent=parent):
                 for note in row_notes:
                     action_id = self._slot_map.get(note)
@@ -1800,7 +1822,7 @@ class OBSSessionPlugin(Plugin):
         self._render_segments_panel(dpg)
         self._render_catalog_panel(dpg)
 
-        for note in ALL_NOTES:
+        for note in sorted(self._slot_map.keys()):
             action_id = self._slot_map.get(note)
             lbl = self._dynamic_label(action_id) if action_id else "—"
             self._set_text_if_exists(dpg, f"obs_pad_lbl_{note}", lbl, (230, 232, 238))

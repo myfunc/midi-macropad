@@ -47,13 +47,12 @@ def _remove_pid() -> None:
 import dearpygui.dearpygui as dpg
 import settings
 from midi_listener import MidiListener, MidiEvent
-from mapper import Mapper, load_config, JOYSTICK_CC
+from mapper import Mapper, load_config
 from executor import execute_keystroke, execute_shell, execute_launch, execute_scroll
 from audio import AudioController, enumerate_output_devices, enumerate_input_devices
-from app_detector import get_foreground_process
 from feedback import FeedbackService, set_transpose, get_transpose
 from ui.dashboard import (
-    create_dashboard, setup_theme, hex_to_rgb,
+    create_dashboard, setup_theme,
     create_layout, create_center_content, add_plugin_tab,
     post_setup as dashboard_post_setup, poll as poll_dashboard,
     set_resize_callback,
@@ -70,10 +69,7 @@ from ui.volume_panel import (
     populate_output_devices, populate_input_devices,
 )
 from ui.midi_log import create_midi_log, add_log_entry
-from ui.sidebar_left import (
-    create_left_sidebar, populate_plugins, set_active_mode,
-    is_manual_override, get_mode_count,
-)
+from ui.sidebar_left import create_left_sidebar, populate_plugins, set_active_preset
 from ui.sidebar_right import create_right_sidebar, set_rebuild_fn, rebuild, set_plugin_list
 from ui.pad_editor import build_pad_properties
 from ui.status_bar import poll_hover, register as register_tooltip
@@ -156,39 +152,23 @@ except Exception:
     log.error("Bootstrap failed:\n%s", traceback.format_exc())
     raise
 
-_last_app_check = 0.0
-_APP_CHECK_INTERVAL = 0.5
+# ---- pad preset UI ----------------------------------------------------------
 
 
-# ---- mode switching ---------------------------------------------------------
-
-def _apply_mode_ui():
-    mode = mapper.current_mode
-    r, g, b = hex_to_rgb(mode.color)
-    if dpg.does_item_exist("current_mode_label"):
-        dpg.set_value("current_mode_label", mode.name)
-        dpg.configure_item("current_mode_label", color=(r, g, b))
+def _apply_preset_ui():
+    preset = mapper.current_preset
+    set_active_preset(mapper.current_preset_index)
     clear_pad_labels()
-    update_pad_labels(mode.pads)
-    plugin_manager.on_mode_changed(mode.name)
+    update_pad_labels(preset.pads)
+    plugin_manager.on_mode_changed(preset.name)
+    plugin_manager.notify_preset_changed(mapper)
     overlay_plugin_pad_labels(plugin_manager.get_all_pad_labels())
 
 
-_MODE_CUE_MAP = {
-    "obs": "mode.obs",
-    "voice scribe": "mode.voice_scribe",
-    "sound pads": "mode.sound_pads",
-    "voicemeeter": "mode.voicemeeter",
-    "spotify": "mode.spotify",
-}
-
-
-def on_mode_tab_changed(index: int):
-    mapper.set_mode(index)
-    _apply_mode_ui()
-    settings.put("mode_index", index)
-    cue_id = _MODE_CUE_MAP.get(mapper.current_mode.name.lower(), "action.default")
-    feedback.emit(cue_id)
+def on_preset_changed(index: int):
+    mapper.set_preset(index)
+    _apply_preset_ui()
+    settings.put("preset_index", index)
 
 
 # ---- audio callbacks --------------------------------------------------------
@@ -243,7 +223,7 @@ def on_plugin_toggle(name, info, enabled):
         plugin_manager.unload_plugin(name)
         selection.clear()
     set_plugin_list(list(plugin_manager.plugins.keys()))
-    _apply_mode_ui()
+    _apply_preset_ui()
     settings.put("enabled_plugins", list(plugin_manager.enabled))
 
 
@@ -256,23 +236,27 @@ def handle_midi_event(event: MidiEvent):
         if event.type == "pad_press":
             flash_pad(event.note, event.velocity)
             leds.pad_on(event.note, event.velocity)
-            if plugin_manager.on_pad_press(event.note, event.velocity):
-                labels = plugin_manager.get_all_pad_labels()
-                overlay_plugin_pad_labels(labels)
-                label = labels.get(event.note, f"note {event.note}")
-                add_log_entry("PAD",
-                              f"{label} (note {event.note}, vel {event.velocity}) [plugin]",
-                              color=(200, 150, 255))
-                return
             mapping = mapper.lookup_pad(event.note)
-            if mapping:
+            if mapping and mapping.action.type == "plugin":
+                if plugin_manager.on_pad_press(event.note, event.velocity):
+                    labels = plugin_manager.get_all_pad_labels()
+                    overlay_plugin_pad_labels(labels)
+                    label = labels.get(event.note, f"note {event.note}")
+                    add_log_entry("PAD",
+                                  f"{label} (note {event.note}, vel {event.velocity}) [plugin]",
+                                  color=(200, 150, 255))
+                else:
+                    add_log_entry("PAD",
+                                  f"{mapping.label} (note {event.note}, vel {event.velocity}) [plugin idle]",
+                                  color=(150, 150, 160))
+            elif mapping:
                 add_log_entry("PAD",
                               f"{mapping.label} (note {event.note}, vel {event.velocity})",
                               color=(100, 200, 255))
                 _execute_action(mapping.action, cue_id=_feedback_cue_for_mapping(mapping))
             else:
                 add_log_entry("PAD",
-                              f"note {event.note} vel {event.velocity} (unmapped)",
+                              f"note {event.note} (unmapped)",
                               color=(150, 150, 160))
 
         elif event.type == "pad_release":
@@ -281,9 +265,6 @@ def handle_midi_event(event: MidiEvent):
             release_pad(event.note)
 
         elif event.type == "knob":
-            if event.cc == JOYSTICK_CC:
-                _handle_joystick_mode_switch(event.value)
-                return
             update_knob_display(event.cc, event.value)
             if plugin_manager.on_knob(event.cc, event.value):
                 return
@@ -305,14 +286,6 @@ def handle_midi_event(event: MidiEvent):
                   event, exc, traceback.format_exc())
         _runtime_log("ERR", f"Unhandled MIDI event: {exc}", color=(255, 80, 80))
 
-
-_joy_last_switch_time = 0.0
-_joy_armed = True
-
-_JOY_CENTER = 64
-_JOY_THRESHOLD = 20
-_JOY_CENTER_ZONE = 10
-_JOY_COOLDOWN = 0.30
 
 _pb_last_switch_time = 0.0
 _pb_armed = True
@@ -352,56 +325,10 @@ def _handle_pitch_bend_transpose(pitch: int):
     set_transpose(new_val)
     settings.put("melody_transpose", new_val)
 
-    cue_id = _MODE_CUE_MAP.get(mapper.current_mode.name.lower(), "action.default")
-    feedback.emit(cue_id)
+    feedback.emit("action.default")
     add_log_entry("KEY",
                   f"Transpose: {new_val:+d} semitones",
                   color=(255, 200, 100))
-
-
-def _handle_joystick_mode_switch(value: int):
-    """CC16 joystick Y-axis: 0 = full down, 64 = center, 127 = full up."""
-    global _joy_last_switch_time, _joy_armed
-    import time as _t
-
-    offset = value - _JOY_CENTER
-
-    if abs(offset) < _JOY_CENTER_ZONE:
-        _joy_armed = True
-        return
-
-    if not _joy_armed:
-        return
-
-    now = _t.monotonic()
-    if now - _joy_last_switch_time < _JOY_COOLDOWN:
-        return
-
-    total = get_mode_count()
-    if total <= 1:
-        return
-
-    current = mapper.current_mode_index
-    if offset > _JOY_THRESHOLD:
-        new_index = (current - 1) % total
-    elif offset < -_JOY_THRESHOLD:
-        new_index = (current + 1) % total
-    else:
-        return
-
-    _joy_armed = False
-    _joy_last_switch_time = now
-
-    mapper.set_mode(new_index)
-    set_active_mode(new_index)
-    _apply_mode_ui()
-    settings.put("mode_index", new_index)
-
-    cue_id = _MODE_CUE_MAP.get(mapper.current_mode.name.lower(), "action.default")
-    feedback.emit(cue_id)
-    add_log_entry("JOY",
-                  f"Mode -> {mapper.current_mode.name}",
-                  color=(180, 140, 255))
 
 
 def _handle_knob(knob, value: int):
@@ -444,6 +371,7 @@ def _execute_action(action, cue_id: str = "action.default"):
     if action.type == "keystroke":
         err = execute_keystroke(action.keys)
     elif action.type == "app_keystroke":
+        from app_detector import get_foreground_process
         active_process = get_foreground_process() or ""
         expected_process = action.process or ""
         if expected_process and active_process.lower() != expected_process.lower():
@@ -518,52 +446,30 @@ def _execute_obs_action(action):
     return f"Unsupported OBS action: {cmd}", None
 
 
-def check_foreground_app():
-    global _last_app_check
-    now = time.time()
-    if now - _last_app_check < _APP_CHECK_INTERVAL:
-        return
-    _last_app_check = now
-    proc = get_foreground_process()
-    if not proc:
-        return
-    if dpg.does_item_exist("active_app_label"):
-        dpg.set_value("active_app_label", proc)
-    if is_manual_override():
-        return
-    for ctx in config.contexts:
-        if ctx.process.lower() == proc.lower():
-            if mapper.current_mode.name.lower() != ctx.mode.lower():
-                if mapper.set_mode_by_name(ctx.mode):
-                    set_active_mode(mapper.current_mode_index)
-                    _apply_mode_ui()
-                    add_log_entry("CTX",
-                                  f"Auto-switched to {mapper.current_mode.name} for {proc}",
-                                  color=(100, 255, 150))
-            return
-
-
 # ---- pad interactions --------------------------------------------------------
 
 def _on_pad_click(note: int):
     """Trigger the pad action from UI click (same as MIDI press)."""
     flash_pad(note, 100)
-    if plugin_manager.on_pad_press(note, 100):
-        labels = plugin_manager.get_all_pad_labels()
-        overlay_plugin_pad_labels(labels)
-        label = labels.get(note, f"note {note}")
-        add_log_entry("PAD", f"{label} (note {note}) [UI click]",
-                      color=(200, 150, 255))
-    else:
-        mapping = mapper.lookup_pad(note)
-        if mapping:
-            add_log_entry("PAD", f"{mapping.label} (note {note}) [UI click]",
-                          color=(100, 200, 255))
-            _execute_action(mapping.action,
-                            cue_id=_feedback_cue_for_mapping(mapping))
+    mapping = mapper.lookup_pad(note)
+    if mapping and mapping.action.type == "plugin":
+        if plugin_manager.on_pad_press(note, 100):
+            labels = plugin_manager.get_all_pad_labels()
+            overlay_plugin_pad_labels(labels)
+            label = labels.get(note, f"note {note}")
+            add_log_entry("PAD", f"{label} (note {note}) [UI click]",
+                          color=(200, 150, 255))
         else:
-            add_log_entry("PAD", f"note {note} [UI click, unmapped]",
+            add_log_entry("PAD",
+                          f"{mapping.label} (note {note}) [UI click, plugin idle]",
                           color=(150, 150, 160))
+    elif mapping:
+        add_log_entry("PAD", f"{mapping.label} (note {note}) [UI click]",
+                      color=(100, 200, 255))
+        _execute_action(mapping.action, cue_id=_feedback_cue_for_mapping(mapping))
+    else:
+        add_log_entry("PAD", f"note {note} [UI click, unmapped]",
+                      color=(150, 150, 160))
 
     def _delayed_release():
         import threading
@@ -581,8 +487,17 @@ def _on_pad_edit(note: int):
         parent, note, mapping, on_save=_on_pad_save))
 
 
+def _toml_pad_section_key(raw: dict) -> str:
+    if "pad_presets" in raw:
+        return "pad_presets"
+    if "modes" in raw:
+        return "modes"
+    raw["pad_presets"] = []
+    return "pad_presets"
+
+
 def _on_pad_swap(note_a: int, note_b: int):
-    """Swap label+action between two pads in config.toml for the current mode."""
+    """Swap label+action between two pads in config.toml for the current preset."""
     plugin_notes = plugin_manager.get_plugin_controlled_notes()
     if note_a in plugin_notes or note_b in plugin_notes:
         add_log_entry("SYS",
@@ -592,13 +507,15 @@ def _on_pad_swap(note_a: int, note_b: int):
         return
 
     import toml as _toml
-    mode = mapper.current_mode
+    preset = mapper.current_preset
+    saved_idx = mapper.current_preset_index
 
     raw = _toml.load(CONFIG_PATH)
-    for mode_data in raw.get("modes", []):
-        if mode_data.get("name") != mode.name:
+    section = _toml_pad_section_key(raw)
+    for preset_data in raw.get(section, []):
+        if preset_data.get("name") != preset.name:
             continue
-        pads_list = mode_data.get("pads", [])
+        pads_list = preset_data.get("pads", [])
         pad_a = next((p for p in pads_list if p.get("note") == note_a), None)
         pad_b = next((p for p in pads_list if p.get("note") == note_b), None)
 
@@ -625,7 +542,8 @@ def _on_pad_swap(note_a: int, note_b: int):
     global config
     config = load_config(CONFIG_PATH)
     mapper.__init__(config)
-    _apply_mode_ui()
+    mapper.set_preset(saved_idx)
+    _apply_preset_ui()
     add_log_entry("SYS",
                   f"Swapped pad {note_a - 15} <-> pad {note_b - 15}",
                   color=(100, 255, 150))
@@ -659,7 +577,8 @@ def _on_selection_changed(sel_type, sel_id):
 
 def _on_pad_save(note, data):
     import toml as _toml
-    mode = mapper.current_mode
+    preset = mapper.current_preset
+    saved_idx = mapper.current_preset_index
     label = data.get("label", "")
     atype = data.get("action_type", "keystroke")
 
@@ -673,18 +592,21 @@ def _on_pad_save(note, data):
         action_dict["command"] = data.get("command", "")
     elif atype in ("obs", "volume"):
         action_dict["target"] = data.get("target", "")
+    elif atype == "plugin":
+        action_dict["target"] = data.get("target", "")
 
     raw = _toml.load(CONFIG_PATH)
-    for mode_data in raw.get("modes", []):
-        if mode_data.get("name") != mode.name:
+    section = _toml_pad_section_key(raw)
+    for preset_data in raw.get(section, []):
+        if preset_data.get("name") != preset.name:
             continue
-        for pad_data in mode_data.get("pads", []):
+        for pad_data in preset_data.get("pads", []):
             if pad_data.get("note") == note:
                 pad_data["label"] = label
                 pad_data["action"] = action_dict
                 break
         else:
-            mode_data.setdefault("pads", []).append(
+            preset_data.setdefault("pads", []).append(
                 {"note": note, "label": label, "action": action_dict})
         break
 
@@ -694,7 +616,8 @@ def _on_pad_save(note, data):
     global config
     config = load_config(CONFIG_PATH)
     mapper.__init__(config)
-    _apply_mode_ui()
+    mapper.set_preset(saved_idx)
+    _apply_preset_ui()
     add_log_entry("SYS", f"Pad {note} saved to config.toml", color=(100, 255, 150))
 
 
@@ -733,14 +656,22 @@ def main():
     create_layout()
     create_center_content()
 
-    # Left sidebar
+    n_presets = len(config.pad_presets)
+    saved_preset = int(settings.get("preset_index", settings.get("mode_index", 0)))
+    if n_presets:
+        if not (0 <= saved_preset < n_presets):
+            saved_preset = max(0, min(saved_preset, n_presets - 1))
+            settings.put("preset_index", saved_preset)
+        mapper.set_preset(saved_preset)
+    else:
+        saved_preset = 0
+
     create_left_sidebar(
-        mode_names=[m.name for m in config.modes],
-        mode_colors=[m.color for m in config.modes],
-        mode_icons=[m.icon for m in config.modes],
-        callback=on_mode_tab_changed,
+        preset_names=[p.name for p in config.pad_presets],
+        callback=on_preset_changed,
         plugin_toggle_callback=on_plugin_toggle,
     )
+    set_active_preset(saved_preset)
 
     # Center: pad grid + knobs + mixer, log
     set_pad_click_callback(_on_pad_click)
@@ -772,16 +703,6 @@ def main():
 
     set_rebuild_fn(_on_selection_changed)
 
-    # Restore saved mode (clamp after config/mode list changes)
-    saved_mode = int(settings.get("mode_index", 0))
-    if config.modes:
-        n_modes = len(config.modes)
-        if not (0 <= saved_mode < n_modes):
-            saved_mode = max(0, min(saved_mode, n_modes - 1))
-            settings.put("mode_index", saved_mode)
-        mapper.set_mode(saved_mode)
-        set_active_mode(saved_mode)
-
     # Restore saved transpose
     saved_transpose = int(settings.get("melody_transpose", 0))
     set_transpose(saved_transpose)
@@ -807,7 +728,7 @@ def main():
                      set(plugin_manager.plugins.keys()))
     set_plugin_list(list(plugin_manager.plugins.keys()))
     _create_plugin_tabs()
-    _apply_mode_ui()
+    _apply_preset_ui()
 
     global _session_start
     _session_start = time.monotonic()
@@ -857,12 +778,17 @@ def main():
             if dpg.does_item_exist("device_status"):
                 dpg.set_value("device_status", f"MIDI: {midi.port_name}")
                 dpg.configure_item("device_status", color=(80, 255, 120))
+            if dpg.does_item_exist("sl_midi_device"):
+                dpg.set_value("sl_midi_device", midi.port_name or "")
+                dpg.configure_item("sl_midi_device", color=(80, 255, 120))
         else:
             if dpg.does_item_exist("device_status"):
                 dpg.set_value("device_status", "MIDI: searching...")
                 dpg.configure_item("device_status", color=(255, 180, 80))
+            if dpg.does_item_exist("sl_midi_device"):
+                dpg.set_value("sl_midi_device", "Searching for device…")
+                dpg.configure_item("sl_midi_device", color=(255, 180, 80))
 
-        check_foreground_app()
         poll_dashboard()
         poll_hover()
         plugin_manager.poll_all()

@@ -133,9 +133,8 @@ def create_layout():
 
 def create_center_content():
     """Create the pad area (pads + knobs + mixer) + full-width tabs."""
-    # Tall enough for 2×4 pads + compact mixer beside knobs (~380px in layout spec).
     dpg.add_child_window(tag="pad_area", parent="panel_center",
-                         height=400, border=False)
+                         height=540, border=False)
     dpg.add_spacer(height=2, parent="panel_center")
 
     with dpg.child_window(tag="tabs_side", width=-1, height=-1,

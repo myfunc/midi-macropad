@@ -114,6 +114,9 @@ class PerformanceTemplatePlugin(Plugin):
         if was_active and not self._active:
             self._stop_performance()
 
+    def set_owned_notes(self, notes: set[int]) -> None:
+        self._active = bool(notes)
+
     # -- event hooks -------------------------------------------------------
 
     def on_pad_press(self, note: int, velocity: int) -> bool:

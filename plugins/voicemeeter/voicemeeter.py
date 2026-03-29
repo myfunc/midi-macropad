@@ -13,15 +13,17 @@ from logger import get_logger
 
 log = get_logger("voicemeeter")
 
-# Pad assignments (notes 16-23, two rows of four)
-PAD_MIC_MUTE = 16
-PAD_DESK_MUTE = 17
-PAD_EQ_TOGGLE = 18
-PAD_SEND2MIC = 19
-PAD_GATE = 20
-PAD_MONITOR = 21
-PAD_COMP = 22
-PAD_RECONNECT = 23
+_VM_ACTION_IDS: tuple[str, ...] = (
+    "mic_mute",
+    "desk_mute",
+    "eq_toggle",
+    "send2mic",
+    "gate",
+    "monitor",
+    "comp",
+    "reconnect",
+)
+_DEFAULT_VM_NOTES: tuple[int, ...] = tuple(range(16, 24))
 
 # Knob CCs (consumed only when Voicemeeter mode is active)
 KNOB_MIC_GAIN = 48
@@ -166,6 +168,8 @@ class VoicemeeterPlugin(Plugin):
         self._win_ok = False
         self._last_poll = 0.0
         self._ui_dirty = True
+        self._owned_notes: list[int] = []
+        self._note_to_action: dict[int, str] = {}
 
     # ── lifecycle ──────────────────────────────────────────────────────────────
 
@@ -226,6 +230,23 @@ class VoicemeeterPlugin(Plugin):
 
     def on_mode_changed(self, mode_name: str) -> None:
         self._active = mode_name == self.mode_name
+
+    def set_owned_notes(self, notes: set[int]) -> None:
+        self._active = bool(notes)
+        ordered = sorted(notes)
+        self._owned_notes = ordered
+        self._note_to_action.clear()
+        for i, n in enumerate(ordered):
+            if i < len(_VM_ACTION_IDS):
+                self._note_to_action[n] = _VM_ACTION_IDS[i]
+
+    def _ensure_action_mapping(self) -> None:
+        if self._note_to_action:
+            return
+        for i, n in enumerate(_DEFAULT_VM_NOTES):
+            if i < len(_VM_ACTION_IDS):
+                self._note_to_action[n] = _VM_ACTION_IDS[i]
+        self._owned_notes = list(_DEFAULT_VM_NOTES)
 
     # ── state sync ─────────────────────────────────────────────────────────────
 
@@ -296,32 +317,36 @@ class VoicemeeterPlugin(Plugin):
     def on_pad_press(self, note: int, velocity: int) -> bool:
         if not self._active or not self._vm.connected:
             return False
+        self._ensure_action_mapping()
+        aid = self._note_to_action.get(note)
+        if aid is None:
+            return False
 
-        if note == PAD_MIC_MUTE:
+        if aid == "mic_mute":
             self._mic_mute = not self._mic_mute
             self._vm.set("Strip[0].Mute", float(self._mic_mute))
             self._notify("Mic", "MUTED" if self._mic_mute else "LIVE")
             return True
 
-        if note == PAD_DESK_MUTE:
+        if aid == "desk_mute":
             self._desk_mute = not self._desk_mute
             self._vm.set("Strip[3].Mute", float(self._desk_mute))
             self._notify("Desktop", "MUTED" if self._desk_mute else "LIVE")
             return True
 
-        if note == PAD_EQ_TOGGLE:
+        if aid == "eq_toggle":
             self._eq_on = not self._eq_on
             self._vm.set("Bus[3].EQ.on", float(self._eq_on))
             self._notify("EQ B1", "ON" if self._eq_on else "OFF")
             return True
 
-        if note == PAD_SEND2MIC:
+        if aid == "send2mic":
             self._s2m_b1 = not self._s2m_b1
             self._vm.set("Strip[4].B1", float(self._s2m_b1))
             self._notify("Send2Mic->B1", "ON" if self._s2m_b1 else "OFF")
             return True
 
-        if note == PAD_GATE:
+        if aid == "gate":
             if self._gate_on:
                 self._gate_on = False
                 self._vm.set("Strip[0].Gate", 0.0)
@@ -331,13 +356,13 @@ class VoicemeeterPlugin(Plugin):
             self._notify("Gate", "ON" if self._gate_on else "OFF")
             return True
 
-        if note == PAD_MONITOR:
+        if aid == "monitor":
             self._monitor = not self._monitor
             self._vm.set("Strip[0].A1", float(self._monitor))
             self._notify("Monitor", "ON" if self._monitor else "OFF")
             return True
 
-        if note == PAD_COMP:
+        if aid == "comp":
             if self._comp_on:
                 self._comp_on = False
                 self._vm.set("Strip[0].Comp", 0.0)
@@ -347,7 +372,7 @@ class VoicemeeterPlugin(Plugin):
             self._notify("Compressor", "ON" if self._comp_on else "OFF")
             return True
 
-        if note == PAD_RECONNECT:
+        if aid == "reconnect":
             self._vm.logout()
             if self._vm.login():
                 self._sync_state()
@@ -359,7 +384,8 @@ class VoicemeeterPlugin(Plugin):
         return False
 
     def on_pad_release(self, note: int) -> bool:
-        return self._active and PAD_MIC_MUTE <= note <= PAD_RECONNECT
+        self._ensure_action_mapping()
+        return self._active and note in self._note_to_action
 
     # ── MIDI knobs ─────────────────────────────────────────────────────────────
 
@@ -461,16 +487,26 @@ class VoicemeeterPlugin(Plugin):
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:
             return {}
-        return {
-            PAD_MIC_MUTE:  "MIC OFF" if self._mic_mute else "MIC",
-            PAD_DESK_MUTE: "DESK OFF" if self._desk_mute else "DESK",
-            PAD_EQ_TOGGLE: "EQ ON" if self._eq_on else "EQ OFF",
-            PAD_SEND2MIC:  "S2M > B1" if self._s2m_b1 else "S2M ---",
-            PAD_GATE:      "GATE" if self._gate_on else "GATE OFF",
-            PAD_MONITOR:   "MON" if self._monitor else "MON OFF",
-            PAD_COMP:      "COMP" if self._comp_on else "COMP OFF",
-            PAD_RECONNECT: "RESYNC",
-        }
+        self._ensure_action_mapping()
+        out: dict[int, str] = {}
+        for note, aid in self._note_to_action.items():
+            if aid == "mic_mute":
+                out[note] = "MIC OFF" if self._mic_mute else "MIC"
+            elif aid == "desk_mute":
+                out[note] = "DESK OFF" if self._desk_mute else "DESK"
+            elif aid == "eq_toggle":
+                out[note] = "EQ ON" if self._eq_on else "EQ OFF"
+            elif aid == "send2mic":
+                out[note] = "S2M > B1" if self._s2m_b1 else "S2M ---"
+            elif aid == "gate":
+                out[note] = "GATE" if self._gate_on else "GATE OFF"
+            elif aid == "monitor":
+                out[note] = "MON" if self._monitor else "MON OFF"
+            elif aid == "comp":
+                out[note] = "COMP" if self._comp_on else "COMP OFF"
+            elif aid == "reconnect":
+                out[note] = "RESYNC"
+        return out
 
     def get_status(self) -> tuple[str, tuple[int, int, int]] | None:
         if not self._active:
@@ -800,8 +836,9 @@ class VoicemeeterPlugin(Plugin):
         dpg.add_spacer(height=8, parent=parent_tag)
         dpg.add_text("Pad Map:", parent=parent_tag, color=(140, 140, 170))
         labels = self.get_pad_labels()
-        for n in range(PAD_MIC_MUTE, PAD_RECONNECT + 1):
-            dpg.add_text(f"  {n - 15}. {labels.get(n, '---')}", parent=parent_tag)
+        self._ensure_action_mapping()
+        for i, n in enumerate(self._owned_notes, start=1):
+            dpg.add_text(f"  {i}. {labels.get(n, '---')}", parent=parent_tag)
 
         # ── knob assignments ──
         dpg.add_spacer(height=8, parent=parent_tag)

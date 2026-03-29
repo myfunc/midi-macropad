@@ -42,20 +42,17 @@ _CONNECTED_OK = (100, 255, 150)
 _CONNECTED_BAD = (255, 90, 90)
 _STATUS_IDLE = (150, 150, 165)
 
-# MIDI pad notes — pads 16–20 are API actions, 21 is DJ keystroke (pass-through),
-# 22–23 are API playlist actions
-PAD_PLAY_PAUSE = 16
-PAD_NEXT = 17
-PAD_PREV = 18
-PAD_LIKE = 19
-PAD_SHUFFLE = 20
-PAD_DJ_MIX = 21
-PAD_ADD_TO_PL = 22
-PAD_REMOVE_PL = 23
-_API_PAD_NOTES = frozenset({
-    PAD_PLAY_PAUSE, PAD_NEXT, PAD_PREV, PAD_LIKE, PAD_SHUFFLE,
-    PAD_ADD_TO_PL, PAD_REMOVE_PL,
-})
+_ACTION_IDS: tuple[str, ...] = (
+    "play_pause",
+    "next",
+    "prev",
+    "like",
+    "shuffle",
+    "dj_mix",
+    "add_to_pl",
+    "remove_pl",
+)
+_DEFAULT_SPOTIFY_NOTES: tuple[int, ...] = tuple(range(16, 24))
 
 
 class SpotifyPlugin(Plugin):
@@ -94,6 +91,8 @@ class SpotifyPlugin(Plugin):
         self._poll_running = False
 
         self._last_poll = 0.0
+        self._owned_notes: list[int] = []
+        self._note_to_action: dict[int, str] = {}
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -150,30 +149,51 @@ class SpotifyPlugin(Plugin):
         self._active = mode_name == self.mode_name
         self._refresh_ui()
 
+    def set_owned_notes(self, notes: set[int]) -> None:
+        self._active = bool(notes)
+        ordered = sorted(notes)
+        self._owned_notes = ordered
+        self._note_to_action.clear()
+        for i, n in enumerate(ordered):
+            if i < len(_ACTION_IDS):
+                self._note_to_action[n] = _ACTION_IDS[i]
+
+    def _ensure_action_mapping(self) -> None:
+        if self._note_to_action:
+            return
+        for i, n in enumerate(_DEFAULT_SPOTIFY_NOTES):
+            if i < len(_ACTION_IDS):
+                self._note_to_action[n] = _ACTION_IDS[i]
+        self._owned_notes = list(_DEFAULT_SPOTIFY_NOTES)
+
     # -- MIDI hooks --------------------------------------------------------
 
     def on_pad_press(self, note: int, velocity: int) -> bool:
         if not self._active:
             return False
-        if note == PAD_PLAY_PAUSE:
+        self._ensure_action_mapping()
+        aid = self._note_to_action.get(note)
+        if aid is None:
+            return False
+        if aid == "play_pause":
             threading.Thread(
                 target=lambda: self._api_call(lambda: self._api.toggle_playback() if self._api else None),
                 daemon=True,
             ).start()
             return True
-        if note == PAD_NEXT:
+        if aid == "next":
             threading.Thread(
                 target=lambda: self._api_call(lambda: self._api.next_track() if self._api else None),
                 daemon=True,
             ).start()
             return True
-        if note == PAD_PREV:
+        if aid == "prev":
             threading.Thread(
                 target=lambda: self._api_call(lambda: self._api.previous_track() if self._api else None),
                 daemon=True,
             ).start()
             return True
-        if note == PAD_LIKE:
+        if aid == "like":
 
             def _toggle_like() -> None:
                 track_id = self._api_call(lambda: self._api.get_current_track_id() if self._api else None)
@@ -184,7 +204,7 @@ class SpotifyPlugin(Plugin):
 
             threading.Thread(target=_toggle_like, daemon=True).start()
             return True
-        if note == PAD_SHUFFLE:
+        if aid == "shuffle":
 
             def _toggle_shuffle() -> None:
                 result = self._api_call(
@@ -195,9 +215,9 @@ class SpotifyPlugin(Plugin):
 
             threading.Thread(target=_toggle_shuffle, daemon=True).start()
             return True
-        if note == PAD_DJ_MIX:
-            return False  # pass through — handled as app_keystroke in config
-        if note == PAD_ADD_TO_PL:
+        if aid == "dj_mix":
+            return False
+        if aid == "add_to_pl":
 
             def _add() -> None:
                 if not self._current_track_uri or not self._current_playlist_id:
@@ -213,7 +233,7 @@ class SpotifyPlugin(Plugin):
 
             threading.Thread(target=_add, daemon=True).start()
             return True
-        if note == PAD_REMOVE_PL:
+        if aid == "remove_pl":
 
             def _remove() -> None:
                 if not self._current_track_uri or not self._current_playlist_id:
@@ -232,7 +252,8 @@ class SpotifyPlugin(Plugin):
         return False
 
     def on_pad_release(self, note: int) -> bool:
-        return self._active and note in _API_PAD_NOTES
+        self._ensure_action_mapping()
+        return self._active and note in self._note_to_action
 
     def poll(self) -> None:
         now = time.monotonic()
@@ -253,16 +274,26 @@ class SpotifyPlugin(Plugin):
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:
             return {}
-        return {
-            PAD_PLAY_PAUSE: "Pause" if self._is_playing else "Play",
-            PAD_NEXT: "Next",
-            PAD_PREV: "Previous",
-            PAD_LIKE: "Like" if not self._liked else "Unlike",
-            PAD_SHUFFLE: "Shuffle: On" if self._shuffle_on else "Shuffle: Off",
-            PAD_DJ_MIX: "DJ Mix",
-            PAD_ADD_TO_PL: "+ Playlist",
-            PAD_REMOVE_PL: "- Playlist",
-        }
+        self._ensure_action_mapping()
+        out: dict[int, str] = {}
+        for note, aid in self._note_to_action.items():
+            if aid == "play_pause":
+                out[note] = "Pause" if self._is_playing else "Play"
+            elif aid == "next":
+                out[note] = "Next"
+            elif aid == "prev":
+                out[note] = "Previous"
+            elif aid == "like":
+                out[note] = "Like" if not self._liked else "Unlike"
+            elif aid == "shuffle":
+                out[note] = "Shuffle: On" if self._shuffle_on else "Shuffle: Off"
+            elif aid == "dj_mix":
+                out[note] = "DJ Mix"
+            elif aid == "add_to_pl":
+                out[note] = "+ Playlist"
+            elif aid == "remove_pl":
+                out[note] = "- Playlist"
+        return out
 
     def get_status(self) -> tuple[str, tuple[int, int, int]] | None:
         if not self._active:

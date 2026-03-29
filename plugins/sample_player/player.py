@@ -51,6 +51,7 @@ class SamplePlayerPlugin(Plugin):
         self._stream: sd.OutputStream | None = None
         self._sample_rate: int = 44100
         self._stream_error: str | None = None
+        self._pack_note_order: list[int] = []
 
     # -- lifecycle --
 
@@ -69,9 +70,35 @@ class SamplePlayerPlugin(Plugin):
     def on_unload(self) -> None:
         self._stop_stream()
         self.samples.clear()
+        self._pack_note_order.clear()
 
     def on_mode_changed(self, mode_name: str) -> None:
         self._active = mode_name == self.mode_name
+
+    def set_owned_notes(self, notes: set[int]) -> None:
+        self._active = bool(notes)
+        if not notes or not self._pack_note_order:
+            return
+        ordered_pad = sorted(notes)
+        old_keys = list(self._pack_note_order)
+        by_old = {k: self.samples.pop(k, None) for k in old_keys}
+        self._pack_note_order = []
+        self.samples.clear()
+        for i, new_n in enumerate(ordered_pad):
+            if i >= len(old_keys):
+                break
+            old_n = old_keys[i]
+            s = by_old.get(old_n)
+            if s is None:
+                continue
+            self._pack_note_order.append(new_n)
+            self.samples[new_n] = Sample(
+                name=s.name,
+                note=new_n,
+                label=s.label,
+                data=s.data,
+                sample_rate=s.sample_rate,
+            )
 
     # -- MIDI event hooks --
 
@@ -177,6 +204,7 @@ class SamplePlayerPlugin(Plugin):
         with self._lock:
             self._voices.clear()
         self.samples.clear()
+        self._pack_note_order.clear()
 
         manifest = toml.load(str(manifest_path))
 
@@ -191,6 +219,7 @@ class SamplePlayerPlugin(Plugin):
             if sr != target_sr:
                 data = self._resample(data, sr, target_sr)
             note = sample_def["note"]
+            self._pack_note_order.append(note)
             self.samples[note] = Sample(
                 name=sample_def.get("name", sample_def["file"]),
                 note=note,

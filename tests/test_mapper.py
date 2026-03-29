@@ -1,5 +1,4 @@
 
-
 import pytest
 
 from mapper import (
@@ -7,8 +6,8 @@ from mapper import (
     AppConfig,
     KnobMapping,
     Mapper,
-    Mode,
     PadMapping,
+    PadPreset,
     load_config,
 )
 
@@ -46,10 +45,6 @@ label = "Vol"
 [knobs.action]
 type = "keys"
 keys = "v"
-
-[[contexts]]
-process = "app.exe"
-mode = "ModeA"
 """
 
 
@@ -58,14 +53,12 @@ def test_load_config_parses_valid_toml(tmp_path):
     p.write_text(MINIMAL_TOML, encoding="utf-8")
     cfg = load_config(p)
     assert cfg.device_name == "Test Device"
-    assert len(cfg.modes) == 2
-    assert cfg.modes[0].name == "ModeA"
-    assert cfg.modes[0].pads[0].note == 20
-    assert cfg.modes[0].pads[0].action.type == "keys"
+    assert len(cfg.pad_presets) == 2
+    assert cfg.pad_presets[0].name == "ModeA"
+    assert cfg.pad_presets[0].pads[0].note == 20
+    assert cfg.pad_presets[0].pads[0].action.type == "keys"
     assert len(cfg.knobs) == 1
     assert cfg.knobs[0].cc == 10
-    assert len(cfg.contexts) == 1
-    assert cfg.contexts[0].mode == "ModeA"
 
 
 def test_load_config_missing_file(tmp_path):
@@ -76,10 +69,9 @@ def test_load_config_missing_file(tmp_path):
 
 def test_lookup_pad_mapped():
     cfg = AppConfig()
-    cfg.modes = [
-        Mode(
+    cfg.pad_presets = [
+        PadPreset(
             name="m1",
-            color="#000",
             pads=[
                 PadMapping(
                     note=20,
@@ -97,10 +89,9 @@ def test_lookup_pad_mapped():
 
 def test_lookup_pad_unmapped_returns_none():
     cfg = AppConfig()
-    cfg.modes = [
-        Mode(
+    cfg.pad_presets = [
+        PadPreset(
             name="m1",
-            color="#000",
             pads=[
                 PadMapping(
                     note=20,
@@ -126,40 +117,69 @@ def test_lookup_knob():
     assert m.lookup_knob(8) is None
 
 
-def test_set_mode_changes_index():
+def test_set_preset_changes_index():
     cfg = AppConfig()
-    cfg.modes = [
-        Mode(name="a", color="#000"),
-        Mode(name="b", color="#111"),
+    cfg.pad_presets = [
+        PadPreset(name="a"),
+        PadPreset(name="b"),
     ]
     m = Mapper(cfg)
-    m.set_mode(1)
-    assert m.current_mode.name == "b"
+    m.set_preset(1)
+    assert m.current_preset.name == "b"
 
 
-def test_set_mode_clamps():
+def test_set_preset_clamps():
     cfg = AppConfig()
-    cfg.modes = [
-        Mode(name="a", color="#000"),
-        Mode(name="b", color="#111"),
+    cfg.pad_presets = [
+        PadPreset(name="a"),
+        PadPreset(name="b"),
     ]
     m = Mapper(cfg)
-    m.set_mode(-100)
-    assert m.current_mode_index == 0
-    m.set_mode(100)
-    assert m.current_mode_index == 1
+    m.set_preset(-100)
+    assert m.current_preset_index == 0
+    m.set_preset(100)
+    assert m.current_preset_index == 1
 
 
-def test_set_mode_by_name_case_insensitive():
+def test_set_preset_by_name_case_insensitive():
     cfg = AppConfig()
-    cfg.modes = [
-        Mode(name="Alpha", color="#000"),
-        Mode(name="Beta", color="#111"),
+    cfg.pad_presets = [
+        PadPreset(name="Alpha"),
+        PadPreset(name="Beta"),
     ]
     m = Mapper(cfg)
-    ok = m.set_mode_by_name("beta")
+    ok = m.set_preset_by_name("beta")
     assert ok is True
-    assert m.current_mode.name == "Beta"
-    assert m.set_mode_by_name("ALPHA") is True
-    assert m.current_mode.name == "Alpha"
-    assert m.set_mode_by_name("missing") is False
+    assert m.current_preset.name == "Beta"
+    assert m.set_preset_by_name("ALPHA") is True
+    assert m.current_preset.name == "Alpha"
+    assert m.set_preset_by_name("missing") is False
+
+
+def test_get_plugin_notes():
+    cfg = AppConfig()
+    cfg.pad_presets = [
+        PadPreset(
+            name="p1",
+            pads=[
+                PadMapping(
+                    note=16,
+                    label="A",
+                    action=ActionDef(type="plugin", target="Foo"),
+                ),
+                PadMapping(
+                    note=17,
+                    label="B",
+                    action=ActionDef(type="plugin", target="Foo:extra"),
+                ),
+                PadMapping(
+                    note=18,
+                    label="C",
+                    action=ActionDef(type="keystroke", keys="x"),
+                ),
+            ],
+        ),
+    ]
+    m = Mapper(cfg)
+    assert m.get_plugin_notes("Foo") == {16, 17}
+    assert m.get_plugin_notes("Bar") == set()
