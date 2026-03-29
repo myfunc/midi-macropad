@@ -1,7 +1,10 @@
 """Main DearPyGui dashboard -- native title bar, fixed 3-panel layout."""
 import os
 import ctypes
+from pathlib import Path
 import dearpygui.dearpygui as dpg
+
+_ICON_PATH = str(Path(__file__).resolve().parents[1] / "app_icon.ico")
 
 LEFT_W = 184
 RIGHT_W = 274
@@ -89,6 +92,8 @@ def create_dashboard():
         width=2400, height=1560,
         min_width=900, min_height=600,
         decorated=True,
+        small_icon=_ICON_PATH,
+        large_icon=_ICON_PATH,
     )
     font = _load_font()
     if font:
@@ -148,8 +153,34 @@ def add_plugin_tab(tab_id: str, label: str) -> str:
     return content
 
 
+def _set_window_icon(hwnd: int) -> None:
+    """Load app_icon.ico and apply it to the window via WM_SETICON."""
+    if not os.path.isfile(_ICON_PATH):
+        return
+    try:
+        WM_SETICON = 0x0080
+        ICON_SMALL = 0
+        ICON_BIG = 1
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x0010
+        LR_DEFAULTSIZE = 0x0040
+        shell32 = ctypes.windll.shell32  # noqa: F841
+        hicon_sm = _user32.LoadImageW(
+            0, _ICON_PATH, IMAGE_ICON, 16, 16, LR_LOADFROMFILE,
+        )
+        hicon_lg = _user32.LoadImageW(
+            0, _ICON_PATH, IMAGE_ICON, 48, 48, LR_LOADFROMFILE | LR_DEFAULTSIZE,
+        )
+        if hicon_sm:
+            _user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_sm)
+        if hicon_lg:
+            _user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_lg)
+    except Exception:
+        pass
+
+
 def post_setup():
-    """Apply DWM dark title bar and square corners."""
+    """Apply DWM dark title bar, square corners, and custom icon."""
     hwnd = _get_hwnd()
     if not hwnd:
         return
@@ -165,6 +196,7 @@ def post_setup():
         dwm.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(val), 4)
     except Exception:
         pass
+    _set_window_icon(hwnd)
 
 
 def poll():
