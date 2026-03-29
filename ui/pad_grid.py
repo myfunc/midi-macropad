@@ -320,11 +320,12 @@ def update_knob_display(cc: int, value: int):
     pct = round(value / 127.0 * 100) if value > 0 else 0
     pct_str = f"{pct}%"
     if dpg.does_item_exist(pct_tag):
-        tw, th = dpg.calc_text_size(pct_str)
+        char_w = 7.0
+        text_w = len(pct_str) * char_w
         dpg.configure_item(
             pct_tag,
             text=pct_str,
-            pos=[cx - tw / 2.0, cy - th / 2.0],
+            pos=[cx - text_w / 2.0, cy - 7],
         )
 
     col_a = KNOB_VALUE_COLOR_A[:3]
@@ -407,9 +408,8 @@ def _create_knob_widget(knob):
             )
             for i, st in enumerate(seg_tags):
                 dpg.draw_polyline([], color=KNOB_VALUE_COLOR_A, thickness=KNOB_VALUE_THICKNESS, tag=st)
-            tw0, th0 = dpg.calc_text_size("0%")
             dpg.draw_text(
-                (cx - tw0 / 2.0, cy - th0 / 2.0),
+                (cx - 10, cy - 7),
                 "0%",
                 color=KNOB_PCT_TEXT_COLOR,
                 size=13,
