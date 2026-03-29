@@ -230,7 +230,7 @@ def _knob_cx_cy() -> tuple[float, float]:
 
 
 def create_pad_grid(parent="pad_area", knobs=None):
-    """Build 2x8 pads, DAW-style CC knobs (2x2 + bank gap), and mixer slot below."""
+    """Build 2x8 pads + knob row below."""
     _pad_tags.clear()
     _pad_press_times.clear()
     _knob_draw_tags.clear()
@@ -240,20 +240,15 @@ def create_pad_grid(parent="pad_area", knobs=None):
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=8)
             with dpg.group():
-                if knobs:
-                    dpg.add_spacer(height=KNOB_HEADER_PAD)
                 with dpg.group(horizontal=True):
                     _add_pad_row(TOP_ROW_NOTES)
                 dpg.add_spacer(height=PAD_SPACING)
                 with dpg.group(horizontal=True):
                     _add_pad_row(BOT_ROW_NOTES)
 
-            if knobs:
-                dpg.add_spacer(width=BANK_GAP)
-                _create_knobs_panel(knobs)
-
-        dpg.add_spacer(height=8)
-        dpg.add_child_window(tag="mixer_content", width=-1, height=-1, border=False)
+        if knobs:
+            dpg.add_spacer(height=10)
+            _create_knobs_panel(knobs)
 
 
 def _partition_knobs_for_banks(knobs) -> tuple[list, list]:
@@ -294,14 +289,13 @@ def _create_knob_bank_grid(knobs_four: list) -> None:
 
 def _create_knobs_panel(knobs) -> None:
     bank_a, bank_b = _partition_knobs_for_banks(knobs)
-    with dpg.group(horizontal=False):
-        dpg.add_text("KNOBS", color=(75, 78, 95))
-        dpg.add_spacer(height=6)
-        with dpg.group(horizontal=True):
-            _create_knob_bank_grid(bank_a)
-            if bank_b:
-                dpg.add_spacer(width=BANK_GAP)
-                _create_knob_bank_grid(bank_b)
+    all_knobs = bank_a + bank_b
+    with dpg.group(horizontal=True):
+        dpg.add_spacer(width=8)
+        for i, knob in enumerate(all_knobs):
+            _create_knob_widget(knob)
+            if i < len(all_knobs) - 1:
+                dpg.add_spacer(width=PAD_SPACING)
 
 
 def update_knob_display(cc: int, value: int):

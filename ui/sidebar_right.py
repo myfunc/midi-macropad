@@ -1,4 +1,4 @@
-"""Right sidebar -- tabbed panel (Properties + plugin tabs)."""
+"""Right sidebar -- pad Properties panel."""
 import dearpygui.dearpygui as dpg
 from ui import selection
 
@@ -8,51 +8,22 @@ _rebuild_fn = None
 def create_right_sidebar(parent="panel_right"):
     with dpg.child_window(parent=parent, border=False):
         dpg.add_spacer(height=6)
-        dpg.add_tab_bar(tag="right_tabs")
-        with dpg.tab(label=" Properties ", parent="right_tabs", tag="right_tab_props"):
-            dpg.add_spacer(height=4)
-            with dpg.group(horizontal=True):
-                dpg.add_spacer(width=6)
-                dpg.add_text("Plugin:", color=(85, 88, 100))
-                dpg.add_combo(
-                    tag="sr_plugin_combo",
-                    items=[],
-                    default_value="",
-                    width=-1,
-                    callback=_on_plugin_combo_changed,
-                )
-            dpg.add_spacer(height=4)
-            dpg.add_separator()
-            dpg.add_spacer(height=6)
-            dpg.add_text("Select a pad or plugin to edit",
-                         tag="sr_placeholder", color=(85, 88, 100), wrap=250,
-                         indent=8)
-            dpg.add_group(tag="sr_content")
+        with dpg.group(horizontal=True):
+            dpg.add_spacer(width=8)
+            dpg.add_text("Properties", color=(85, 88, 100))
+        dpg.add_spacer(height=4)
+        dpg.add_separator()
+        dpg.add_spacer(height=6)
+        dpg.add_text("Select a pad to edit",
+                     tag="sr_placeholder", color=(85, 88, 100), wrap=250,
+                     indent=8)
+        dpg.add_group(tag="sr_content")
 
     selection.set_callback(_on_selection_changed)
 
 
 def set_plugin_list(plugin_names: list[str]):
-    """Populate the plugin combo with loaded plugin names."""
-    if dpg.does_item_exist("sr_plugin_combo"):
-        items = ["(none)"] + sorted(plugin_names)
-        dpg.configure_item("sr_plugin_combo", items=items)
-
-
-def _on_plugin_combo_changed(sender, app_data):
-    if app_data and app_data != "(none)":
-        selection.select("plugin", app_data)
-    else:
-        selection.select(None, None)
-
-
-def add_right_tab(tab_id: str, label: str) -> str:
-    """Add a tab to the right sidebar. Returns content tag."""
-    tag = f"right_tab_{tab_id}"
-    content = f"right_tab_content_{tab_id}"
-    with dpg.tab(label=f" {label} ", parent="right_tabs", tag=tag):
-        dpg.add_child_window(tag=content, height=-1, border=False)
-    return content
+    pass
 
 
 def set_rebuild_fn(fn):

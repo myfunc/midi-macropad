@@ -70,7 +70,7 @@ from ui.volume_panel import (
     populate_output_devices, populate_input_devices,
 )
 from ui.midi_log import create_midi_log, add_log_entry
-from ui.sidebar_left import create_left_sidebar, populate_plugins, set_active_preset
+from ui.toolbar import create_toolbar, set_active_preset
 from ui.sidebar_right import create_right_sidebar, set_rebuild_fn, rebuild, set_plugin_list
 from ui.pad_editor import build_pad_properties
 from ui.status_bar import poll_hover, register as register_tooltip
@@ -570,25 +570,10 @@ def _on_pad_swap(note_a: int, note_b: int):
 # ---- selection -> right sidebar ----------------------------------------------
 
 def _on_selection_changed(sel_type, sel_id):
-    if dpg.does_item_exist("sr_plugin_combo"):
-        dpg.set_value("sr_plugin_combo", sel_id if sel_type == "plugin" else "(none)")
     if sel_type == "pad":
         mapping = mapper.lookup_pad(sel_id)
         rebuild(lambda parent: build_pad_properties(
             parent, sel_id, mapping, on_save=_on_pad_save))
-    elif sel_type == "plugin":
-        def _build_plugin(parent):
-            plugin_manager.build_plugin_properties(sel_id, parent)
-            plugin = plugin_manager.plugins.get(sel_id)
-            if plugin:
-                try:
-                    dpg.add_spacer(height=8, parent=parent)
-                    dpg.add_separator(parent=parent)
-                    dpg.add_spacer(height=4, parent=parent)
-                    plugin.build_ui(parent)
-                except Exception:
-                    pass
-        rebuild(_build_plugin)
     else:
         rebuild(None)
 
@@ -639,6 +624,83 @@ def _on_pad_save(note, data):
     add_log_entry("SYS", f"Pad {note} saved to config.toml", color=(100, 255, 150))
 
 
+# ---- mixer tab --------------------------------------------------------------
+
+def _create_mixer_tab():
+    """Add a Mixer tab to center_tabs with volume/device controls."""
+    with dpg.tab(label="  Mixer  ", parent="center_tabs", tag="tab_mixer"):
+        with dpg.child_window(tag="mixer_tab_content", height=-1, border=False):
+            pass
+    create_volume_panel(
+        parent="mixer_tab_content",
+        master_callback=on_master_volume_slider,
+        mic_callback=on_mic_volume_slider,
+        master_mute_callback=on_master_mute_toggle,
+        mic_mute_callback=on_mic_mute_toggle,
+        output_device_callback=on_output_device_changed,
+        input_device_callback=on_input_device_changed,
+        master_cap_callback=on_master_cap_changed,
+        mic_cap_callback=on_mic_cap_changed,
+    )
+
+
+# ---- settings window --------------------------------------------------------
+
+_settings_window_tag = "settings_window"
+
+
+def _open_settings_window():
+    if dpg.does_item_exist(_settings_window_tag):
+        dpg.configure_item(_settings_window_tag, show=True)
+        dpg.focus_item(_settings_window_tag)
+        return
+    vp_w = dpg.get_viewport_client_width()
+    vp_h = dpg.get_viewport_client_height()
+    win_w, win_h = 500, 400
+    pos_x = max(0, (vp_w - win_w) // 2)
+    pos_y = max(0, (vp_h - win_h) // 2)
+
+    with dpg.window(
+        tag=_settings_window_tag,
+        label="Settings",
+        width=win_w, height=win_h,
+        pos=(pos_x, pos_y),
+        no_collapse=True,
+        on_close=lambda: dpg.configure_item(_settings_window_tag, show=False),
+    ):
+        dpg.add_text("Plugins", color=(85, 150, 240))
+        dpg.add_separator()
+        dpg.add_spacer(height=6)
+        dpg.add_group(tag="settings_plugin_list")
+
+    _populate_settings_plugins()
+
+
+def _populate_settings_plugins():
+    if not dpg.does_item_exist("settings_plugin_list"):
+        return
+    dpg.delete_item("settings_plugin_list", children_only=True)
+    for info in plugin_manager.discover():
+        name = info["name"]
+        is_loaded = name in plugin_manager.plugins
+
+        def _make_cb(n, iref):
+            def cb(sender, app_data):
+                on_plugin_toggle(n, iref, app_data)
+                _populate_settings_plugins()
+            return cb
+
+        with dpg.group(horizontal=True, parent="settings_plugin_list"):
+            dpg.add_checkbox(
+                label=name,
+                default_value=is_loaded,
+                callback=_make_cb(name, info),
+            )
+            if is_loaded:
+                dpg.add_text(f"  v{info.get('version', '?')}", color=(75, 78, 95))
+        dpg.add_spacer(height=2, parent="settings_plugin_list")
+
+
 # ---- plugin tabs ------------------------------------------------------------
 
 _plugin_tab_tags: list[str] = []
@@ -684,30 +746,21 @@ def main():
     else:
         saved_preset = 0
 
-    create_left_sidebar(
+    create_toolbar(
         preset_names=[p.name for p in config.pad_presets],
-        callback=on_preset_changed,
-        plugin_toggle_callback=on_plugin_toggle,
+        preset_callback=on_preset_changed,
+        settings_callback=_open_settings_window,
     )
     set_active_preset(saved_preset)
 
-    # Center: pad grid + knobs + mixer, log
+    # Center: pad grid + knobs, log
     set_pad_click_callback(_on_pad_click)
     set_pad_edit_callback(_on_pad_edit)
     set_pad_swap_callback(_on_pad_swap)
     set_knob_edit_callback(_on_knob_edit)
     create_pad_grid(knobs=config.knobs)
-    create_volume_panel(
-        master_callback=on_master_volume_slider,
-        mic_callback=on_mic_volume_slider,
-        master_mute_callback=on_master_mute_toggle,
-        mic_mute_callback=on_mic_mute_toggle,
-        output_device_callback=on_output_device_changed,
-        input_device_callback=on_input_device_changed,
-        master_cap_callback=on_master_cap_changed,
-        mic_cap_callback=on_mic_cap_changed,
-    )
     create_midi_log()
+    _create_mixer_tab()
 
     # Right sidebar
     create_right_sidebar()
@@ -743,8 +796,6 @@ def main():
             settings.put("enabled_plugins", list(plugin_manager.enabled))
     else:
         plugin_manager.load_all()
-    populate_plugins(plugin_manager.discover(),
-                     set(plugin_manager.plugins.keys()))
     set_plugin_list(list(plugin_manager.plugins.keys()))
     _create_plugin_tabs()
     _apply_preset_ui()
@@ -797,16 +848,10 @@ def main():
             if dpg.does_item_exist("device_status"):
                 dpg.set_value("device_status", f"MIDI: {midi.port_name}")
                 dpg.configure_item("device_status", color=(80, 255, 120))
-            if dpg.does_item_exist("sl_midi_device"):
-                dpg.set_value("sl_midi_device", midi.port_name or "")
-                dpg.configure_item("sl_midi_device", color=(80, 255, 120))
         else:
             if dpg.does_item_exist("device_status"):
                 dpg.set_value("device_status", "MIDI: searching...")
                 dpg.configure_item("device_status", color=(255, 180, 80))
-            if dpg.does_item_exist("sl_midi_device"):
-                dpg.set_value("sl_midi_device", "Searching for device…")
-                dpg.configure_item("sl_midi_device", color=(255, 180, 80))
 
         poll_dashboard()
         poll_hover()

@@ -1,4 +1,4 @@
-"""Main DearPyGui dashboard -- native title bar, fixed 3-panel layout."""
+"""Main DearPyGui dashboard -- native title bar, two-panel layout + toolbar."""
 import os
 import ctypes
 from pathlib import Path
@@ -6,7 +6,6 @@ import dearpygui.dearpygui as dpg
 
 _ICON_PATH = str(Path(__file__).resolve().parents[1] / "app_icon.ico")
 
-LEFT_W = 184
 RIGHT_W = 274
 STATUS_H = 26
 
@@ -33,6 +32,7 @@ def _load_font():
                     dpg.add_font_range(0x2000, 0x206F)
                     dpg.add_font_range(0x2190, 0x21FF)
                     dpg.add_font_range(0x25A0, 0x25FF)
+                    dpg.add_font_range(0x2600, 0x26FF)
                     dpg.add_font_range(0x2700, 0x27BF)
             return font
     return None
@@ -58,7 +58,9 @@ def setup_theme():
             dpg.add_theme_color(dpg.mvThemeCol_Header, (40, 40, 52))
             dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, (50, 50, 66))
             dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, (58, 58, 76))
-            dpg.add_theme_color(dpg.mvThemeCol_Separator, (36, 36, 46))
+            dpg.add_theme_color(dpg.mvThemeCol_Separator, (44, 44, 56))
+            dpg.add_theme_color(dpg.mvThemeCol_SeparatorHovered, (80, 90, 160))
+            dpg.add_theme_color(dpg.mvThemeCol_SeparatorActive, (100, 110, 200))
             dpg.add_theme_color(dpg.mvThemeCol_Border, (36, 36, 46))
             dpg.add_theme_color(dpg.mvThemeCol_SliderGrab, (75, 85, 165))
             dpg.add_theme_color(dpg.mvThemeCol_SliderGrabActive, (95, 105, 195))
@@ -91,7 +93,7 @@ def create_dashboard(width=2400, height=1560):
     dpg.create_viewport(
         title="MIDI Macropad",
         width=width, height=height,
-        min_width=900, min_height=600,
+        min_width=800, min_height=500,
         decorated=True,
         small_icon=_ICON_PATH,
         large_icon=_ICON_PATH,
@@ -102,15 +104,14 @@ def create_dashboard(width=2400, height=1560):
 
 
 def create_layout():
-    """Build the fixed 3-panel layout inside a primary window."""
+    """Build two-panel layout: center + right sidebar."""
     vp_w = dpg.get_viewport_width()
-    center_w = max(300, vp_w - LEFT_W - RIGHT_W - 18)
+    center_w = max(400, vp_w - RIGHT_W - 12)
 
     with dpg.window(tag="primary_window", no_title_bar=True,
                     no_scrollbar=True, no_move=True, no_resize=True,
                     no_collapse=True):
         with dpg.group(horizontal=True, tag="main_panels"):
-            dpg.add_child_window(tag="panel_left", width=LEFT_W, border=False)
             with dpg.child_window(tag="panel_center", width=center_w,
                                   border=False):
                 pass
@@ -132,9 +133,9 @@ def create_layout():
 
 
 def create_center_content():
-    """Create the pad area (pads + knobs + mixer) + full-width tabs."""
+    """Toolbar → pad_area → tabs (Log, Mixer, etc.)"""
     dpg.add_child_window(tag="pad_area", parent="panel_center",
-                         height=580, border=False)
+                         height=340, border=False)
     dpg.add_spacer(height=2, parent="panel_center")
 
     with dpg.child_window(tag="tabs_side", width=-1, height=-1,
@@ -145,7 +146,6 @@ def create_center_content():
 
 
 def add_plugin_tab(tab_id: str, label: str) -> str:
-    """Add a plugin tab to the center tab bar. Returns the content tag."""
     tag = f"tab_plugin_{tab_id}"
     content = f"tab_plugin_content_{tab_id}"
     with dpg.tab(label=f"  {label}  ", parent="center_tabs", tag=tag):
@@ -154,7 +154,6 @@ def add_plugin_tab(tab_id: str, label: str) -> str:
 
 
 def _set_window_icon(hwnd: int) -> None:
-    """Load app_icon.ico and apply it to the window via WM_SETICON."""
     if not os.path.isfile(_ICON_PATH):
         return
     try:
@@ -180,7 +179,6 @@ def _set_window_icon(hwnd: int) -> None:
 
 
 def post_setup():
-    """Apply DWM dark title bar, square corners, and custom icon."""
     hwnd = _get_hwnd()
     if not hwnd:
         return
@@ -213,15 +211,12 @@ def get_viewport_size() -> tuple[int, int]:
 
 
 def poll():
-    """Update panel sizes to track viewport dimensions."""
     global _last_vp_size
     vp_w = dpg.get_viewport_client_width()
     vp_h = dpg.get_viewport_client_height()
-    center_w = max(300, vp_w - LEFT_W - RIGHT_W - 18)
-    panel_h = max(200, vp_h - STATUS_H - 18)
+    center_w = max(400, vp_w - RIGHT_W - 12)
+    panel_h = max(200, vp_h - STATUS_H - 12)
 
-    if dpg.does_item_exist("panel_left"):
-        dpg.configure_item("panel_left", height=panel_h)
     if dpg.does_item_exist("panel_center"):
         dpg.configure_item("panel_center", width=center_w, height=panel_h)
     if dpg.does_item_exist("panel_right"):
