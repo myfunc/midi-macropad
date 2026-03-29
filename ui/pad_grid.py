@@ -19,17 +19,15 @@ BOT_ROW_NOTES = [16, 17, 18, 19, 24, 25, 26, 27]
 TOP_ROW_H = 20
 BOT_ROW_H = 20
 
-KNOB_RADIUS = 32
+KNOB_RADIUS = 28
 KNOB_ARC_SEGMENTS = 48
 KNOB_VALUE_SEGMENTS = 14
-KNOB_WIDGET_W = 100
-KNOB_DRAWLIST_W = 100
-KNOB_DRAWLIST_H = 72
-KNOB_TOPBAR_H = TOP_ROW_H
-# Match column height when a 2×2 cell has no knob (keeps Bank B grid aligned).
-KNOB_BLOCK_H = KNOB_TOPBAR_H + KNOB_DRAWLIST_H + 22
-# Pad column top inset when knobs are shown (aligns pad rows with knob 2×2 rows).
-KNOB_HEADER_PAD = 28
+KNOB_WIDGET_W = 82
+KNOB_DRAWLIST_W = 82
+KNOB_DRAWLIST_H = 62
+KNOB_LABEL_ROW_H = 18
+KNOB_BLOCK_H = KNOB_DRAWLIST_H + KNOB_LABEL_ROW_H + 4
+KNOB_HEADER_PAD = 24
 
 # Arc from 225° to -45° = 270° sweep (DAW-style).
 KNOB_ANGLE_MIN_DEG = 225.0
@@ -225,7 +223,7 @@ def _value_arc_segments(angle_deg: float) -> int:
 
 def _knob_cx_cy() -> tuple[float, float]:
     cx = KNOB_DRAWLIST_W / 2.0
-    cy = float(KNOB_RADIUS) + 10.0
+    cy = float(KNOB_RADIUS) + 4.0
     return cx, cy
 
 
@@ -315,12 +313,12 @@ def update_knob_display(cc: int, value: int):
     pct = round(value / 127.0 * 100) if value > 0 else 0
     pct_str = f"{pct}%"
     if dpg.does_item_exist(pct_tag):
-        char_w = 7.0
+        char_w = 8.0
         text_w = len(pct_str) * char_w
         dpg.configure_item(
             pct_tag,
             text=pct_str,
-            pos=[cx - text_w / 2.0, cy - 7],
+            pos=[cx - text_w / 2.0, cy - 8],
         )
 
     col_a = KNOB_VALUE_COLOR_A[:3]
@@ -384,16 +382,6 @@ def _create_knob_widget(knob):
     dl_tag = f"knob_drawlist_{cc}"
 
     with dpg.group():
-        with dpg.group(horizontal=True):
-            dpg.add_spacer(width=max(1, KNOB_WIDGET_W - 26))
-            edit_btn = dpg.add_button(
-                label="\u270E",
-                width=26,
-                height=KNOB_TOPBAR_H,
-                callback=lambda *_a, c=cc: _on_knob_edit_click(c),
-            )
-            dpg.bind_item_theme(edit_btn, _get_icon_btn_theme())
-
         with dpg.drawlist(width=KNOB_DRAWLIST_W, height=KNOB_DRAWLIST_H, tag=dl_tag):
             dpg.draw_polyline(
                 bg_pts,
@@ -404,10 +392,10 @@ def _create_knob_widget(knob):
             for i, st in enumerate(seg_tags):
                 dpg.draw_polyline([], color=KNOB_VALUE_COLOR_A, thickness=KNOB_VALUE_THICKNESS, tag=st)
             dpg.draw_text(
-                (cx - 10, cy - 7),
+                (cx - 12, cy - 8),
                 "0%",
                 color=KNOB_PCT_TEXT_COLOR,
-                size=13,
+                size=16,
                 tag=pct_tag,
             )
             dpg.draw_circle(
@@ -426,7 +414,15 @@ def _create_knob_widget(knob):
                 tag=dot_tag,
             )
 
-        dpg.add_text(knob.label, color=(120, 120, 140), wrap=KNOB_WIDGET_W)
+        with dpg.group(horizontal=True):
+            dpg.add_text(knob.label, color=(120, 120, 140))
+            edit_btn = dpg.add_button(
+                label="\u270E",
+                width=20,
+                height=KNOB_LABEL_ROW_H,
+                callback=lambda *_a, c=cc: _on_knob_edit_click(c),
+            )
+            dpg.bind_item_theme(edit_btn, _get_icon_btn_theme())
 
     _knob_draw_tags[cc] = {
         "cx": cx,
