@@ -1,108 +1,111 @@
-[device]
-name = "MPK mini play"
-
-[settings]
-double_tap_ms = 300
-long_press_ms = 2000
-
-# ========== Global Knobs ==========
 [[knobs]]
 cc = 48
 label = "Volume"
-action = { type = "volume", target = "master" }
 
+[knobs.action]
+type = "volume"
+target = "master"
 [[knobs]]
 cc = 49
 label = "Mic"
-action = { type = "volume", target = "mic" }
 
+[knobs.action]
+type = "volume"
+target = "mic"
 [[knobs]]
 cc = 50
 label = "Spotify"
-action = { type = "volume", target = "spotify" }
 
-# ========== Mode: Spotify ==========
+[knobs.action]
+type = "volume"
+target = "spotify"
 [[modes]]
 name = "Spotify"
 color = "#1DB954"
 icon = "SPT"
-
 [[modes.pads]]
 note = 16
 label = "Play/Pause"
-action = { type = "app_keystroke", keys = "space", process = "Spotify.exe" }
 
+[modes.pads.action]
+type = "app_keystroke"
+keys = "space"
+process = "Spotify.exe"
 [[modes.pads]]
 note = 17
 label = "Next"
-action = { type = "app_keystroke", keys = "ctrl+right", process = "Spotify.exe" }
 
+[modes.pads.action]
+type = "app_keystroke"
+keys = "ctrl+right"
+process = "Spotify.exe"
 [[modes.pads]]
 note = 18
 label = "Prev"
-action = { type = "app_keystroke", keys = "ctrl+left", process = "Spotify.exe" }
 
+[modes.pads.action]
+type = "app_keystroke"
+keys = "ctrl+left"
+process = "Spotify.exe"
 [[modes.pads]]
 note = 19
 label = "Like"
-action = { type = "app_keystroke", keys = "alt+shift+b", process = "Spotify.exe" }
 
+[modes.pads.action]
+type = "app_keystroke"
+keys = "alt+shift+b"
+process = "Spotify.exe"
 [[modes.pads]]
 note = 20
 label = "Shuffle"
-action = { type = "app_keystroke", keys = "ctrl+s", process = "Spotify.exe" }
 
+[modes.pads.action]
+type = "app_keystroke"
+keys = "ctrl+s"
+process = "Spotify.exe"
 [[modes.pads]]
 note = 21
 label = "DJ Mix"
-action = { type = "app_keystroke", keys = "ctrl+shift+j", process = "Spotify.exe" }
 
+[modes.pads.action]
+type = "app_keystroke"
+keys = "ctrl+shift+j"
+process = "Spotify.exe"
 [[modes.pads]]
 note = 22
 label = "Add to PL"
-action = { type = "plugin", target = "spotify:add_to_playlist" }
 
+[modes.pads.action]
+type = "plugin"
+target = "spotify:add_to_playlist"
 [[modes.pads]]
 note = 23
 label = "Remove PL"
-action = { type = "plugin", target = "spotify:remove_from_playlist" }
 
-# ========== Mode: Voicemeeter ==========
+[modes.pads.action]
+type = "plugin"
+target = "spotify:remove_from_playlist"
+
 [[modes]]
 name = "Voicemeeter"
 color = "#06B6D4"
 icon = "MIX"
-# Pads and knobs are handled by the voicemeeter plugin
-# Top row:  Mute Mic | Mute Desk | EQ B1 | Send2Mic
-# Bot row:  Gate     | Monitor   | Comp  | Resync
 
-# ========== Mode: Voice Scribe ==========
 [[modes]]
 name = "Voice Scribe"
 color = "#EC4899"
 icon = "MIC"
-# Pads are handled by the voice_scribe plugin
-# Press a style pad to start recording, press again to stop and translate
-# Pad layout: Professional | Casual | Technical | Email
-#              Summary     | Raw RU | Clipboard | Cancel
 
-# ========== Mode: OBS ==========
 [[modes]]
 name = "OBS"
 color = "#8B5CF6"
 icon = "CAM"
-# Pads are handled by the obs_session plugin (unified OBS mode)
-# Top row:  Screen | Camera | PiP | Mute Mic
-# Bot row:  Start/Stop Session | Rec/Segment | (free) | (free)
 
-# ========== Mode: Sound Pads ==========
 [[modes]]
 name = "Sound Pads"
 color = "#F59E0B"
 icon = "SND"
-# Pads are handled by the sample_player plugin
 
-# ========== Context Overrides ==========
 [[contexts]]
 process = "obs64.exe"
 mode = "OBS"
@@ -114,3 +117,10 @@ mode = "Voicemeeter"
 [[contexts]]
 process = "Spotify.exe"
 mode = "Spotify"
+
+[device]
+name = "MPK mini play"
+
+[settings]
+double_tap_ms = 300
+long_press_ms = 2000

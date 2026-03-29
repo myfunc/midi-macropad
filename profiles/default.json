@@ -1,18 +1,45 @@
 {
-  "output_device_id": "{0.0.0.00000000}.{8f2c64b1-fe39-4b8b-8a61-511ddef7d1a3}",
-  "mode_index": 1,
-  "input_device_id": "{0.0.1.00000000}.{fc1e2edd-ea12-4119-af98-99f02d7cc244}",
-  "inverted": false,
-  "midi_volume_cap": 0.25,
-  "midi_master_cap": 1.0,
-  "midi_mic_cap": 1.0,
-  "performance_feedback_enabled": false,
-  "active_profile": "default",
+  "spotify_plugin": {
+    "client_id": "008f50dad4ad42bbac09f9315df87c00",
+    "redirect_port": 8765,
+    "access_token": "BQAAdGhuREbXgsaoYnbCfnouUcqYpVHeNWex2Zo_B_vVHTbyh8LP4mluQGnLV7w2_74SK9PEMcmdHyLJxq9ZJmuK99_t7Wlqbbh0cOR9heRuHGexpzCdl1_3nvKCf_iVEatb3AfZF_3FC_7_cpAaoyM2qX3NC3cPKEAPLE3uSt4F-hbPrt3eJHqApDcnSYCG54y5Mmp7zLsTur65r_sBfZDBxeoqZ2uOkRylNQWIH0KM6ONd5lbY_5I6Nr3pIOTUO-m2GUDhPidTfojFbBm24kISeD_NERYA",
+    "refresh_token": "AQBsH-VMvRsaM9djs9M7b9MMtQI2JO9Itn6XulMoc3kQUFDDMZmGQgX75R14lGdGBQyi2qLVY4hnO0-wqt8xww91UQD44UEAaG1gIoNwWO7aMixBv2KNgrmEn__9ntiUG82xEQ",
+    "token_expires_at": 1774780677.3037739
+  },
+  "obs_session_plugin": {
+    "host": "127.0.0.1",
+    "port": 4455,
+    "password": "DoP2YNAlqfDx5oNq",
+    "scene_screen": "MM_Screen",
+    "scene_camera": "MM_Camera",
+    "scene_pip": "MM_ScreenPiP",
+    "right_screen_source": "Right Screen",
+    "camera_source": "WebCam",
+    "mic_source": "Mic/Aux",
+    "output_dir": "",
+    "auto_setup_scene": true,
+    "postprocess_stitch": true,
+    "postprocess_transcript": false,
+    "postprocess_open_folder": true,
+    "pad_slots": {
+      "16": "scene_screen",
+      "17": "scene_camera",
+      "18": "scene_pip",
+      "19": "mute_mic",
+      "20": "session",
+      "21": "record",
+      "22": null,
+      "23": null
+    }
+  },
   "enabled_plugins": [
-    "OBS Session",
+    "OBS",
+    "Sample Player",
+    "Spotify",
     "Voice Scribe",
     "Voicemeeter"
   ],
+  "mode_index": 3,
   "vm_plugin": {
     "knob_mode": {
       "48": "default",
@@ -20,23 +47,15 @@
       "50": "default"
     },
     "duck_enabled": false,
-    "duck_threshold": 0.09399999678134918,
+    "duck_threshold": 0.015,
     "duck_amount": -18.0,
     "duck_hold": 0.6,
-    "duck_attack_time": 0.7400000095367432
+    "duck_attack_time": 0.25
   },
-  "obs_session_plugin": {
-    "host": "127.0.0.1",
-    "port": 4455,
-    "password": "",
-    "working_scene": "MM_Session",
-    "right_screen_source": "MM_Right Screen",
-    "camera_source": "MM_Camera",
-    "mic_source": "MM_Microphone",
-    "output_dir": "",
-    "auto_setup_scene": true,
-    "postprocess_stitch": true,
-    "postprocess_transcript": false,
-    "postprocess_open_folder": true
-  }
+  "output_device_id": "{0.0.0.00000000}.{8f2c64b1-fe39-4b8b-8a61-511ddef7d1a3}",
+  "input_device_id": "{0.0.1.00000000}.{fc1e2edd-ea12-4119-af98-99f02d7cc244}",
+  "melody_transpose": -3,
+  "active_profile": "default",
+  "window_width": 1723,
+  "window_height": 1399
 }

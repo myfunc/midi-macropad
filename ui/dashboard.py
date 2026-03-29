@@ -23,7 +23,7 @@ def _get_hwnd():
 
 def _load_font():
     windir = os.environ.get("WINDIR", r"C:\Windows")
-    for name in ("segoeui.ttf", "arial.ttf", "tahoma.ttf"):
+    for name in ("seguisym.ttf", "segoeui.ttf", "arial.ttf", "tahoma.ttf"):
         path = os.path.join(windir, "Fonts", name)
         if os.path.isfile(path):
             with dpg.font_registry():
@@ -33,6 +33,7 @@ def _load_font():
                     dpg.add_font_range(0x2000, 0x206F)
                     dpg.add_font_range(0x2190, 0x21FF)
                     dpg.add_font_range(0x25A0, 0x25FF)
+                    dpg.add_font_range(0x2700, 0x27BF)
             return font
     return None
 
@@ -86,10 +87,10 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def create_dashboard():
+def create_dashboard(width=2400, height=1560):
     dpg.create_viewport(
         title="MIDI Macropad",
-        width=2400, height=1560,
+        width=width, height=height,
         min_width=900, min_height=600,
         decorated=True,
         small_icon=_ICON_PATH,
@@ -199,8 +200,22 @@ def post_setup():
     _set_window_icon(hwnd)
 
 
+_last_vp_size = (0, 0)
+_on_resize_cb = None
+
+
+def set_resize_callback(cb):
+    global _on_resize_cb
+    _on_resize_cb = cb
+
+
+def get_viewport_size() -> tuple[int, int]:
+    return dpg.get_viewport_width(), dpg.get_viewport_height()
+
+
 def poll():
     """Update panel sizes to track viewport dimensions."""
+    global _last_vp_size
     vp_w = dpg.get_viewport_client_width()
     vp_h = dpg.get_viewport_client_height()
     center_w = max(300, vp_w - LEFT_W - RIGHT_W - 18)
@@ -212,3 +227,9 @@ def poll():
         dpg.configure_item("panel_center", width=center_w, height=panel_h)
     if dpg.does_item_exist("panel_right"):
         dpg.configure_item("panel_right", height=panel_h)
+
+    full_w, full_h = dpg.get_viewport_width(), dpg.get_viewport_height()
+    if (full_w, full_h) != _last_vp_size and _last_vp_size != (0, 0):
+        if _on_resize_cb:
+            _on_resize_cb(full_w, full_h)
+    _last_vp_size = (full_w, full_h)

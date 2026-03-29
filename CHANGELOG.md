@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Joystick X-axis (pitch bend) for real-time melody transposition (±24 semitones)
 - Transpose value persists across sessions (`melody_transpose` setting)
 - All mode melodies normalized to C major for consistent tonality
+- MIDI cues `session.start`, `session.stop`, `session.segment_start`, and `session.segment_stop` (steel guitar, low-mid) in `feedback.py`
 
 ### Changed
 

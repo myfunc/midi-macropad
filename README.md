@@ -39,7 +39,7 @@ It is a voice-first writing workflow for bilingual work:
 - Hard-cancel an in-flight voice turn so stale results cannot paste into the current app.
 - Edit prompts in the built-in Prompt Editor.
 - Choose a microphone, test input levels, and store the API key in the UI.
-- Hear dedicated MIDI cues on the device for record start/stop, context capture, processing, done, cancel, and errors.
+- Hear dedicated MIDI cues on the device for record start/stop, session and segment boundaries, context capture, processing, done, cancel, and errors.
 
 Pipeline: **microphone -> Whisper transcription -> GPT rewrite/translation -> clipboard paste**
 

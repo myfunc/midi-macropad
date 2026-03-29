@@ -237,6 +237,19 @@ class PluginManager:
                           color=(255, 80, 80))
         return labels
 
+    def get_plugin_controlled_notes(self) -> set[int]:
+        """Return the set of MIDI notes currently managed by any active plugin."""
+        notes: set[int] = set()
+        for name in self.enabled:
+            plugin = self.plugins.get(name)
+            if plugin is None:
+                continue
+            try:
+                notes.update(plugin.get_pad_labels().keys())
+            except Exception:
+                pass
+        return notes
+
     # -- Dockable window API --------------------------------------------------
 
     def get_all_windows(self) -> list[dict]:

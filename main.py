@@ -56,10 +56,12 @@ from ui.dashboard import (
     create_dashboard, setup_theme, hex_to_rgb,
     create_layout, create_center_content, add_plugin_tab,
     post_setup as dashboard_post_setup, poll as poll_dashboard,
+    set_resize_callback,
 )
 from ui.pad_grid import (
     create_pad_grid, update_pad_labels, flash_pad, release_pad,
     clear_pad_labels, overlay_plugin_pad_labels, update_knob_display,
+    set_pad_click_callback, set_pad_edit_callback, set_pad_swap_callback,
 )
 from ui.volume_panel import (
     create_volume_panel, set_master_volume_display, set_mic_volume_display,
@@ -541,6 +543,94 @@ def check_foreground_app():
             return
 
 
+# ---- pad interactions --------------------------------------------------------
+
+def _on_pad_click(note: int):
+    """Trigger the pad action from UI click (same as MIDI press)."""
+    flash_pad(note, 100)
+    if plugin_manager.on_pad_press(note, 100):
+        labels = plugin_manager.get_all_pad_labels()
+        overlay_plugin_pad_labels(labels)
+        label = labels.get(note, f"note {note}")
+        add_log_entry("PAD", f"{label} (note {note}) [UI click]",
+                      color=(200, 150, 255))
+    else:
+        mapping = mapper.lookup_pad(note)
+        if mapping:
+            add_log_entry("PAD", f"{mapping.label} (note {note}) [UI click]",
+                          color=(100, 200, 255))
+            _execute_action(mapping.action,
+                            cue_id=_feedback_cue_for_mapping(mapping))
+        else:
+            add_log_entry("PAD", f"note {note} [UI click, unmapped]",
+                          color=(150, 150, 160))
+
+    def _delayed_release():
+        import threading
+        def _rel():
+            release_pad(note)
+            plugin_manager.on_pad_release(note)
+        threading.Timer(0.15, _rel).start()
+    _delayed_release()
+
+
+def _on_pad_edit(note: int):
+    """Open the Properties panel for this pad."""
+    mapping = mapper.lookup_pad(note)
+    rebuild(lambda parent: build_pad_properties(
+        parent, note, mapping, on_save=_on_pad_save))
+
+
+def _on_pad_swap(note_a: int, note_b: int):
+    """Swap label+action between two pads in config.toml for the current mode."""
+    plugin_notes = plugin_manager.get_plugin_controlled_notes()
+    if note_a in plugin_notes or note_b in plugin_notes:
+        add_log_entry("SYS",
+                      "Cannot swap plugin-controlled pads — "
+                      "use the plugin settings instead",
+                      color=(255, 180, 80))
+        return
+
+    import toml as _toml
+    mode = mapper.current_mode
+
+    raw = _toml.load(CONFIG_PATH)
+    for mode_data in raw.get("modes", []):
+        if mode_data.get("name") != mode.name:
+            continue
+        pads_list = mode_data.get("pads", [])
+        pad_a = next((p for p in pads_list if p.get("note") == note_a), None)
+        pad_b = next((p for p in pads_list if p.get("note") == note_b), None)
+
+        if pad_a and pad_b:
+            pad_a["label"], pad_b["label"] = pad_b["label"], pad_a["label"]
+            pad_a["action"], pad_b["action"] = pad_b["action"], pad_a["action"]
+        elif pad_a and not pad_b:
+            new_b = {"note": note_b, "label": pad_a["label"],
+                     "action": dict(pad_a["action"])}
+            pad_a["label"] = f"Pad {note_a - 15}"
+            pad_a["action"] = {"type": "keystroke", "keys": ""}
+            pads_list.append(new_b)
+        elif pad_b and not pad_a:
+            new_a = {"note": note_a, "label": pad_b["label"],
+                     "action": dict(pad_b["action"])}
+            pad_b["label"] = f"Pad {note_b - 15}"
+            pad_b["action"] = {"type": "keystroke", "keys": ""}
+            pads_list.append(new_a)
+        break
+
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        _toml.dump(raw, f)
+
+    global config
+    config = load_config(CONFIG_PATH)
+    mapper.__init__(config)
+    _apply_mode_ui()
+    add_log_entry("SYS",
+                  f"Swapped pad {note_a - 15} <-> pad {note_b - 15}",
+                  color=(100, 255, 150))
+
+
 # ---- selection -> right sidebar ----------------------------------------------
 
 def _on_selection_changed(sel_type, sel_id):
@@ -576,6 +666,9 @@ def _on_pad_save(note, data):
     action_dict: dict = {"type": atype}
     if atype == "keystroke":
         action_dict["keys"] = data.get("keys", "")
+    elif atype == "app_keystroke":
+        action_dict["keys"] = data.get("keys", "")
+        action_dict["process"] = data.get("process", "")
     elif atype in ("shell", "launch"):
         action_dict["command"] = data.get("command", "")
     elif atype in ("obs", "volume"):
@@ -631,7 +724,9 @@ def main():
     log.info("Starting MIDI Macropad (log file: %s)", LOG_FILE)
     dpg.create_context()
 
-    create_dashboard()
+    saved_w = int(settings.get("window_width", 2400))
+    saved_h = int(settings.get("window_height", 1560))
+    create_dashboard(width=saved_w, height=saved_h)
     theme = setup_theme()
     dpg.bind_theme(theme)
 
@@ -648,6 +743,9 @@ def main():
     )
 
     # Center: pad grid + knobs + mixer, log
+    set_pad_click_callback(_on_pad_click)
+    set_pad_edit_callback(_on_pad_edit)
+    set_pad_swap_callback(_on_pad_swap)
     create_pad_grid(knobs=config.knobs)
     create_volume_panel(
         master_callback=on_master_volume_slider,
@@ -736,6 +834,12 @@ def main():
         add_log_entry("LED", "Hardware LED output connected", color=(100, 255, 150))
     else:
         add_log_entry("LED", "Hardware LED output not available", color=(255, 180, 80))
+
+    def _on_viewport_resize(w, h):
+        settings.put("window_width", w)
+        settings.put("window_height", h)
+
+    set_resize_callback(_on_viewport_resize)
 
     dpg.setup_dearpygui()
     dpg.show_viewport()
