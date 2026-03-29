@@ -734,7 +734,6 @@ def main():
     dpg.bind_theme(theme)
 
     create_layout()
-    create_center_content()
 
     n_presets = len(config.pad_presets)
     saved_preset = int(settings.get("preset_index", settings.get("mode_index", 0)))
@@ -752,6 +751,8 @@ def main():
         settings_callback=_open_settings_window,
     )
     set_active_preset(saved_preset)
+
+    create_center_content()
 
     # Center: pad grid + knobs, log
     set_pad_click_callback(_on_pad_click)

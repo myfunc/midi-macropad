@@ -133,9 +133,9 @@ def create_layout():
 
 
 def create_center_content():
-    """Toolbar → pad_area → tabs (Log, Mixer, etc.)"""
+    """pad_area → tabs (Log, Mixer, etc.)  Toolbar is added before this."""
     dpg.add_child_window(tag="pad_area", parent="panel_center",
-                         height=340, border=False)
+                         height=270, border=False, no_scrollbar=True)
     dpg.add_spacer(height=2, parent="panel_center")
 
     with dpg.child_window(tag="tabs_side", width=-1, height=-1,

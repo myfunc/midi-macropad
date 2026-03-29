@@ -230,7 +230,7 @@ def _knob_cx_cy() -> tuple[float, float]:
 
 
 def create_pad_grid(parent="pad_area", knobs=None):
-    """Build 2x8 pads + knob row below."""
+    """Build 2x8 pads + 2x2 knob grid to the right."""
     _pad_tags.clear()
     _pad_press_times.clear()
     _knob_draw_tags.clear()
@@ -246,9 +246,9 @@ def create_pad_grid(parent="pad_area", knobs=None):
                 with dpg.group(horizontal=True):
                     _add_pad_row(BOT_ROW_NOTES)
 
-        if knobs:
-            dpg.add_spacer(height=10)
-            _create_knobs_panel(knobs)
+            if knobs:
+                dpg.add_spacer(width=BANK_GAP)
+                _create_knobs_panel(knobs)
 
 
 def _partition_knobs_for_banks(knobs) -> tuple[list, list]:
@@ -289,13 +289,14 @@ def _create_knob_bank_grid(knobs_four: list) -> None:
 
 def _create_knobs_panel(knobs) -> None:
     bank_a, bank_b = _partition_knobs_for_banks(knobs)
-    all_knobs = bank_a + bank_b
-    with dpg.group(horizontal=True):
-        dpg.add_spacer(width=8)
-        for i, knob in enumerate(all_knobs):
-            _create_knob_widget(knob)
-            if i < len(all_knobs) - 1:
-                dpg.add_spacer(width=PAD_SPACING)
+    with dpg.group(horizontal=False):
+        dpg.add_text("KNOBS", color=(75, 78, 95))
+        dpg.add_spacer(height=4)
+        with dpg.group(horizontal=True):
+            _create_knob_bank_grid(bank_a)
+            if bank_b:
+                dpg.add_spacer(width=BANK_GAP)
+                _create_knob_bank_grid(bank_b)
 
 
 def update_knob_display(cc: int, value: int):
