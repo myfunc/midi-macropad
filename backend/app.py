@@ -209,6 +209,55 @@ def create_app(core: AppCore) -> FastAPI:
         })
         return {"ok": True, "enabled": name in core.plugin_manager.enabled}
 
+    # ── Voice Scribe ─────────────────────────────────────────────────
+
+    @app.get("/api/voice-scribe/state")
+    async def get_voice_scribe_state():
+        vs = core.plugin_manager.plugins.get("Voice Scribe")
+        if not vs:
+            return JSONResponse({"active": False, "status": "Plugin not loaded"}, 200)
+        try:
+            prompts = []
+            for p in getattr(vs, '_prompt_list', []):
+                system = p.get("system", "")
+                prompts.append({
+                    "label": p.get("label", "?"),
+                    "description": (system[:60] + "...") if len(system) > 60 else system,
+                })
+            return {
+                "active": getattr(vs, '_active', False),
+                "recording": getattr(vs, '_recording', False),
+                "processing": getattr(vs, '_is_processing', lambda: False)(),
+                "status": getattr(vs, '_status', 'Idle'),
+                "last_original": getattr(vs, '_last_original', ''),
+                "last_result": getattr(vs, '_last_result', ''),
+                "last_prompt_label": getattr(vs, '_last_prompt_label', ''),
+                "chat_model": getattr(vs, 'chat_model', ''),
+                "transcription_model": getattr(vs, 'transcription_model', ''),
+                "input_language": getattr(vs, 'input_language', ''),
+                "output_language": getattr(vs, 'output_language', ''),
+                "prompts": prompts,
+                "chat_history_length": len(getattr(vs, '_chat_history', [])),
+            }
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, 500)
+
+    @app.post("/api/voice-scribe/new-chat")
+    async def voice_scribe_new_chat():
+        vs = core.plugin_manager.plugins.get("Voice Scribe")
+        if not vs:
+            return JSONResponse({"error": "Plugin not loaded"}, 404)
+        try:
+            vs._chat_history.clear()
+            vs._pending_context.clear()
+            vs._last_original = ""
+            vs._last_result = ""
+            vs._status = "New chat"
+            core._runtime_log("VS", "New chat started", (100, 255, 150))
+            return {"ok": True}
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, 500)
+
     # ── Operations (async background tasks) ──────────────────────────
 
     @app.post("/api/ops/start")

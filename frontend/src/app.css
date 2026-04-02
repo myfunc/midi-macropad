@@ -401,6 +401,45 @@ body {
 .vm-chip.muted { background: rgba(255,107,107,0.15); color: #FF6B6B; text-decoration: line-through; }
 .vm-ducking-row { display: flex; align-items: center; gap: 8px; }
 
+/* ── Voice Scribe ── */
+.vs-panel-content { padding: 10px 12px; height: 100%; overflow-y: auto; font-size: 12px; }
+.vs-status-bar {
+  padding: 6px 10px; border-radius: 6px; background: var(--bg-secondary);
+  border-left: 3px solid var(--accent); margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.vs-status-text { color: var(--text-primary); font-weight: 500; }
+.vs-recording-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #FF7878;
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.vs-section { margin-bottom: 10px; }
+.vs-prompt-tag {
+  font-size: 10px; color: var(--accent); margin-bottom: 4px; font-weight: 500;
+}
+.vs-text-block {
+  padding: 5px 8px; border-radius: 5px; margin-bottom: 4px; font-size: 11px; line-height: 1.5;
+}
+.vs-text-block.original { background: rgba(100,180,255,0.08); }
+.vs-text-block.result { background: rgba(90,230,140,0.08); }
+.vs-text-label {
+  font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 2px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.vs-text { color: var(--text-primary); }
+.vs-prompts-list { display: flex; flex-direction: column; gap: 3px; }
+.vs-prompt-item {
+  padding: 4px 8px; border-radius: 5px; background: var(--bg-secondary);
+  display: flex; gap: 8px; align-items: baseline;
+}
+.vs-prompt-name { font-weight: 600; color: var(--accent); font-size: 11px; white-space: nowrap; }
+.vs-prompt-desc { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-empty-hint { color: var(--text-muted); font-size: 11px; font-style: italic; }
+
 /* ── Dockview theme overrides ── */
 .dockview-theme-dark {
   --dv-background-color: var(--bg-primary);
