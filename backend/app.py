@@ -238,6 +238,7 @@ def create_app(core: AppCore) -> FastAPI:
                 "output_language": getattr(vs, 'output_language', ''),
                 "prompts": prompts,
                 "chat_history_length": len(getattr(vs, '_chat_history', [])),
+                "mic_device": getattr(vs, 'mic_device', None),
             }
         except Exception as exc:
             return JSONResponse({"error": str(exc)}, 500)

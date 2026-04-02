@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useAppStore } from '../stores/useAppStore'
 import type { IDockviewPanelProps } from 'dockview-react'
 
 interface VsState {
@@ -15,6 +16,7 @@ interface VsState {
   output_language: string
   prompts: { label: string; description: string }[]
   chat_history_length: number
+  mic_device: number | null
 }
 
 const DEFAULT: VsState = {
@@ -22,11 +24,26 @@ const DEFAULT: VsState = {
   status: 'Idle', last_original: '', last_result: '',
   last_prompt_label: '', chat_model: '', transcription_model: '',
   input_language: '', output_language: '',
-  prompts: [], chat_history_length: 0,
+  prompts: [], chat_history_length: 0, mic_device: null,
+}
+
+type Phase = 'idle' | 'recording' | 'processing'
+
+function getPhase(vs: VsState): Phase {
+  if (vs.recording) return 'recording'
+  if (vs.processing) return 'processing'
+  return 'idle'
+}
+
+const PHASE_STYLES: Record<Phase, { color: string; bg: string; label: string }> = {
+  idle:       { color: '#5AE68C', bg: 'rgba(90,230,140,0.08)',  label: 'Ready' },
+  recording:  { color: '#FF7878', bg: 'rgba(255,120,120,0.08)', label: 'Recording' },
+  processing: { color: '#FFC85A', bg: 'rgba(255,200,90,0.08)',  label: 'Processing' },
 }
 
 export function VoiceScribePanel(_props: IDockviewPanelProps) {
   const [vs, setVs] = useState<VsState>(DEFAULT)
+  const showToast = useAppStore(s => s.showToast)
   const intervalRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -37,92 +54,111 @@ export function VoiceScribePanel(_props: IDockviewPanelProps) {
         .catch(() => {})
     }
     fetchState()
-    intervalRef.current = window.setInterval(fetchState, 2000)
+    intervalRef.current = window.setInterval(fetchState, 1500)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [])
 
-  const statusColor = vs.recording ? '#FF7878' : vs.processing ? '#FFC85A' : '#5AE68C'
+  const phase = getPhase(vs)
+  const ps = PHASE_STYLES[phase]
+
+  function newChat() {
+    fetch('/api/voice-scribe/new-chat', { method: 'POST' })
+      .then(() => showToast('New chat started'))
+  }
 
   return (
-    <div className="vs-panel-content">
-      <div className="pp-header">
-        <strong>Voice Scribe</strong>
-        <span className={`pp-status ${vs.active ? 'ok' : ''}`}>
-          {vs.active ? 'Active' : 'Inactive'}
+    <div className="vs-root">
+      {/* ── Header ── */}
+      <div className="vs-header">
+        <div className="vs-header-left">
+          <span className="vs-title">Voice Scribe</span>
+          <span className="vs-lang-badge">{vs.input_language} → {vs.output_language}</span>
+        </div>
+        <span className={`pp-status ${vs.active ? 'ok' : 'err'}`}>
+          {vs.active ? 'Active' : 'Off'}
         </span>
       </div>
 
-      {/* Status */}
-      <div className="vs-status-bar" style={{ borderLeftColor: statusColor }}>
-        <span className="vs-status-text">{vs.status}</span>
-        {vs.recording && <span className="vs-recording-dot" />}
+      {/* ── Phase indicator ── */}
+      <div className="vs-phase" style={{ borderLeftColor: ps.color, background: ps.bg }}>
+        <div className="vs-phase-row">
+          {phase === 'recording' && <span className="vs-rec-dot" />}
+          <span className="vs-phase-label" style={{ color: ps.color }}>{ps.label}</span>
+          <span className="vs-phase-detail">{vs.status}</span>
+        </div>
+        {vs.last_prompt_label && phase !== 'idle' && (
+          <span className="vs-phase-prompt">Prompt: {vs.last_prompt_label}</span>
+        )}
       </div>
 
-      {/* Last result */}
-      {vs.last_result && (
-        <div className="vs-section">
-          <div className="vm-section-title">Last Result</div>
-          {vs.last_prompt_label && (
-            <div className="vs-prompt-tag">Prompt: {vs.last_prompt_label}</div>
-          )}
+      {/* ── Last output ── */}
+      {vs.last_result ? (
+        <div className="vs-output">
+          <div className="vs-output-header">
+            <span className="vs-output-title">Last Output</span>
+            {vs.last_prompt_label && (
+              <span className="vs-output-prompt">{vs.last_prompt_label}</span>
+            )}
+          </div>
           {vs.last_original && (
-            <div className="vs-text-block original">
-              <span className="vs-text-label">Original:</span>
-              <span className="vs-text">{vs.last_original}</span>
+            <div className="vs-output-block vs-orig">
+              <div className="vs-output-label">Spoken (original)</div>
+              <div className="vs-output-text">{vs.last_original}</div>
             </div>
           )}
-          <div className="vs-text-block result">
-            <span className="vs-text-label">Result:</span>
-            <span className="vs-text">{vs.last_result}</span>
+          <div className="vs-output-block vs-result">
+            <div className="vs-output-label">Result</div>
+            <div className="vs-output-text">{vs.last_result}</div>
           </div>
+        </div>
+      ) : (
+        <div className="vs-empty-output">
+          <span className="vs-empty-icon">&#127908;</span>
+          <span>Press a prompt pad to start recording</span>
         </div>
       )}
 
-      {/* Prompts */}
-      <div className="vs-section">
-        <div className="vm-section-title">Prompts ({vs.prompts.length})</div>
-        <div className="vs-prompts-list">
-          {vs.prompts.map((p, i) => (
-            <div key={i} className="vs-prompt-item">
-              <span className="vs-prompt-name">{p.label}</span>
-              <span className="vs-prompt-desc">{p.description}</span>
-            </div>
-          ))}
-          {vs.prompts.length === 0 && (
-            <div className="vs-empty-hint">No prompts loaded</div>
-          )}
-        </div>
+      {/* ── Chat ── */}
+      <div className="vs-chat-bar">
+        <span className="vs-chat-info">
+          Chat: {vs.chat_history_length} message{vs.chat_history_length !== 1 ? 's' : ''}
+        </span>
+        <button className="vs-new-chat-btn" onClick={newChat}>New Chat</button>
       </div>
 
-      {/* Chat */}
-      <div className="vs-section">
-        <div className="vm-section-title">Chat</div>
-        <div className="settings-row">
-          <span className="settings-label">Messages</span>
-          <span className="settings-value">{vs.chat_history_length}</span>
-        </div>
-        <button className="settings-btn" onClick={() => {
-          fetch('/api/voice-scribe/new-chat', { method: 'POST' })
-        }}>
-          New Chat
-        </button>
+      {/* ── Prompt pads ── */}
+      <div className="vs-section-title">Prompt Pads</div>
+      <div className="vs-prompt-grid">
+        {vs.prompts.map((p, i) => (
+          <div key={i} className="vs-prompt-card">
+            <span className="vs-prompt-card-name">{p.label}</span>
+            {p.description && (
+              <span className="vs-prompt-card-desc">{p.description}</span>
+            )}
+          </div>
+        ))}
+        {vs.prompts.length === 0 && (
+          <div className="vs-empty-hint">No prompts loaded — check prompts.toml</div>
+        )}
       </div>
 
-      {/* Config */}
-      <div className="vs-section">
-        <div className="vm-section-title">Config</div>
-        <div className="settings-row">
-          <span className="settings-label">Chat model</span>
-          <span className="settings-value">{vs.chat_model || '—'}</span>
+      {/* ── Models ── */}
+      <div className="vs-section-title">Models</div>
+      <div className="vs-models">
+        <div className="vs-model-row">
+          <span className="vs-model-label">Chat</span>
+          <span className="vs-model-value">{vs.chat_model || '—'}</span>
         </div>
-        <div className="settings-row">
-          <span className="settings-label">Whisper</span>
-          <span className="settings-value">{vs.transcription_model || '—'}</span>
+        <div className="vs-model-row">
+          <span className="vs-model-label">Whisper</span>
+          <span className="vs-model-value">{vs.transcription_model || '—'}</span>
         </div>
-        <div className="settings-row">
-          <span className="settings-label">Language</span>
-          <span className="settings-value">{vs.input_language} → {vs.output_language}</span>
-        </div>
+        {vs.mic_device !== null && (
+          <div className="vs-model-row">
+            <span className="vs-model-label">Mic</span>
+            <span className="vs-model-value">Device #{vs.mic_device}</span>
+          </div>
+        )}
       </div>
     </div>
   )
