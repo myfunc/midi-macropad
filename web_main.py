@@ -32,49 +32,71 @@ def _wait_for_server(url: str, timeout: float = 10.0) -> bool:
 
 
 def main():
+    import traceback
+    import logging
+
     parser = argparse.ArgumentParser(description="MIDI Macropad Web UI")
     parser.add_argument("--dev", action="store_true", help="Dev mode (uvicorn only, CORS enabled)")
     parser.add_argument("--browser", action="store_true", help="Open in browser instead of pywebview")
     parser.add_argument("--port", type=int, default=PORT, help=f"Server port (default: {PORT})")
     args = parser.parse_args()
 
-    from backend.core import AppCore
-    from backend.app import create_app
+    # Setup logging so errors go to file
+    log_dir = os.path.join(os.path.dirname(__file__), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[
+            logging.FileHandler(os.path.join(log_dir, "web_backend.log"), encoding="utf-8"),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+    log = logging.getLogger("web_main")
 
-    core = AppCore()
-    core.bootstrap()
-    app = create_app(core)
+    try:
+        from backend.core import AppCore
+        from backend.app import create_app
+
+        core = AppCore()
+        core.bootstrap()
+        app = create_app(core)
+    except Exception:
+        log.error("Bootstrap failed:\n%s", traceback.format_exc())
+        sys.exit(1)
 
     base_url = f"http://{HOST}:{args.port}"
 
     if args.dev:
-        # Dev mode: just run uvicorn with reload-friendly config
         import uvicorn
-        print(f"[DEV] Backend at {base_url}")
-        print(f"[DEV] Run 'cd frontend && npm run dev' for React HMR")
+        log.info(f"[DEV] Backend at {base_url}")
+        log.info(f"[DEV] Run 'cd frontend && npm run dev' for React HMR")
         uvicorn.run(app, host=HOST, port=args.port, log_level="info")
     else:
-        # Production: start uvicorn in background thread
         import uvicorn
 
-        server_config = uvicorn.Config(app, host=HOST, port=args.port, log_level="warning")
+        server_config = uvicorn.Config(app, host=HOST, port=args.port, log_level="info")
         server = uvicorn.Server(server_config)
 
         server_thread = threading.Thread(target=server.run, daemon=True)
         server_thread.start()
 
         if not _wait_for_server(f"{base_url}/api/midi/status"):
-            print("ERROR: Server failed to start", file=sys.stderr)
+            log.error("Server failed to start within timeout")
             sys.exit(1)
+
+        log.info(f"Server ready at {base_url}")
 
         if args.browser:
             webbrowser.open(base_url)
-            print(f"Opened {base_url} in browser. Press Ctrl+C to stop.")
+            log.info(f"Opened browser at {base_url}")
             try:
-                while True:
+                # Keep alive — check server thread health
+                while server_thread.is_alive():
                     time.sleep(1)
+                log.warning("Server thread stopped unexpectedly")
             except KeyboardInterrupt:
-                pass
+                log.info("Ctrl+C received")
         else:
             try:
                 import webview
@@ -86,17 +108,19 @@ def main():
                 )
                 webview.start()
             except ImportError:
-                print("pywebview not installed. Install: pip install pywebview")
-                print(f"Falling back to browser: {base_url}")
+                log.warning("pywebview not installed, falling back to browser")
                 webbrowser.open(base_url)
                 try:
-                    while True:
+                    while server_thread.is_alive():
                         time.sleep(1)
                 except KeyboardInterrupt:
                     pass
 
         server.should_exit = True
-        core.shutdown()
+        try:
+            core.shutdown()
+        except Exception:
+            log.error("Shutdown error:\n%s", traceback.format_exc())
 
 
 if __name__ == "__main__":

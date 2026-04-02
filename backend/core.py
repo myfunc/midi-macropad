@@ -122,30 +122,51 @@ class AppCore:
 
     def shutdown(self) -> None:
         self._running = False
-        self.hotkeys.stop()
-        self.plugin_manager.unload_all()
-        self.feedback.close()
-        self.midi.stop()
-        settings.flush()
+        try:
+            self.hotkeys.stop()
+        except Exception:
+            pass
+        try:
+            self.plugin_manager.unload_all()
+        except Exception:
+            pass
+        try:
+            self.feedback.close()
+        except Exception:
+            pass
+        try:
+            self.midi.stop()
+        except Exception:
+            pass
+        try:
+            settings.flush()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Event poll loop (replaces DearPyGui render loop)
     # ------------------------------------------------------------------
 
     def _poll_loop(self) -> None:
+        # Small delay to let uvicorn start cleanly
+        import time as _time
+        _time.sleep(1.0)
+
         while self._running:
             # Drain MIDI events
             try:
-                event = self.event_queue.get(timeout=0.03)
+                event = self.event_queue.get(timeout=0.05)
                 self._handle_event(event)
             except queue.Empty:
                 pass
 
-            # Poll plugins (~30 fps)
+            # Poll plugins (~20 fps) — wrapped in try/except
+            # because some plugins use native DLLs (Voicemeeter)
             try:
                 self.plugin_manager.poll_all()
-            except Exception:
-                pass
+            except Exception as exc:
+                self._runtime_log("ERR", f"Plugin poll error: {exc}", (255, 80, 80))
+                _time.sleep(0.5)  # Back off on error
 
     def _handle_event(self, event: MidiEvent) -> None:
         try:

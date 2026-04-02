@@ -252,17 +252,35 @@ def run_launcher():
         log("Starting backend...")
         update_status("backend", "Starting...", "Yellow.TLabel")
 
-        python = str(VENV_PYTHONW if VENV_PYTHONW.exists() else VENV_PYTHON)
+        # Use python.exe (not pythonw) so we can capture stderr
+        python = str(VENV_PYTHON)
+        log_file = ROOT / "logs" / "web_backend.log"
+        log_file.parent.mkdir(exist_ok=True)
+        err_handle = open(str(log_file), "w", encoding="utf-8")
+
         backend_proc = subprocess.Popen(
             [python, str(WEB_MAIN), "--browser", "--port", str(PORT)],
             cwd=str(ROOT),
+            stdout=err_handle,
+            stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
+        # Store handle so we can close it later
+        backend_proc._log_handle = err_handle
 
         # Poll until server is up
         def wait_for_ready():
-            for _ in range(40):  # 8 seconds
+            for _ in range(50):  # 10 seconds
                 if stopping:
+                    return
+                # Check if process already died
+                if backend_proc.poll() is not None:
+                    # Read last lines from log file for error info
+                    try:
+                        err_text = log_file.read_text(encoding="utf-8")[-500:]
+                    except Exception:
+                        err_text = ""
+                    root.after(0, lambda t=err_text: on_backend_crashed(t))
                     return
                 if _is_port_in_use(PORT):
                     root.after(0, lambda: on_backend_ready())
@@ -279,13 +297,32 @@ def run_launcher():
         btn_restart.configure(state="normal")
 
     def on_backend_failed() -> None:
-        log("Backend failed to start!")
-        update_status("backend", "FAILED", "Red.TLabel")
+        log("Backend failed to start (timeout)!")
+        update_status("backend", "FAILED (timeout)", "Red.TLabel")
+        btn_restart.configure(state="normal")
+
+    def on_backend_crashed(err_text: str) -> None:
+        log("Backend crashed on startup!")
+        if err_text:
+            # Show last few lines of error
+            for line in err_text.strip().split("\n")[-5:]:
+                line = line.strip()
+                if line:
+                    log(f"  {line}")
+        log("Check logs/web_backend.log for full trace")
+        update_status("backend", "CRASHED", "Red.TLabel")
+        btn_restart.configure(state="normal")
 
     def stop_backend() -> None:
         nonlocal backend_proc
         if backend_proc and backend_proc.poll() is None:
             log("Stopping backend...")
+            # Close log handle
+            if hasattr(backend_proc, '_log_handle'):
+                try:
+                    backend_proc._log_handle.close()
+                except Exception:
+                    pass
             backend_proc.terminate()
             try:
                 backend_proc.wait(timeout=5)
