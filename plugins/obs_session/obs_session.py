@@ -694,6 +694,8 @@ class OBSSessionPlugin(Plugin):
         self._rebuild_pad_grid()
 
     def _rebuild_pad_grid(self) -> None:
+        if os.environ.get("MACROPAD_HEADLESS"):
+            return
         try:
             import dearpygui.dearpygui as dpg
         except Exception:
@@ -1909,6 +1911,8 @@ class OBSSessionPlugin(Plugin):
                     )
 
     def _refresh_ui(self) -> None:
+        if os.environ.get("MACROPAD_HEADLESS"):
+            return
         try:
             import dearpygui.dearpygui as dpg
         except Exception:

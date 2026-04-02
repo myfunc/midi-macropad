@@ -742,6 +742,8 @@ class SpotifyPlugin(Plugin):
         return "Not connected"
 
     def _refresh_ui(self) -> None:
+        if os.environ.get("MACROPAD_HEADLESS"):
+            return
         try:
             import dearpygui.dearpygui as dpg
             if not self._dpg_ready:
