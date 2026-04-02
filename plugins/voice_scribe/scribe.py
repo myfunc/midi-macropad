@@ -706,6 +706,8 @@ class VoiceScribePlugin(Plugin):
     def _set_status(self, text: str, kind: str = "idle") -> None:
         self._status = text
         color = self._STATUS_COLORS.get(kind, (150, 150, 160))
+        if os.environ.get("MACROPAD_HEADLESS"):
+            return
         try:
             import dearpygui.dearpygui as dpg
             if dpg.does_item_exist("vs_status"):

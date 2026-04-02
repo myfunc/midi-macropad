@@ -182,6 +182,10 @@ class AppCore:
                     pass
 
     def _handle_event(self, event: MidiEvent) -> None:
+        with self._lock:
+            self._handle_event_locked(event)
+
+    def _handle_event_locked(self, event: MidiEvent) -> None:
         try:
             if event.type == "pad_press":
                 self.event_bus.publish("midi.pad_press", {

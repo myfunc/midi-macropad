@@ -91,6 +91,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             s.updatePads(evt.payload.pads as Record<string, any>)
           }
           break
+        case 'pads.updated':
+          if (evt.payload.pads) {
+            s.updatePads(evt.payload.pads as Record<string, any>)
+          }
+          break
         case 'obs.scene_changed':
           s.updateObs({ current_scene: evt.payload.scene as string })
           break

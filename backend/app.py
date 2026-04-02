@@ -65,10 +65,16 @@ def create_app(core: AppCore) -> FastAPI:
         note_b = body.get("note_b")
         if note_a is None or note_b is None:
             return JSONResponse({"error": "note_a and note_b required"}, 400)
-        ok = core.mapper.registry.swap_pads(note_a, note_b)
-        if ok:
+        pad_a = core.mapper.registry.get_pad(note_a)
+        pad_b = core.mapper.registry.get_pad(note_b)
+        if (pad_a and pad_a.locked) or (pad_b and pad_b.locked):
+            return JSONResponse({"error": "Cannot swap locked pads"}, 409)
+        with core._lock:
             core.mapper.swap_pads(note_a, note_b)
-        return {"ok": ok}
+        core.event_bus.publish("pads.updated", {
+            "pads": core.get_state_snapshot()["pads"],
+        })
+        return {"ok": True}
 
     @app.get("/api/presets")
     async def get_presets():
@@ -84,7 +90,8 @@ def create_app(core: AppCore) -> FastAPI:
     async def activate_preset(index: int):
         if 0 <= index < len(core.config.pad_presets):
             try:
-                core.mapper.set_preset(index)
+                with core._lock:
+                    core.mapper.set_preset(index)
                 import settings
                 settings.put("preset_index", index)
                 # These may touch DearPyGui internals in plugins — wrap safely
