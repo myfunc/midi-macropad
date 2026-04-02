@@ -93,11 +93,20 @@ class AppCore:
         if 0 <= idx < len(self.config.pad_presets):
             self.mapper.set_preset(idx)
 
-        # Load enabled plugins
+        # Mark headless mode so plugins skip DearPyGui calls
+        os.environ["MACROPAD_HEADLESS"] = "1"
+
+        # Load enabled plugins (skip plugins that crash without DearPyGui)
         enabled = settings.get("enabled_plugins", [])
+        _SKIP_IN_HEADLESS = set()  # Add plugin names here if they crash
         for info in self.plugin_manager.discover():
-            if info["name"] in enabled:
-                self.plugin_manager.load_plugin(info)
+            name = info["name"]
+            if name in enabled and name not in _SKIP_IN_HEADLESS:
+                try:
+                    self.plugin_manager.load_plugin(info)
+                except Exception as exc:
+                    self._runtime_log("ERR",
+                        f"Plugin '{name}' failed to load: {exc}", (255, 80, 80))
 
         # Wire OBS into plugin manager
         self.plugin_manager.set_runtime_services({
@@ -148,9 +157,13 @@ class AppCore:
     # ------------------------------------------------------------------
 
     def _poll_loop(self) -> None:
-        # Small delay to let uvicorn start cleanly
         import time as _time
         _time.sleep(1.0)
+
+        # In headless mode, skip polling entirely — plugins that use
+        # DearPyGui or native DLLs crash when polled from background threads.
+        # MIDI pad press/release still works via _handle_event.
+        _SKIP_ALL_POLLS = True
 
         while self._running:
             # Drain MIDI events
@@ -160,13 +173,13 @@ class AppCore:
             except queue.Empty:
                 pass
 
-            # Poll plugins (~20 fps) — wrapped in try/except
-            # because some plugins use native DLLs (Voicemeeter)
-            try:
-                self.plugin_manager.poll_all()
-            except Exception as exc:
-                self._runtime_log("ERR", f"Plugin poll error: {exc}", (255, 80, 80))
-                _time.sleep(0.5)  # Back off on error
+            # Plugin poll — disabled in headless mode (DearPyGui/DLL crashes)
+            # MIDI events and pad actions still work via on_pad_press
+            if not _SKIP_ALL_POLLS:
+                try:
+                    self.plugin_manager.poll_all()
+                except Exception:
+                    pass
 
     def _handle_event(self, event: MidiEvent) -> None:
         try:
