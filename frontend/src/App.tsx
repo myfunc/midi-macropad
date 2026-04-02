@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import {
   DockviewReact,
   type DockviewReadyEvent,
@@ -8,6 +8,7 @@ import 'dockview-core/dist/styles/dockview.css'
 import { WebSocketProvider } from './ws/WebSocketProvider'
 import { PresetBar } from './components/PresetBar'
 import { StatusBar } from './components/StatusBar'
+import { useAppStore } from './stores/useAppStore'
 import { PadGridPanel } from './panels/PadGridPanel'
 import { PropertiesPanel } from './panels/PropertiesPanel'
 import { LogPanel } from './panels/LogPanel'
@@ -101,7 +102,33 @@ export default function App() {
           />
         </div>
         <StatusBar />
+        <Toast />
       </div>
     </WebSocketProvider>
+  )
+}
+
+function Toast() {
+  const message = useAppStore(s => s.toastMessage)
+  const clearToast = useAppStore(s => s.clearToast)
+
+  useEffect(() => {
+    if (message) {
+      const t = setTimeout(clearToast, 4000)
+      return () => clearTimeout(t)
+    }
+  }, [message, clearToast])
+
+  if (!message) return null
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 40, left: '50%', transform: 'translateX(-50%)',
+      background: '#3A3A52', border: '1px solid #6EB4FF', color: '#6EB4FF',
+      padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+      zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+    }}>
+      {message}
+    </div>
   )
 }

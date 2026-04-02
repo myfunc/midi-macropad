@@ -27,6 +27,7 @@ from plugins.manager import PluginManager
 from pad_registry import PadEntry, PAD_NOTES_ALL
 
 from backend.event_bus import EventBus
+from backend.operation_manager import OperationManager
 
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config.toml")
 
@@ -41,9 +42,10 @@ class AppCore:
     def __init__(self):
         self.event_queue: queue.Queue = queue.Queue(maxsize=256)
         self.event_bus = EventBus()
+        self.op_manager = OperationManager(self.event_bus)
         self._running = False
         self._poll_thread: threading.Thread | None = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # RLock to allow nested locking
 
         # Log buffer for WebSocket clients connecting later
         self.log_buffer: list[dict] = []
@@ -131,6 +133,10 @@ class AppCore:
 
     def shutdown(self) -> None:
         self._running = False
+        try:
+            self.op_manager.shutdown()
+        except Exception:
+            pass
         try:
             self.hotkeys.stop()
         except Exception:

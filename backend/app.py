@@ -2,30 +2,48 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import logging
+import traceback
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.requests import Request
 
 from backend.core import AppCore
+from backend.middleware import RequestLoggingMiddleware
 
 _FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+log = logging.getLogger("midi_macropad.app")
 
 
 def create_app(core: AppCore) -> FastAPI:
     app = FastAPI(title="MIDI Macropad", version="1.0.0")
     app.state.core = core
 
-    # CORS for dev mode (Vite on :5173)
+    # Middleware
+    app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ── Global error handler ────────────────────────────────────────
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        tb = traceback.format_exc()
+        log.error("Unhandled %s %s: %s\n%s", request.method, request.url.path, exc, tb)
+        core.event_bus.publish("error.unhandled", {
+            "path": str(request.url.path),
+            "error": str(exc),
+        })
+        core._runtime_log("ERR", f"HTTP {request.url.path}: {exc}", (255, 80, 80))
+        return JSONResponse({"error": "Internal server error", "detail": str(exc)}, 500)
 
     # ── REST routes ──────────────────────────────────────────────────
 
@@ -44,12 +62,15 @@ def create_app(core: AppCore) -> FastAPI:
     @app.post("/api/midi/reconnect")
     async def midi_reconnect():
         core.midi.reconnect()
-        return {"ok": True}
+        core.event_bus.publish("midi.status", {
+            "connected": core.midi.connected,
+            "port_name": core.midi.port_name,
+        })
+        return {"ok": True, "connected": core.midi.connected}
 
     @app.get("/api/pads")
     async def get_pads():
-        snapshot = core.get_state_snapshot()
-        return snapshot["pads"]
+        return core.get_state_snapshot()["pads"]
 
     @app.post("/api/pads/{note}/press")
     async def pad_press(note: int):
@@ -88,30 +109,30 @@ def create_app(core: AppCore) -> FastAPI:
 
     @app.post("/api/presets/{index}/activate")
     async def activate_preset(index: int):
-        if 0 <= index < len(core.config.pad_presets):
+        if not (0 <= index < len(core.config.pad_presets)):
+            return JSONResponse({"error": "invalid index"}, 400)
+        try:
+            with core._lock:
+                core.mapper.set_preset(index)
+            import settings
+            settings.put("preset_index", index)
             try:
-                with core._lock:
-                    core.mapper.set_preset(index)
-                import settings
-                settings.put("preset_index", index)
-                # These may touch DearPyGui internals in plugins — wrap safely
-                try:
-                    core.plugin_manager.on_mode_changed(core.mapper.current_preset.name)
-                except Exception:
-                    pass
-                try:
-                    core.plugin_manager.notify_preset_changed(core.mapper)
-                except Exception:
-                    pass
-                core.event_bus.publish("preset.changed", {
-                    "index": index,
-                    "name": core.mapper.current_preset.name,
-                    "pads": core.get_state_snapshot()["pads"],
-                })
-                return {"ok": True, "name": core.mapper.current_preset.name}
+                core.plugin_manager.on_mode_changed(core.mapper.current_preset.name)
             except Exception as exc:
-                return JSONResponse({"error": str(exc)}, 500)
-        return JSONResponse({"error": "invalid index"}, 400)
+                log.warning("on_mode_changed error: %s", exc)
+            try:
+                core.plugin_manager.notify_preset_changed(core.mapper)
+            except Exception as exc:
+                log.warning("notify_preset_changed error: %s", exc)
+            core.event_bus.publish("preset.changed", {
+                "index": index,
+                "name": core.mapper.current_preset.name,
+                "pads": core.get_state_snapshot()["pads"],
+            })
+            return {"ok": True, "name": core.mapper.current_preset.name}
+        except Exception as exc:
+            log.error("activate_preset failed: %s", exc, exc_info=True)
+            return JSONResponse({"error": str(exc)}, 500)
 
     @app.get("/api/plugins")
     async def get_plugins():
@@ -125,6 +146,37 @@ def create_app(core: AppCore) -> FastAPI:
             })
         return result
 
+    # ── Operations (async background tasks) ──────────────────────────
+
+    @app.post("/api/ops/start")
+    async def start_operation(body: dict):
+        op_type = body.get("op_type")
+        params = body.get("params", {})
+        if not op_type:
+            return JSONResponse({"error": "op_type required"}, 400)
+        try:
+            op = core.op_manager.start(op_type, params)
+            return op.to_dict()
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, 400)
+
+    @app.get("/api/ops")
+    async def list_operations():
+        return core.op_manager.get_all()
+
+    @app.get("/api/ops/{op_id}")
+    async def get_operation(op_id: str):
+        op = core.op_manager.get(op_id)
+        if not op:
+            return JSONResponse({"error": "not found"}, 404)
+        return op.to_dict()
+
+    @app.post("/api/ops/{op_id}/cancel")
+    async def cancel_operation(op_id: str):
+        if not core.op_manager.cancel(op_id):
+            return JSONResponse({"error": "not found or already finished"}, 404)
+        return {"ok": True}
+
     # ── WebSocket ────────────────────────────────────────────────────
 
     @app.websocket("/ws")
@@ -132,7 +184,6 @@ def create_app(core: AppCore) -> FastAPI:
         await ws.accept()
         sub = core.event_bus.subscribe()
         try:
-            # Send initial state
             state = core.get_state_snapshot()
             await ws.send_json({
                 "type": "response",
@@ -141,7 +192,6 @@ def create_app(core: AppCore) -> FastAPI:
                 "payload": state,
             })
 
-            # Fan-out events to this client
             while True:
                 msg = await sub.get()
                 await ws.send_json(msg)
@@ -156,12 +206,16 @@ def create_app(core: AppCore) -> FastAPI:
 
     @app.on_event("startup")
     async def on_startup():
+        log.info("Backend starting up...")
         core.event_bus.set_loop(asyncio.get_running_loop())
         core.start_services()
+        log.info("Backend ready")
 
     @app.on_event("shutdown")
     async def on_shutdown():
+        log.info("Backend shutting down...")
         core.shutdown()
+        log.info("Backend shutdown complete")
 
     # ── Static files (production build) ──────────────────────────────
 

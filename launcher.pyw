@@ -185,7 +185,15 @@ def run_launcher():
                          padx=12, pady=4, state="disabled")
     btn_open.pack(side="left")
 
-    btn_restart = tk.Button(btn_frame, text="Restart", command=lambda: restart_backend(),
+    btn_rebuild = tk.Button(btn_frame, text="Rebuild UI",
+                            command=lambda: threading.Thread(target=rebuild_frontend, daemon=True).start(),
+                            bg="#323248", fg="#5AE68C", activebackground="#3A3A52",
+                            activeforeground="#5AE68C", relief="flat", font=("Segoe UI", 10),
+                            padx=12, pady=4)
+    btn_rebuild.pack(side="left", padx=(8, 0))
+
+    btn_restart = tk.Button(btn_frame, text="Restart",
+                            command=lambda: threading.Thread(target=restart_backend, daemon=True).start(),
                             bg="#323248", fg="#FFC85A", activebackground="#3A3A52",
                             activeforeground="#FFC85A", relief="flat", font=("Segoe UI", 10),
                             padx=12, pady=4, state="disabled")
@@ -200,6 +208,8 @@ def run_launcher():
     # --- Process management ---
     backend_proc: subprocess.Popen | None = None
     stopping = False
+    _restart_count = 0
+    _MAX_RESTARTS = 3
 
     def log(msg: str) -> None:
         ts = time.strftime("%H:%M:%S")
@@ -291,6 +301,8 @@ def run_launcher():
         threading.Thread(target=wait_for_ready, daemon=True).start()
 
     def on_backend_ready() -> None:
+        nonlocal _restart_count
+        _restart_count = 0  # Reset on successful start
         log(f"Backend running on {URL}")
         update_status("backend", f"Running (:{PORT})", "Green.TLabel")
         btn_open.configure(state="normal")
@@ -335,9 +347,28 @@ def run_launcher():
         btn_restart.configure(state="disabled")
 
     def restart_backend() -> None:
+        nonlocal _restart_count
+        _restart_count = 0
         stop_backend()
         time.sleep(0.5)
         start_backend()
+
+    def rebuild_frontend() -> None:
+        btn_rebuild.configure(state="disabled")
+        log("Rebuilding frontend...")
+        update_status("frontend", "Building...", "Yellow.TLabel")
+        result = subprocess.run(
+            ["npm", "run", "build"], cwd=str(FRONTEND_DIR),
+            capture_output=True, text=True, shell=True,
+        )
+        if result.returncode == 0:
+            log("Frontend rebuilt. Refresh browser (F5).")
+            update_status("frontend", "Ready (rebuilt)", "Green.TLabel")
+        else:
+            err = result.stderr[-200:] if result.stderr else "unknown error"
+            log(f"Build failed: {err}")
+            update_status("frontend", "Build FAILED", "Red.TLabel")
+        btn_rebuild.configure(state="normal")
 
     def stop_all() -> None:
         nonlocal stopping
@@ -362,17 +393,27 @@ def run_launcher():
         # Start backend
         start_backend()
 
-    # Monitor backend process
+    # Monitor backend process with auto-restart
     def monitor() -> None:
+        nonlocal _restart_count
         if stopping:
             return
         if backend_proc and backend_proc.poll() is not None:
             exit_code = backend_proc.returncode
             if not stopping:
-                log(f"Backend exited (code {exit_code})")
-                update_status("backend", f"Exited ({exit_code})", "Red.TLabel")
                 btn_open.configure(state="disabled")
-                btn_restart.configure(state="normal")
+                if _restart_count < _MAX_RESTARTS:
+                    _restart_count += 1
+                    delay = 2.0 * _restart_count
+                    log(f"Backend crashed (code {exit_code}), "
+                        f"restarting in {delay:.0f}s ({_restart_count}/{_MAX_RESTARTS})...")
+                    update_status("backend", f"Restarting {_restart_count}/{_MAX_RESTARTS}", "Yellow.TLabel")
+                    root.after(int(delay * 1000),
+                               lambda: threading.Thread(target=start_backend, daemon=True).start())
+                else:
+                    log(f"Backend crashed {_MAX_RESTARTS} times. Manual restart required.")
+                    update_status("backend", "CRASHED (max retries)", "Red.TLabel")
+                    btn_restart.configure(state="normal")
         root.after(2000, monitor)
 
     root.after(2000, monitor)

@@ -102,6 +102,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         case 'obs.record_state':
           s.updateObs({ is_recording: evt.payload.recording as boolean })
           break
+        case 'midi.status':
+          s.setInitialState({
+            ...s, midi: {
+              connected: evt.payload.connected,
+              port_name: evt.payload.port_name,
+              device_name: s.midiDeviceName,
+            }
+          } as any)
+          break
+        case 'ops.update':
+          console.log('[WS] Op update:', evt.payload)
+          break
+        case 'error.unhandled':
+          s.showToast(`Error: ${evt.payload.error}`)
+          setTimeout(() => s.clearToast(), 5000)
+          break
       }
     }
   }
