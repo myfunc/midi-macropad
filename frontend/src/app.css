@@ -40,6 +40,27 @@ body {
 }
 
 /* ── Preset Bar ── */
+/* ── Tab warning ── */
+.tab-warning {
+  padding: 4px 16px; font-size: 11px; text-align: center;
+  background: rgba(255,200,90,0.1); color: #FFC85A;
+  border-bottom: 1px solid rgba(255,200,90,0.2); flex-shrink: 0;
+}
+
+/* ── Toast ── */
+.toast-msg {
+  position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+  background: var(--bg-elevated); border: 1px solid var(--accent);
+  color: var(--accent); padding: 8px 18px; border-radius: 8px;
+  font-size: 12px; font-weight: 500; z-index: 200;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  animation: toast-in 0.2s ease-out;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 .preset-bar {
   display: flex;
   align-items: center;

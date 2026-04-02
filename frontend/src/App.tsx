@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DockviewReact,
   type DockviewReadyEvent,
@@ -10,13 +10,15 @@ import { WebSocketProvider } from './ws/WebSocketProvider'
 import { PresetBar } from './components/PresetBar'
 import { StatusBar } from './components/StatusBar'
 import { useAppStore } from './stores/useAppStore'
+import { useTabLeader } from './hooks/useTabLeader'
+import { loadLayout, saveLayout } from './hooks/useLayoutPersistence'
 import { PadGridPanel } from './panels/PadGridPanel'
 import { PropertiesPanel } from './panels/PropertiesPanel'
 import { LogPanel } from './panels/LogPanel'
 import { ObsPanel } from './panels/ObsPanel'
-import { SettingsPanel } from './panels/SettingsPanel'
 import { VoicemeeterPanel } from './panels/VoicemeeterPanel'
 import { VoiceScribePanel } from './panels/VoiceScribePanel'
+import { SettingsPanel } from './panels/SettingsPanel'
 
 const components: Record<string, React.FC<any>> = {
   padgrid: PadGridPanel,
@@ -39,7 +41,6 @@ function Watermark(_props: IWatermarkPanelProps) {
   )
 }
 
-// Panels that can be toggled from the toolbar
 const PANEL_CATALOG = [
   { id: 'padgrid', title: 'Pad Grid' },
   { id: 'properties', title: 'Properties' },
@@ -52,83 +53,92 @@ const PANEL_CATALOG = [
 
 export default function App() {
   const dockApiRef = useRef<DockviewApi | null>(null)
+  const { isLeader, otherTabExists } = useTabLeader()
+  const [layoutLoaded, setLayoutLoaded] = useState(false)
 
-  const onReady = useCallback((event: DockviewReadyEvent) => {
+  const onReady = useCallback(async (event: DockviewReadyEvent) => {
     const api = event.api
     dockApiRef.current = api
 
-    // Try to restore saved layout
-    const saved = localStorage.getItem('dockview-layout')
+    // Load saved layout (backend first, then localStorage)
+    const saved = await loadLayout()
     if (saved) {
       try {
-        api.fromJSON(JSON.parse(saved))
+        api.fromJSON(saved as any)
+        setLayoutLoaded(true)
+        setupLayoutSave(api)
         return
       } catch {
-        // Fall through to default layout
+        // Corrupted layout — fall through
       }
     }
 
     // Default layout
-    const padgrid = api.addPanel({
-      id: 'padgrid',
-      component: 'padgrid',
-      title: 'Pad Grid',
-    })
+    buildDefaultLayout(api)
+    setLayoutLoaded(true)
+    setupLayoutSave(api)
+  }, [])
 
+  function setupLayoutSave(api: DockviewApi) {
+    api.onDidLayoutChange(() => {
+      try {
+        saveLayout(api.toJSON(), isLeader)
+      } catch {
+        // ignore
+      }
+    })
+  }
+
+  function buildDefaultLayout(api: DockviewApi) {
+    const padgrid = api.addPanel({
+      id: 'padgrid', component: 'padgrid', title: 'Pad Grid',
+    })
     api.addPanel({
-      id: 'properties',
-      component: 'properties',
-      title: 'Properties',
+      id: 'properties', component: 'properties', title: 'Properties',
       position: { referencePanel: padgrid, direction: 'right' },
       initialWidth: 280,
     })
-
     const log = api.addPanel({
-      id: 'log',
-      component: 'log',
-      title: 'Log',
+      id: 'log', component: 'log', title: 'Log',
       position: { referencePanel: padgrid, direction: 'below' },
       initialHeight: 200,
     })
-
     api.addPanel({
-      id: 'obs',
-      component: 'obs',
-      title: 'OBS',
+      id: 'obs', component: 'obs', title: 'OBS',
       position: { referencePanel: log, direction: 'right' },
     })
-
-    // Save layout on every change
-    api.onDidLayoutChange(() => {
-      try {
-        localStorage.setItem('dockview-layout', JSON.stringify(api.toJSON()))
-      } catch {
-        // ignore quota errors
-      }
-    })
-  }, [])
+  }
 
   function togglePanel(id: string, title: string) {
     const api = dockApiRef.current
     if (!api) return
     const existing = api.getPanel(id)
     if (existing) {
-      // Panel exists — focus it
       existing.api.setActive()
     } else {
-      // Panel doesn't exist — create it
       api.addPanel({ id, component: id, title, floating: { width: 400, height: 500 } })
     }
   }
 
   function resetLayout() {
     localStorage.removeItem('dockview-layout')
+    // Also clear backend
+    fetch('/api/settings/ui_layout', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: null }),
+    }).catch(() => {})
     window.location.reload()
   }
 
   return (
     <WebSocketProvider>
       <div className="app-root">
+        {otherTabExists && !isLeader && (
+          <div className="tab-warning">
+            Another tab is active — this tab is read-only (layout changes won't save)
+          </div>
+        )}
         <PresetBar
           onOpenSettings={() => togglePanel('settings', 'Settings')}
           onTogglePanel={togglePanel}
@@ -164,12 +174,7 @@ function Toast() {
   if (!message) return null
 
   return (
-    <div style={{
-      position: 'fixed', bottom: 40, left: '50%', transform: 'translateX(-50%)',
-      background: '#3A3A52', border: '1px solid #6EB4FF', color: '#6EB4FF',
-      padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 500,
-      zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-    }}>
+    <div className="toast-msg">
       {message}
     </div>
   )
