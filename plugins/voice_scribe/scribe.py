@@ -353,6 +353,19 @@ class VoiceScribePlugin(Plugin):
             return False
         return self._recording and self._active_note == note
 
+    def get_action_catalog(self) -> list[dict]:
+        catalog = []
+        for p in self._prompt_list:
+            label = p.get("label", f"Pad {p.get('pad', '?')}")
+            system = p.get("system", "")
+            desc = system[:80] + "..." if len(system) > 80 else system
+            catalog.append({
+                "id": label,
+                "label": label,
+                "description": desc or f"Voice prompt: {label}",
+            })
+        return catalog
+
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:
             return {}

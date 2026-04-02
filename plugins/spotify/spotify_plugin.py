@@ -54,6 +54,17 @@ _ACTION_IDS: tuple[str, ...] = (
 )
 _DEFAULT_SPOTIFY_NOTES: tuple[int, ...] = tuple(range(16, 24))
 
+_SPOTIFY_CATALOG = [
+    {"id": "play_pause", "label": "Play / Pause", "description": "Toggle playback"},
+    {"id": "next", "label": "Next Track", "description": "Skip to next track"},
+    {"id": "prev", "label": "Previous Track", "description": "Go to previous track"},
+    {"id": "like", "label": "Like / Unlike", "description": "Toggle saved state for current track"},
+    {"id": "shuffle", "label": "Shuffle", "description": "Toggle shuffle mode"},
+    {"id": "dj_mix", "label": "DJ Mix", "description": "DJ Mix keystroke (external)"},
+    {"id": "add_to_pl", "label": "Add to Playlist", "description": "Add current track to playlist"},
+    {"id": "remove_pl", "label": "Remove from Playlist", "description": "Remove current track from playlist"},
+]
+
 
 class SpotifyPlugin(Plugin):
     name = "Spotify"
@@ -270,6 +281,9 @@ class SpotifyPlugin(Plugin):
         self._refresh_ui()
 
     # -- status + pad labels ------------------------------------------------
+
+    def get_action_catalog(self) -> list[dict]:
+        return list(_SPOTIFY_CATALOG)
 
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:

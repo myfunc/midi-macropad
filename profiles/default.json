@@ -2,9 +2,9 @@
   "spotify_plugin": {
     "client_id": "008f50dad4ad42bbac09f9315df87c00",
     "redirect_port": 8765,
-    "access_token": "BQAAdGhuREbXgsaoYnbCfnouUcqYpVHeNWex2Zo_B_vVHTbyh8LP4mluQGnLV7w2_74SK9PEMcmdHyLJxq9ZJmuK99_t7Wlqbbh0cOR9heRuHGexpzCdl1_3nvKCf_iVEatb3AfZF_3FC_7_cpAaoyM2qX3NC3cPKEAPLE3uSt4F-hbPrt3eJHqApDcnSYCG54y5Mmp7zLsTur65r_sBfZDBxeoqZ2uOkRylNQWIH0KM6ONd5lbY_5I6Nr3pIOTUO-m2GUDhPidTfojFbBm24kISeD_NERYA",
-    "refresh_token": "AQBsH-VMvRsaM9djs9M7b9MMtQI2JO9Itn6XulMoc3kQUFDDMZmGQgX75R14lGdGBQyi2qLVY4hnO0-wqt8xww91UQD44UEAaG1gIoNwWO7aMixBv2KNgrmEn__9ntiUG82xEQ",
-    "token_expires_at": 1774780677.3037739
+    "access_token": "BQCqp6m_o8sJKHfVZ0lfKe7zLwWUF1A_M8Wd4ypX5N2wLwX9Z2gQMO-QvRDIe0PL-O-PmkyW3LxBevy0uo29SncjAj7WWirk29SgfGIK77S22qD4yUqYf54K_eeZYXdB05_rR9Sc24IBJ9L0ZWlPM2xaZoaiP0G7iGXMhOWwfcinBwF_hlygm7GC3fW3m3glm23TXT9Tcvb12qAe0vv1Iq0E6eUgkrjeLMDILGg7Ijwlu-WBx9U6bM54hFd5rXxr3eHj7S2cITpYHuOAKqH49hE-3UDM10n0",
+    "refresh_token": "AQDTN75GelGEd02ukCUSGbXL4du6twOPkNkDa0xM_cYqdcczxBFvN2kDeuvfEYWl-7u_F9Zj6VZ47qKRwKON_SXtMfu8885BMMl6VMzXFl-f-rbtMuBV3_QT2Er0b413ipiPdg",
+    "token_expires_at": 1774926821.2410588
   },
   "obs_session_plugin": {
     "host": "127.0.0.1",
@@ -13,11 +13,14 @@
     "scene_screen": "MM_Screen",
     "scene_camera": "MM_Camera",
     "scene_pip": "MM_ScreenPiP",
+    "scene_cam_app": "",
     "right_screen_source": "Right Screen",
     "camera_source": "WebCam",
     "mic_source": "Mic/Aux",
+    "desktop_audio_source": "Desktop Audio",
+    "aux_audio_source": "",
     "output_dir": "",
-    "auto_setup_scene": true,
+    "replay_dir": "",
     "postprocess_stitch": true,
     "postprocess_transcript": false,
     "postprocess_open_folder": true,
@@ -25,19 +28,19 @@
       "16": "scene_screen",
       "17": "scene_camera",
       "18": "scene_pip",
-      "19": "mute_mic",
-      "20": "session",
-      "21": "record",
-      "22": null,
-      "23": null
+      "19": "scene_cam_app",
+      "20": "mute_mic",
+      "21": "session",
+      "22": "record",
+      "23": "save_replay"
     }
   },
   "enabled_plugins": [
-    "OBS",
+    "REAPER Bridge",
     "Sample Player",
-    "Spotify",
     "Voice Scribe",
-    "Voicemeeter"
+    "Voicemeeter",
+    "OBS"
   ],
   "mode_index": 3,
   "vm_plugin": {
@@ -56,6 +59,13 @@
   "input_device_id": "{0.0.1.00000000}.{fc1e2edd-ea12-4119-af98-99f02d7cc244}",
   "melody_transpose": -3,
   "active_profile": "default",
-  "window_width": 1723,
-  "window_height": 1399
+  "window_width": 1172,
+  "window_height": 942,
+  "preset_index": 2,
+  "knob_values": {
+    "48": 26,
+    "49": 73,
+    "50": 127,
+    "51": 127
+  }
 }

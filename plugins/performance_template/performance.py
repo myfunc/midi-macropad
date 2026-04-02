@@ -138,6 +138,19 @@ class PerformanceTemplatePlugin(Plugin):
             return False
         return note in self._all_slots()
 
+    def get_action_catalog(self) -> list[dict]:
+        catalog = []
+        with self._state_lock:
+            for beat in self._beat_layers.values():
+                catalog.append({"id": f"beat_{beat.label}", "label": beat.label, "description": "Toggle beat layer"})
+            for slot in self._drum_slots.values():
+                catalog.append({"id": f"drum_{slot.label}", "label": slot.label, "description": "One-shot drum phrase"})
+            for slot in self._drop_slots.values():
+                catalog.append({"id": f"drop_{slot.label}", "label": slot.label, "description": "Drop phrase"})
+            for slot in self._riff_slots.values():
+                catalog.append({"id": f"riff_{slot.label}", "label": slot.label, "description": "Riff phrase"})
+        return catalog
+
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:
             return {}

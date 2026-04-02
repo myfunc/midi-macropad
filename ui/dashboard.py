@@ -20,22 +20,43 @@ def _get_hwnd():
     return _hwnd
 
 
-def _load_font():
+_text_font = None
+
+
+def get_text_font():
+    """Return the Cyrillic-capable font for input/text widgets, or None."""
+    return _text_font
+
+
+def _load_fonts():
+    global _text_font
     windir = os.environ.get("WINDIR", r"C:\Windows")
-    for name in ("seguisym.ttf", "segoeui.ttf", "arial.ttf", "tahoma.ttf"):
+
+    ui_font = None
+    sym_path = os.path.join(windir, "Fonts", "seguisym.ttf")
+    if os.path.isfile(sym_path):
+        with dpg.font_registry():
+            with dpg.font(sym_path, 16) as ui_font:
+                dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
+                dpg.add_font_range(0x2000, 0x206F)
+                dpg.add_font_range(0x2190, 0x21FF)
+                dpg.add_font_range(0x25A0, 0x25FF)
+                dpg.add_font_range(0x2600, 0x26FF)
+                dpg.add_font_range(0x2700, 0x27BF)
+
+    for name in ("segoeui.ttf", "arial.ttf", "tahoma.ttf"):
         path = os.path.join(windir, "Fonts", name)
         if os.path.isfile(path):
             with dpg.font_registry():
-                with dpg.font(path, 16) as font:
+                with dpg.font(path, 16) as _text_font:
                     dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
                     dpg.add_font_range_hint(dpg.mvFontRangeHint_Cyrillic)
-                    dpg.add_font_range(0x2000, 0x206F)
-                    dpg.add_font_range(0x2190, 0x21FF)
-                    dpg.add_font_range(0x25A0, 0x25FF)
-                    dpg.add_font_range(0x2600, 0x26FF)
-                    dpg.add_font_range(0x2700, 0x27BF)
-            return font
-    return None
+            break
+
+    if ui_font is None:
+        ui_font = _text_font
+
+    return ui_font
 
 
 def setup_theme():
@@ -98,7 +119,7 @@ def create_dashboard(width=2400, height=1560):
         small_icon=_ICON_PATH,
         large_icon=_ICON_PATH,
     )
-    font = _load_font()
+    font = _load_fonts()
     if font:
         dpg.bind_font(font)
 
@@ -123,6 +144,16 @@ def create_layout():
             with dpg.group(horizontal=True):
                 dpg.add_spacer(width=6)
                 dpg.add_text("", tag="device_status", color=(255, 180, 80))
+                _rc_btn = dpg.add_button(label="\u21BB", tag="midi_reconnect_btn",
+                                         width=22, height=20, show=False)
+                with dpg.theme() as _rc_theme:
+                    with dpg.theme_component(dpg.mvButton):
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 255, 30))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 255, 50))
+                        dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 3)
+                        dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 2, 2)
+                dpg.bind_item_theme(_rc_btn, _rc_theme)
                 dpg.add_spacer(width=16)
                 dpg.add_text("", tag="plugin_status_text",
                              color=(120, 120, 140))

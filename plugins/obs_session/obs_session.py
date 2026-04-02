@@ -25,24 +25,32 @@ MODE_NAME = "OBS"
 SETTINGS_KEY = "obs_session_plugin"
 
 PAD_ACTIONS = [
-    {"id": "scene_screen", "label": "Screen", "color": (100, 180, 255), "desc": "Right half of monitor"},
+    {"id": "scene_screen", "label": "Screen", "color": (100, 180, 255), "desc": "Screen share + PiP webcam"},
     {"id": "scene_camera", "label": "Camera", "color": (100, 180, 255), "desc": "Webcam fullscreen"},
     {"id": "scene_pip", "label": "PiP", "color": (100, 180, 255), "desc": "Screen + camera corner"},
+    {"id": "scene_cam_app", "label": "Cam+App", "color": (100, 180, 255), "desc": "Camera 80% + app window 20%"},
     {"id": "mute_mic", "label": "Mute Mic", "color": (150, 150, 165), "desc": "Toggle microphone"},
+    {"id": "mute_desktop", "label": "Mute Desktop", "color": (150, 150, 165), "desc": "Toggle desktop audio"},
+    {"id": "mute_aux", "label": "Mute AUX", "color": (150, 150, 165), "desc": "Toggle AUX audio"},
     {"id": "session", "label": "Session", "color": (255, 200, 90), "desc": "Start or stop diary session"},
     {"id": "record", "label": "Record", "color": (255, 120, 120), "desc": "Record or toggle segment"},
+    {"id": "save_replay", "label": "Save Replay", "color": (180, 130, 255), "desc": "Save replay buffer clip"},
 ]
 PAD_ACTION_IDS = [a["id"] for a in PAD_ACTIONS]
+_ACTION_CATALOG = [
+    {"id": a["id"], "label": a["label"], "description": a["desc"]}
+    for a in PAD_ACTIONS
+]
 
 DEFAULT_SLOT_MAP: dict[int, str | None] = {
     16: "scene_screen",
     17: "scene_camera",
     18: "scene_pip",
-    19: "mute_mic",
-    20: "session",
-    21: "record",
-    22: None,
-    23: None,
+    19: "scene_cam_app",
+    20: "mute_mic",
+    21: "session",
+    22: "record",
+    23: "save_replay",
 }
 DEFAULT_NOTE_ORDER = sorted(DEFAULT_SLOT_MAP.keys())
 
@@ -137,11 +145,13 @@ class OBSSessionPlugin(Plugin):
         self.scene_screen = "MM_Screen"
         self.scene_camera = "MM_Camera"
         self.scene_pip = "MM_ScreenPiP"
+        self.scene_cam_app = ""
         self.right_screen_source = "Right Screen"  # must match OBS input name exactly
         self.camera_source = "WebCam"              # must match OBS input name exactly
         self.mic_source = "Mic/Aux"                # must match OBS input name exactly
+        self.desktop_audio_source = "Desktop Audio"
+        self.aux_audio_source = ""
         self.output_dir = ""
-        self.auto_setup_scene = True
         self.postprocess_stitch = True
         self.postprocess_transcript = False
         self.postprocess_open_folder = True
@@ -166,6 +176,13 @@ class OBSSessionPlugin(Plugin):
         self._record_dir_overridden = False
         self._postprocess_running = False
         self._segment_output_path: str | None = None
+        self.replay_dir = ""
+        self.replay_buffer_active = False
+        self._replay_cb_registered = False
+        self._replay_save_count = 0
+        self._last_replay_path: str | None = None
+        self._obs_scene_list: list[str] = []
+        self._obs_scene_list_ts: float = 0.0
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -190,6 +207,18 @@ class OBSSessionPlugin(Plugin):
             self._obs.password = self.password
         return self._obs
 
+    def _fetch_obs_scenes(self, force: bool = False) -> list[str]:
+        now = time.monotonic()
+        if not force and now - self._obs_scene_list_ts < 3.0 and self._obs_scene_list:
+            return self._obs_scene_list
+        obs = self._get_obs()
+        if not obs or not obs.connected:
+            return self._obs_scene_list
+        obs._refresh_state()
+        self._obs_scene_list = obs.scene_names
+        self._obs_scene_list_ts = now
+        return self._obs_scene_list
+
     def on_load(self, config: dict) -> None:
         saved = settings.get(SETTINGS_KEY, {})
 
@@ -202,14 +231,17 @@ class OBSSessionPlugin(Plugin):
         self.scene_screen = str(_m("scene_screen", self.scene_screen)).strip()
         self.scene_camera = str(_m("scene_camera", self.scene_camera)).strip()
         self.scene_pip = str(_m("scene_pip", self.scene_pip)).strip()
+        self.scene_cam_app = str(_m("scene_cam_app", self.scene_cam_app)).strip()
         self.right_screen_source = str(_m("right_screen_source", self.right_screen_source)).strip()
         self.camera_source = str(_m("camera_source", self.camera_source)).strip()
         self.mic_source = str(_m("mic_source", self.mic_source)).strip()
+        self.desktop_audio_source = str(_m("desktop_audio_source", self.desktop_audio_source)).strip()
+        self.aux_audio_source = str(_m("aux_audio_source", self.aux_audio_source)).strip()
         self.output_dir = str(_m("output_dir", self.output_dir)).strip()
-        self.auto_setup_scene = bool(_m("auto_setup_scene", self.auto_setup_scene))
         self.postprocess_stitch = bool(_m("postprocess_stitch", self.postprocess_stitch))
         self.postprocess_transcript = bool(_m("postprocess_transcript", self.postprocess_transcript))
         self.postprocess_open_folder = bool(_m("postprocess_open_folder", self.postprocess_open_folder))
+        self.replay_dir = str(_m("replay_dir", self.replay_dir)).strip()
 
         saved_slots = saved.get("pad_slots")
         if isinstance(saved_slots, dict):
@@ -279,22 +311,22 @@ class OBSSessionPlugin(Plugin):
     def _note_to_action(self, note: int) -> str | None:
         return self._slot_map.get(note)
 
-    def on_pad_press(self, note: int, velocity: int) -> bool:
-        if not self._active:
-            return False
-        if note not in self._slot_map:
-            return False
-        action = self._note_to_action(note)
-        if action is None:
-            return False
+    def _dispatch_action(self, action: str) -> None:
+        """Execute a pad action. Called from background thread to avoid UI freeze."""
         if action == "scene_screen":
             self._action_switch_scene(self.scene_screen)
         elif action == "scene_camera":
             self._action_switch_scene(self.scene_camera)
         elif action == "scene_pip":
             self._action_switch_scene(self.scene_pip)
+        elif action == "scene_cam_app":
+            self._action_switch_scene(self.scene_cam_app)
         elif action == "mute_mic":
             self._action_toggle_mute_mic()
+        elif action == "mute_desktop":
+            self._action_toggle_mute_source(self.desktop_audio_source)
+        elif action == "mute_aux":
+            self._action_toggle_mute_source(self.aux_audio_source)
         elif action == "session":
             if self.session_state == "running":
                 self._action_stop_session()
@@ -305,8 +337,21 @@ class OBSSessionPlugin(Plugin):
                 self._action_toggle_record()
             else:
                 self._action_toggle_record_simple()
-        else:
+        elif action == "save_replay":
+            self._action_save_replay()
+
+    def on_pad_press(self, note: int, velocity: int) -> bool:
+        if not self._active:
             return False
+        if note not in self._slot_map:
+            return False
+        action = self._note_to_action(note)
+        if action is None:
+            return False
+        # Run action in background thread to avoid blocking UI
+        threading.Thread(
+            target=self._dispatch_action, args=(action,), daemon=True
+        ).start()
         return True
 
     def on_pad_release(self, note: int) -> bool:
@@ -328,6 +373,7 @@ class OBSSessionPlugin(Plugin):
             else:
                 obs.refresh_recording_state()
                 self.recording = obs.is_recording
+                self.replay_buffer_active = obs.is_replay_buffer_active
         elif obs and not obs.connected and self.connected:
             self.connected = False
             self._connection_detail = "Connection lost"
@@ -347,10 +393,15 @@ class OBSSessionPlugin(Plugin):
             if in_session:
                 return "Record Segment"
             return "Stop Rec" if self.recording else "Record"
+        if action_id == "save_replay":
+            return "Save Replay"
         for a in PAD_ACTIONS:
             if a["id"] == action_id:
                 return a["label"]
         return action_id
+
+    def get_action_catalog(self) -> list[dict]:
+        return list(_ACTION_CATALOG)
 
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:
@@ -366,11 +417,12 @@ class OBSSessionPlugin(Plugin):
             return None
         connection = "OK" if self.connected else "Off"
         recording = "REC" if self.recording else "Standby"
+        replay = " | Replay:ON" if self.replay_buffer_active else ""
         obs = self._get_obs()
         scene = obs.current_scene if obs and obs.connected else "?"
         text = (
             f"OBS | {connection} | Scene: {scene} | Session: {self._ui_session_state().title()} | "
-            f"{recording} | Segments: {self.segments_count}"
+            f"{recording} | Segments: {self.segments_count}{replay}"
         )
         if self.recording:
             color = _STATUS_RECORDING
@@ -424,29 +476,27 @@ class OBSSessionPlugin(Plugin):
 
         dpg.add_spacer(height=8, parent=parent_tag)
         dpg.add_text("Scenes", parent=parent_tag, color=(150, 150, 165))
-        dpg.add_input_text(
-            tag="obs_session_scene_screen",
+        scene_items = self._fetch_obs_scenes()
+        for field, label, tag_suffix in [
+            ("scene_screen", "Screen + PiP", "screen"),
+            ("scene_camera", "Camera", "camera"),
+            ("scene_pip", "PiP", "pip"),
+            ("scene_cam_app", "Camera + App", "cam_app"),
+        ]:
+            dpg.add_text(label, parent=parent_tag, color=(120, 120, 140))
+            dpg.add_combo(
+                tag=f"obs_session_scene_{tag_suffix}_combo",
+                items=scene_items,
+                default_value=getattr(self, field),
+                width=-1,
+                parent=parent_tag,
+                callback=lambda s, v, f=field: self._save_text(f, v),
+            )
+        dpg.add_button(
+            label="Refresh scene list",
             parent=parent_tag,
-            default_value=self.scene_screen,
-            hint="Screen-only scene (e.g. MM_Screen)",
             width=-1,
-            callback=lambda sender, app_data: self._save_text("scene_screen", app_data),
-        )
-        dpg.add_input_text(
-            tag="obs_session_scene_camera",
-            parent=parent_tag,
-            default_value=self.scene_camera,
-            hint="Camera-only scene (e.g. MM_Camera)",
-            width=-1,
-            callback=lambda sender, app_data: self._save_text("scene_camera", app_data),
-        )
-        dpg.add_input_text(
-            tag="obs_session_scene_pip",
-            parent=parent_tag,
-            default_value=self.scene_pip,
-            hint="Screen + PiP scene (e.g. MM_ScreenPiP)",
-            width=-1,
-            callback=lambda sender, app_data: self._save_text("scene_pip", app_data),
+            callback=lambda: self._refresh_scene_combos(),
         )
 
         dpg.add_spacer(height=8, parent=parent_tag)
@@ -477,6 +527,24 @@ class OBSSessionPlugin(Plugin):
         )
 
         dpg.add_spacer(height=8, parent=parent_tag)
+        dpg.add_text("Audio Sources", parent=parent_tag, color=(150, 150, 165))
+        audio_items = self._fetch_obs_audio_inputs()
+        for field, label, tag_suffix in [
+            ("desktop_audio_source", "Desktop Audio", "desktop"),
+            ("mic_source", "Microphone", "mic_audio"),
+            ("aux_audio_source", "AUX (optional)", "aux"),
+        ]:
+            dpg.add_text(label, parent=parent_tag, color=(120, 120, 140))
+            dpg.add_combo(
+                tag=f"obs_session_audio_{tag_suffix}_combo",
+                items=audio_items,
+                default_value=getattr(self, field),
+                width=-1,
+                parent=parent_tag,
+                callback=lambda s, v, f=field: self._save_text(f, v),
+            )
+
+        dpg.add_spacer(height=8, parent=parent_tag)
         dpg.add_text("Output And Postprocessing", parent=parent_tag, color=(150, 150, 165))
         dpg.add_input_text(
             tag="obs_session_output_dir",
@@ -486,12 +554,14 @@ class OBSSessionPlugin(Plugin):
             width=-1,
             callback=lambda sender, app_data: self._save_text("output_dir", app_data),
         )
-        dpg.add_checkbox(
-            tag="obs_session_auto_setup",
-            label="Auto-setup scenes on session start",
+        dpg.add_text("Replay output", parent=parent_tag, color=(120, 120, 140))
+        dpg.add_input_text(
+            tag="obs_session_replay_dir",
             parent=parent_tag,
-            default_value=self.auto_setup_scene,
-            callback=lambda sender, app_data: self._save_bool("auto_setup_scene", app_data),
+            default_value=self.replay_dir,
+            hint=str(Path.home() / "Videos" / "OBS-Replays"),
+            width=-1,
+            callback=lambda sender, app_data: self._save_text("replay_dir", app_data),
         )
         dpg.add_checkbox(
             tag="obs_session_postprocess_stitch",
@@ -571,6 +641,20 @@ class OBSSessionPlugin(Plugin):
                 return a
         return None
 
+    def _refresh_scene_combos(self) -> None:
+        import dearpygui.dearpygui as dpg
+        scenes = self._fetch_obs_scenes(force=True)
+        for suffix in ("screen", "camera", "pip", "cam_app"):
+            tag = f"obs_session_scene_{suffix}_combo"
+            if dpg.does_item_exist(tag):
+                dpg.configure_item(tag, items=scenes)
+
+    def _fetch_obs_audio_inputs(self) -> list[str]:
+        obs = self._get_obs()
+        if not obs or not obs.connected:
+            return []
+        return obs.get_audio_input_names()
+
     def _exec_action(self, action_id: str) -> None:
         if action_id == "scene_screen":
             self._action_switch_scene(self.scene_screen)
@@ -578,8 +662,14 @@ class OBSSessionPlugin(Plugin):
             self._action_switch_scene(self.scene_camera)
         elif action_id == "scene_pip":
             self._action_switch_scene(self.scene_pip)
+        elif action_id == "scene_cam_app":
+            self._action_switch_scene(self.scene_cam_app)
         elif action_id == "mute_mic":
             self._action_toggle_mute_mic()
+        elif action_id == "mute_desktop":
+            self._action_toggle_mute_source(self.desktop_audio_source)
+        elif action_id == "mute_aux":
+            self._action_toggle_mute_source(self.aux_audio_source)
         elif action_id == "session":
             if self.session_state == "running":
                 self._action_stop_session()
@@ -590,6 +680,8 @@ class OBSSessionPlugin(Plugin):
                 self._action_toggle_record()
             else:
                 self._action_toggle_record_simple()
+        elif action_id == "save_replay":
+            self._action_save_replay()
 
     def _swap_pads(self, note_a: int, note_b: int) -> None:
         if note_a == note_b:
@@ -749,6 +841,14 @@ class OBSSessionPlugin(Plugin):
                             width=110,
                             callback=lambda: self._action_disconnect(),
                         )
+                    with dpg.group(horizontal=True):
+                        dpg.add_button(
+                            tag="obs_session_btn_replay_toggle",
+                            label="Start Replay Buffer",
+                            width=160,
+                            callback=lambda: self._action_toggle_replay_buffer(),
+                        )
+                        dpg.add_text("", tag="obs_session_replay_status", color=_STATUS_IDLE)
 
         dpg.add_spacer(height=6, parent=parent_tag)
         dpg.add_child_window(
@@ -843,6 +943,57 @@ class OBSSessionPlugin(Plugin):
         except Exception as exc:
             log.debug("RecordFileChanged parse: %s", exc)
 
+    def _on_replay_buffer_saved(self, data) -> None:
+        try:
+            path = getattr(data, "saved_replay_path", None)
+            if path is None and isinstance(data, dict):
+                path = data.get("savedReplayPath")
+            if not path:
+                obs = self._get_obs()
+                if obs:
+                    path = obs.get_last_replay_buffer_replay()
+            if path:
+                copied = self._copy_replay_to_folder(str(path))
+                self._replay_save_count += 1
+                self._last_replay_path = copied or str(path)
+                self._last_action = f"Replay saved: {self._last_replay_path}"
+                self._play_cue("action.toggle_on")
+                log.info("OBS replay saved: %s -> %s", path, copied)
+            else:
+                self._last_action = "Replay buffer saved but path not reported"
+                log.warning("OBS replay saved but no path in event data")
+        except Exception as exc:
+            log.exception("OBS replay callback error: %s", exc)
+
+    def _resolve_replay_dir(self) -> Path:
+        if self.replay_dir.strip():
+            p = Path(self.replay_dir).expanduser()
+        else:
+            p = Path.home() / "Videos" / "OBS-Replays"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def _copy_replay_to_folder(self, source_path: str) -> str | None:
+        src = Path(source_path)
+        if not src.exists():
+            return None
+        try:
+            replay_dir = self._resolve_replay_dir()
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ext = src.suffix or ".mkv"
+            dst = replay_dir / f"replay_{stamp}{ext}"
+            counter = 2
+            while dst.exists():
+                dst = replay_dir / f"replay_{stamp}_{counter}{ext}"
+                counter += 1
+            if dst.resolve() == src.resolve():
+                return str(dst)
+            shutil.copy2(src, dst)
+            return str(dst)
+        except OSError as exc:
+            log.warning("OBS replay copy failed: %s", exc)
+            return None
+
     def _register_obs_callbacks(self) -> None:
         obs = self._get_obs()
         if not obs or not obs.connected:
@@ -858,6 +1009,12 @@ class OBSSessionPlugin(Plugin):
             pass
         obs.register_record_file_callback(self._on_record_file_changed)
         self._record_cb_registered = True
+        try:
+            obs.unregister_replay_buffer_callback(self._on_replay_buffer_saved)
+        except Exception:
+            pass
+        obs.register_replay_buffer_callback(self._on_replay_buffer_saved)
+        self._replay_cb_registered = True
 
     def _unregister_obs_callbacks(self) -> None:
         obs = self._get_obs()
@@ -870,7 +1027,12 @@ class OBSSessionPlugin(Plugin):
                 obs.unregister_record_file_callback(self._on_record_file_changed)
             except Exception:
                 pass
+            try:
+                obs.unregister_replay_buffer_callback(self._on_replay_buffer_saved)
+            except Exception:
+                pass
         self._record_cb_registered = False
+        self._replay_cb_registered = False
 
     # -- actions -----------------------------------------------------------
 
@@ -896,6 +1058,70 @@ class OBSSessionPlugin(Plugin):
             self._play_cue("action.toggle_on")
         else:
             self._last_action = f"Mute toggle failed: {self.mic_source}"
+        self._refresh_ui()
+
+    def _action_toggle_mute_source(self, source_name: str) -> None:
+        if not source_name:
+            self._last_action = "Audio source not configured"
+            self._refresh_ui()
+            return
+        if not self._ensure_connected():
+            self._refresh_ui()
+            return
+        obs = self._get_obs()
+        if obs and obs.toggle_source_mute(source_name):
+            self._last_action = f"Toggled mute: {source_name}"
+            self._play_cue("action.toggle_on")
+        else:
+            self._last_action = f"Mute toggle failed: {source_name}"
+        self._refresh_ui()
+
+    def _action_save_replay(self) -> None:
+        if not self._ensure_connected():
+            self._refresh_ui()
+            return
+        obs = self._get_obs()
+        if not obs:
+            return
+        if not obs.get_replay_buffer_status():
+            self._last_action = "Replay Buffer not active. Enable it first."
+            self._refresh_ui()
+            return
+        old_count = self._replay_save_count
+        if obs.save_replay_buffer():
+            self._last_action = "Saving replay buffer clip..."
+            self._play_cue("action.navigation")
+            self._refresh_ui()
+            # Fallback: if callback doesn't fire within 2s, fetch path manually
+            time.sleep(2.0)
+            if self._replay_save_count == old_count:
+                path = obs.get_last_replay_buffer_replay()
+                if path:
+                    copied = self._copy_replay_to_folder(str(path))
+                    self._replay_save_count += 1
+                    self._last_replay_path = copied or str(path)
+                    self._last_action = f"Replay saved (fallback): {self._last_replay_path}"
+                    log.info("OBS replay saved via fallback: %s", path)
+                else:
+                    self._last_action = "Replay saved by OBS but path unknown"
+        else:
+            self._last_action = "Save replay buffer failed"
+        self._refresh_ui()
+
+    def _action_toggle_replay_buffer(self) -> None:
+        if not self._ensure_connected():
+            self._refresh_ui()
+            return
+        obs = self._get_obs()
+        if not obs:
+            return
+        if obs.toggle_replay_buffer():
+            self.replay_buffer_active = obs.is_replay_buffer_active
+            state = "started" if self.replay_buffer_active else "stopped"
+            self._last_action = f"Replay Buffer {state}"
+            self._play_cue("action.toggle_on" if self.replay_buffer_active else "action.toggle_off")
+        else:
+            self._last_action = "Toggle Replay Buffer failed -- enable it in OBS Settings -> Output first"
         self._refresh_ui()
 
     def _action_toggle_record_simple(self) -> None:
@@ -938,6 +1164,10 @@ class OBSSessionPlugin(Plugin):
             self._connection_detail = f"OBS {ver}"
             self._last_action = f"Connected ({self._connection_detail})"
             log.info("OBS Session connected to %s:%s", self.host, self.port)
+            self._fetch_obs_scenes(force=True)
+            self._refresh_scene_combos()
+            if self.session_state == "running" and not obs.is_recording:
+                self._last_action += " | WARNING: Previous session may not have stopped cleanly. Use 'Reset local session state' to clear."
         else:
             err = obs.last_connect_error or "unknown error"
             self._connection_detail = err
@@ -1036,21 +1266,6 @@ class OBSSessionPlugin(Plugin):
             self._postprocess_running = False
             self.session_state = "idle"
 
-    def _auto_setup_workspace(self, obs) -> tuple[bool, list[str]]:
-        if not self.auto_setup_scene:
-            return True, ["auto-setup disabled"]
-        ok, notes = obs.setup_three_scenes(
-            scene_screen=self.scene_screen,
-            scene_camera=self.scene_camera,
-            scene_pip=self.scene_pip,
-            right_source=self.right_screen_source,
-            camera_source=self.camera_source,
-            mic_source=self.mic_source,
-        )
-        if not ok:
-            log.error("OBS auto-setup failed: %s", notes)
-        return ok, notes
-
     def _action_start_session(self) -> None:
         if self._postprocess_running or self.session_state == "postprocessing":
             self._last_action = "Wait for post-processing to finish before starting a session"
@@ -1075,11 +1290,21 @@ class OBSSessionPlugin(Plugin):
             self._refresh_ui()
             return
 
-        ok, setup_notes = self._auto_setup_workspace(obs)
-        if not ok:
-            self._last_action = setup_notes[0] if setup_notes else "Setup failed"
-            self._refresh_ui()
-            return
+        setup_notes: list[str] = []
+        obs._refresh_state()
+        existing = set(obs.scene_names)
+        for slot_label, scene_name in [
+            ("screen", self.scene_screen),
+            ("camera", self.scene_camera),
+            ("pip", self.scene_pip),
+            ("cam_app", self.scene_cam_app),
+        ]:
+            if scene_name and scene_name not in existing:
+                self._last_action = f"Scene '{scene_name}' not found in OBS. Create it in OBS or map a different scene."
+                self._refresh_ui()
+                return
+            if scene_name:
+                setup_notes.append(f"{slot_label}: {scene_name}")
 
         if not obs.switch_scene(self.scene_pip):
             self._last_action = f"Could not switch to scene '{self.scene_pip}'"
@@ -1141,27 +1366,50 @@ class OBSSessionPlugin(Plugin):
         self._play_cue("session.start")
         self._refresh_ui()
 
-    def _drain_record_path(self, timeout: float = 1.0) -> str | None:
-        try:
-            return self._record_paths.get(timeout=timeout)
-        except queue.Empty:
-            return self._latest_record_path
+    def _drain_record_path(self, timeout: float = 3.0) -> str | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                return self._record_paths.get(timeout=0.05)
+            except queue.Empty:
+                if self._segment_output_path:
+                    return self._segment_output_path
+        return self._latest_record_path
 
-    def _copy_segment_into_session(self, source_path: str | None) -> str | None:
+    def _copy_segment_into_session(self, source_path: str | None, segment: SegmentEntry | None = None) -> str | None:
+        """Copy segment file into session folder. If segment is provided, runs async."""
         if not source_path or not self._session_folder:
             return None
         src = Path(source_path)
         if not src.exists():
             return None
+        dst = self._session_folder / src.name
+        if dst.resolve() == src.resolve():
+            if segment:
+                segment.session_file_path = str(dst)
+            return str(dst)
+        if segment:
+            segment.note = "copying..."
+            threading.Thread(
+                target=self._copy_segment_bg, args=(segment, src, dst), daemon=True
+            ).start()
+            return None
         try:
-            dst = self._session_folder / src.name
-            if dst.resolve() == src.resolve():
-                return str(dst)
             shutil.copy2(src, dst)
             return str(dst)
         except OSError as exc:
             log.warning("OBS Session copy segment failed: %s", exc)
             return None
+
+    def _copy_segment_bg(self, segment: SegmentEntry, src: Path, dst: Path) -> None:
+        try:
+            shutil.copy2(src, dst)
+            segment.session_file_path = str(dst)
+            segment.note = ""
+            log.info("OBS Session segment copied async: %s", dst)
+        except OSError as exc:
+            segment.note = f"copy failed: {exc}"
+            log.warning("OBS Session async copy failed: %s", exc)
 
     def _action_toggle_record(self) -> None:
         if self.session_state != "running":
@@ -1205,19 +1453,19 @@ class OBSSessionPlugin(Plugin):
             self._segment_output_path = None
             stopped = _utc_now_iso()
             self.segments_count += 1
-            copied = self._copy_segment_into_session(path)
             seg = SegmentEntry(
                 index=self.segments_count,
                 started_utc=self._pending_segment_start or stopped,
                 stopped_utc=stopped,
                 file_path=path,
-                session_file_path=copied,
-                note="" if path else "path not reported by OBS yet; file callback may arrive shortly",
+                session_file_path=None,
+                note="" if path else "path not reported by OBS yet",
             )
             self._segments.append(seg)
+            self._copy_segment_into_session(path, seg)
             self._pending_segment_start = None
             self.recording = obs.is_recording
-            short = copied or path or "(path unknown)"
+            short = path or "(path unknown)"
             self._last_action = f"Segment {self.segments_count} saved: {short}"
             self._play_cue("session.segment_stop")
             log.info("OBS Session segment stop file=%s", path)
@@ -1234,6 +1482,7 @@ class OBSSessionPlugin(Plugin):
                 "screen": self.scene_screen,
                 "camera": self.scene_camera,
                 "pip": self.scene_pip,
+                "cam_app": self.scene_cam_app,
             },
             "sources": {
                 "right_screen": self.right_screen_source,
@@ -1396,11 +1645,14 @@ class OBSSessionPlugin(Plugin):
                 "scene_screen": self.scene_screen,
                 "scene_camera": self.scene_camera,
                 "scene_pip": self.scene_pip,
+                "scene_cam_app": self.scene_cam_app,
                 "right_screen_source": self.right_screen_source,
                 "camera_source": self.camera_source,
                 "mic_source": self.mic_source,
+                "desktop_audio_source": self.desktop_audio_source,
+                "aux_audio_source": self.aux_audio_source,
                 "output_dir": self.output_dir,
-                "auto_setup_scene": self.auto_setup_scene,
+                "replay_dir": self.replay_dir,
                 "postprocess_stitch": self.postprocess_stitch,
                 "postprocess_transcript": self.postprocess_transcript,
                 "postprocess_open_folder": self.postprocess_open_folder,
@@ -1834,12 +2086,17 @@ class OBSSessionPlugin(Plugin):
                 if dpg.does_item_exist(btn_tag):
                     dpg.configure_item(btn_tag, label=lbl)
                     can_use = ui_connected and not self._postprocess_running
-                    if action_id in ("scene_screen", "scene_camera", "scene_pip", "mute_mic"):
+                    if action_id in ("scene_screen", "scene_camera", "scene_pip", "scene_cam_app", "mute_mic", "mute_desktop", "mute_aux"):
                         can_use = ui_connected
                     dpg.configure_item(btn_tag, enabled=can_use)
 
         self._set_button_enabled_if_exists(dpg, "obs_session_btn_connect", not ui_connected)
         self._set_button_enabled_if_exists(dpg, "obs_session_btn_disconnect", ui_connected)
+        replay_label = "Stop Replay" if self.replay_buffer_active else "Start Replay"
+        self._set_button_label_if_exists(dpg, "obs_session_btn_replay_toggle", replay_label)
+        replay_status = f"ON ({self._replay_save_count} saved)" if self.replay_buffer_active else "OFF"
+        replay_color = _CONNECTED_OK if self.replay_buffer_active else _STATUS_IDLE
+        self._set_text_if_exists(dpg, "obs_session_replay_status", replay_status, replay_color)
 
     @staticmethod
     def _set_text_if_exists(dpg, tag: str, value: str, color: tuple[int, int, int]) -> None:
@@ -1851,3 +2108,8 @@ class OBSSessionPlugin(Plugin):
     def _set_button_enabled_if_exists(dpg, tag: str, enabled: bool) -> None:
         if dpg.does_item_exist(tag):
             dpg.configure_item(tag, enabled=enabled)
+
+    @staticmethod
+    def _set_button_label_if_exists(dpg, tag: str, label: str) -> None:
+        if dpg.does_item_exist(tag):
+            dpg.configure_item(tag, label=label)

@@ -1,6 +1,7 @@
 """Top toolbar — Preset selector, Profile selector, Settings button."""
 import dearpygui.dearpygui as dpg
 import settings
+from ui.dashboard import get_text_font
 
 _preset_callback = None
 _settings_callback = None
@@ -46,13 +47,16 @@ def create_toolbar(
                 width=140,
                 callback=_on_profile_change,
             )
-            dpg.add_input_text(
+            profile_input = dpg.add_input_text(
                 tag="tb_profile_name",
                 hint="new name",
                 width=100,
                 on_enter=True,
                 callback=lambda s, a: _on_profile_copy(s, a),
             )
+            tf = get_text_font()
+            if tf:
+                dpg.bind_item_font(profile_input, tf)
             dpg.add_button(label="Copy", callback=_on_profile_copy, width=42)
 
             dpg.add_spacer(width=-1)

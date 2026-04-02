@@ -25,6 +25,17 @@ _VM_ACTION_IDS: tuple[str, ...] = (
 )
 _DEFAULT_VM_NOTES: tuple[int, ...] = tuple(range(16, 24))
 
+_VM_CATALOG = [
+    {"id": "mic_mute", "label": "Mic Mute", "description": "Toggle microphone mute (Strip 0)"},
+    {"id": "desk_mute", "label": "Desktop Mute", "description": "Toggle desktop audio mute (Strip 3)"},
+    {"id": "eq_toggle", "label": "EQ Toggle", "description": "Toggle EQ on Bus 3"},
+    {"id": "send2mic", "label": "Send to Mic", "description": "Toggle Strip 4 -> B1 routing"},
+    {"id": "gate", "label": "Gate", "description": "Toggle noise gate on mic"},
+    {"id": "monitor", "label": "Monitor", "description": "Toggle mic monitoring to headphones (A1)"},
+    {"id": "comp", "label": "Compressor", "description": "Toggle compressor on mic"},
+    {"id": "reconnect", "label": "Reconnect", "description": "Reconnect to Voicemeeter"},
+]
+
 # Knob CCs (consumed only when Voicemeeter mode is active)
 KNOB_MIC_GAIN = 48
 KNOB_GATE = 49
@@ -483,6 +494,9 @@ class VoicemeeterPlugin(Plugin):
         self.emit_feedback("action.default")
 
     # ── pad labels & status ────────────────────────────────────────────────────
+
+    def get_action_catalog(self) -> list[dict]:
+        return list(_VM_CATALOG)
 
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:

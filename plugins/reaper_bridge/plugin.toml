@@ -1,0 +1,29 @@
+[plugin]
+name = "REAPER Bridge"
+version = "0.2.0"
+description = "Bridge to REAPER DAW: direct MIDI injection via reapy"
+entry = "reaper_bridge.ReaperBridgePlugin"
+
+[settings]
+# MIDI notes that go to REAPER (Bank B pads)
+reaper_pad_notes_start = 24
+reaper_pad_notes_end = 32
+
+# CC numbers for REAPER knobs (knobs 5-8)
+reaper_knob_ccs = [52, 53, 54, 55]
+
+# Notes that stay in macropad (Bank A pads)
+macropad_pad_notes_start = 16
+macropad_pad_notes_end = 24
+
+# Forward pitch bend to REAPER (true) or keep for macropad transpose (false)
+forward_pitch_bend = true
+
+# Forward piano keys to REAPER
+forward_piano_keys = true
+
+# MIDI channel for REAPER injection (0-15)
+midi_channel = 0
+
+# Status push interval (seconds)
+status_push_interval = 0.5

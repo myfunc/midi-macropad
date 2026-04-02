@@ -4,6 +4,8 @@ from collections import deque
 import dearpygui.dearpygui as dpg
 import time
 
+from ui.dashboard import get_text_font
+
 MAX_LOG_LINES = 100
 _widget_tags: deque[int] = deque()
 _pending: deque[tuple[str, tuple]] = deque(maxlen=MAX_LOG_LINES)
@@ -19,6 +21,9 @@ def create_midi_log(parent="log_content"):
 
 def _append_widget(text: str, color: tuple):
     tag = dpg.add_text(text, parent="midi_log_child", color=color)
+    tf = get_text_font()
+    if tf:
+        dpg.bind_item_font(tag, tf)
     _widget_tags.append(tag)
     while len(_widget_tags) > MAX_LOG_LINES:
         old = _widget_tags.popleft()

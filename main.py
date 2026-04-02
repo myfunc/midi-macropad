@@ -6,6 +6,7 @@ os.environ.setdefault("PYTHONUTF8", "1")
 
 import queue
 import time
+import threading
 import traceback
 import atexit
 import signal
@@ -60,8 +61,9 @@ from ui.dashboard import (
 from ui.pad_grid import (
     create_pad_grid, update_pad_labels, flash_pad, release_pad,
     clear_pad_labels, overlay_plugin_pad_labels, update_knob_display,
+    update_single_pad_label,
     set_pad_click_callback, set_pad_edit_callback, set_pad_swap_callback,
-    set_knob_edit_callback,
+    set_pad_select_callback, set_knob_edit_callback,
 )
 from ui.volume_panel import (
     create_volume_panel, set_master_volume_display, set_mic_volume_display,
@@ -73,9 +75,11 @@ from ui.midi_log import create_midi_log, add_log_entry
 from ui.toolbar import create_toolbar, set_active_preset
 from ui.sidebar_right import create_right_sidebar, set_rebuild_fn, rebuild, set_plugin_list
 from ui.pad_editor import build_pad_properties
+from ui.quick_action_picker import build_quick_picker
 from ui.status_bar import poll_hover, register as register_tooltip
 from ui import selection
 from obs_controller import OBSController
+from hotkey_listener import HotkeyListener
 from plugins.manager import PluginManager
 from logger import get_logger, LOG_FILE, log_startup_banner, log_session_summary
 
@@ -86,6 +90,11 @@ log = get_logger("app")
 _midi_event_count = 0
 _plugin_error_count = 0
 _session_start = 0.0
+
+# Knob value cache with 5-second debounced save
+_knob_value_cache: dict[int, int] = {}
+_knob_flush_timer: threading.Timer | None = None
+_KNOB_DEBOUNCE_S = 5.0
 
 
 class _NullLedController:
@@ -148,7 +157,13 @@ try:
         midi_mic_cap=settings.get("midi_mic_cap", 1.0),
     )
     midi = MidiListener(config.device_name, EVENT_QUEUE, log_fn=_midi_runtime_log)
-    obs = OBSController()
+    hotkeys = HotkeyListener(EVENT_QUEUE, log_fn=_runtime_log)
+    _obs_cfg = settings.get("obs_session_plugin", {})
+    obs = OBSController(
+        host=_obs_cfg.get("host", "127.0.0.1"),
+        port=int(_obs_cfg.get("port", 4455)),
+        password=_obs_cfg.get("password", ""),
+    )
 except Exception:
     log.error("Bootstrap failed:\n%s", traceback.format_exc())
     raise
@@ -170,6 +185,7 @@ def on_preset_changed(index: int):
     mapper.set_preset(index)
     _apply_preset_ui()
     settings.put("preset_index", index)
+    hotkeys.reload_bindings(mapper)
 
 
 # ---- audio callbacks --------------------------------------------------------
@@ -237,28 +253,26 @@ def handle_midi_event(event: MidiEvent):
         if event.type == "pad_press":
             flash_pad(event.note, event.velocity)
             leds.pad_on(event.note, event.velocity)
-            mapping = mapper.lookup_pad(event.note)
-            if mapping and mapping.action.type == "plugin":
-                if plugin_manager.on_pad_press(event.note, event.velocity):
-                    labels = plugin_manager.get_all_pad_labels()
-                    overlay_plugin_pad_labels(labels)
-                    label = labels.get(event.note, f"note {event.note}")
+            # Plugins get first chance at ALL notes (Bank B, piano keys, etc.)
+            if plugin_manager.on_pad_press(event.note, event.velocity):
+                labels = plugin_manager.get_all_pad_labels()
+                overlay_plugin_pad_labels(labels)
+                label = labels.get(event.note, f"note {event.note}")
+                add_log_entry("PAD",
+                              f"{label} (note {event.note}, vel {event.velocity}) [plugin]",
+                              color=(200, 150, 255))
+            else:
+                # No plugin consumed it — fall through to mapper
+                mapping = mapper.lookup_pad(event.note)
+                if mapping:
                     add_log_entry("PAD",
-                                  f"{label} (note {event.note}, vel {event.velocity}) [plugin]",
-                                  color=(200, 150, 255))
+                                  f"{mapping.label} (note {event.note}, vel {event.velocity})",
+                                  color=(100, 200, 255))
+                    _execute_action(mapping.action, cue_id=_feedback_cue_for_mapping(mapping))
                 else:
                     add_log_entry("PAD",
-                                  f"{mapping.label} (note {event.note}, vel {event.velocity}) [plugin idle]",
+                                  f"note {event.note} (unmapped)",
                                   color=(150, 150, 160))
-            elif mapping:
-                add_log_entry("PAD",
-                              f"{mapping.label} (note {event.note}, vel {event.velocity})",
-                              color=(100, 200, 255))
-                _execute_action(mapping.action, cue_id=_feedback_cue_for_mapping(mapping))
-            else:
-                add_log_entry("PAD",
-                              f"note {event.note} (unmapped)",
-                              color=(150, 150, 160))
 
         elif event.type == "pad_release":
             leds.pad_off(event.note)
@@ -281,7 +295,9 @@ def handle_midi_event(event: MidiEvent):
                               color=(150, 150, 160))
 
         elif event.type == "pitch_bend":
-            _handle_pitch_bend_transpose(event.pitch)
+            # Plugins get first chance (e.g., REAPER Bridge forwards to DAW)
+            if not plugin_manager.on_pitch_bend(event.pitch):
+                _handle_pitch_bend_transpose(event.pitch)
     except Exception as exc:
         log.error("Unhandled MIDI event %s: %s\n%s",
                   event, exc, traceback.format_exc())
@@ -332,7 +348,48 @@ def _handle_pitch_bend_transpose(pitch: int):
                   color=(255, 200, 100))
 
 
+def _restore_knob_values():
+    """Restore knob UI display from saved values or current system state."""
+    saved = settings.get("knob_values", {})
+    for knob in config.knobs:
+        cc = knob.cc
+        value = None
+        # For volume knobs, read the actual system level
+        if knob.action.type == "volume":
+            try:
+                if knob.action.target == "master":
+                    level = audio.get_master_volume()
+                    value = int(level * 127)
+                elif knob.action.target == "mic":
+                    level = audio.get_mic_volume()
+                    value = int(level * 127)
+            except Exception:
+                pass
+        # Fall back to saved value
+        if value is None:
+            value = saved.get(str(cc), saved.get(cc, 0))
+        value = max(0, min(127, int(value)))
+        _knob_value_cache[cc] = value
+        update_knob_display(cc, value)
+
+
+def _knob_cache_value(cc: int, value: int):
+    """Buffer knob value and schedule a debounced flush to settings."""
+    global _knob_flush_timer
+    _knob_value_cache[cc] = value
+    if _knob_flush_timer is not None:
+        _knob_flush_timer.cancel()
+
+    def _flush():
+        settings.put("knob_values", dict(_knob_value_cache))
+
+    _knob_flush_timer = threading.Timer(_KNOB_DEBOUNCE_S, _flush)
+    _knob_flush_timer.daemon = True
+    _knob_flush_timer.start()
+
+
 def _handle_knob(knob, value: int):
+    _knob_cache_value(knob.cc, value)
     action = knob.action
     if action.type == "volume":
         if action.target == "master":
@@ -488,11 +545,45 @@ def _on_pad_click(note: int):
     _delayed_release()
 
 
-def _on_pad_edit(note: int):
-    """Open the Properties panel for this pad."""
+def _on_pad_select(note: int):
+    """Single-click pad selection — show Quick Action Picker in Properties."""
+    # Check mapper first, then registry for plugin-owned pads
     mapping = mapper.lookup_pad(note)
-    rebuild(lambda parent: build_pad_properties(
-        parent, note, mapping, on_save=_on_pad_save))
+    if mapping:
+        label = mapping.label
+        action_type = mapping.action.type if mapping.action else ""
+        action_data = {}
+        if mapping.action:
+            a = mapping.action
+            if a.keys: action_data["keys"] = a.keys
+            if a.process: action_data["process"] = a.process
+            if a.command: action_data["command"] = a.command
+            if a.target: action_data["target"] = a.target
+        hotkey = getattr(mapping, 'hotkey', '') or ''
+    else:
+        # Try registry (plugin-owned pads)
+        entry = mapper.registry.get_pad(note)
+        if entry and entry.action_type:
+            label = entry.label
+            action_type = entry.action_type
+            action_data = dict(entry.action_data)
+            hotkey = entry.hotkey
+        else:
+            # Check plugin labels as last resort
+            plugin_labels = plugin_manager.get_all_pad_labels()
+            label = plugin_labels.get(note, f"Pad {note - 15}")
+            action_type = "plugin" if note in plugin_labels else ""
+            action_data = {}
+            hotkey = ""
+    rebuild(lambda parent: build_quick_picker(
+        parent, note, label, action_type, action_data, hotkey,
+        on_save=_on_pad_save_quick,
+        plugin_manager=plugin_manager))
+
+
+def _on_pad_edit(note: int):
+    """Open the Properties panel for this pad (✎ button — same as select)."""
+    _on_pad_select(note)
 
 
 def _on_knob_edit(cc: int):
@@ -526,7 +617,6 @@ def _on_pad_swap(note_a: int, note_b: int):
 
     import toml as _toml
     preset = mapper.current_preset
-    saved_idx = mapper.current_preset_index
 
     raw = _toml.load(CONFIG_PATH)
     section = _toml_pad_section_key(raw)
@@ -540,28 +630,40 @@ def _on_pad_swap(note_a: int, note_b: int):
         if pad_a and pad_b:
             pad_a["label"], pad_b["label"] = pad_b["label"], pad_a["label"]
             pad_a["action"], pad_b["action"] = pad_b["action"], pad_a["action"]
+            hk_a = pad_a.get("hotkey", "")
+            hk_b = pad_b.get("hotkey", "")
+            if hk_a or hk_b:
+                pad_a["hotkey"], pad_b["hotkey"] = hk_b, hk_a
         elif pad_a and not pad_b:
             new_b = {"note": note_b, "label": pad_a["label"],
                      "action": dict(pad_a["action"])}
+            if pad_a.get("hotkey"):
+                new_b["hotkey"] = pad_a["hotkey"]
             pad_a["label"] = f"Pad {note_a - 15}"
             pad_a["action"] = {"type": "keystroke", "keys": ""}
+            pad_a.pop("hotkey", None)
             pads_list.append(new_b)
         elif pad_b and not pad_a:
             new_a = {"note": note_a, "label": pad_b["label"],
                      "action": dict(pad_b["action"])}
+            if pad_b.get("hotkey"):
+                new_a["hotkey"] = pad_b["hotkey"]
             pad_b["label"] = f"Pad {note_b - 15}"
             pad_b["action"] = {"type": "keystroke", "keys": ""}
+            pad_b.pop("hotkey", None)
             pads_list.append(new_a)
         break
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         _toml.dump(raw, f)
 
-    global config
-    config = load_config(CONFIG_PATH)
-    mapper.__init__(config)
-    mapper.set_preset(saved_idx)
-    _apply_preset_ui()
+    # In-place update: swap in mapper, update two labels
+    mapper.swap_pads(note_a, note_b)
+    map_a = mapper.lookup_pad(note_a)
+    map_b = mapper.lookup_pad(note_b)
+    update_single_pad_label(note_a, map_a.label if map_a else f"Pad {note_a - 15}")
+    update_single_pad_label(note_b, map_b.label if map_b else f"Pad {note_b - 15}")
+    overlay_plugin_pad_labels(plugin_manager.get_all_pad_labels())
     add_log_entry("SYS",
                   f"Swapped pad {note_a - 15} <-> pad {note_b - 15}",
                   color=(100, 255, 150))
@@ -571,9 +673,9 @@ def _on_pad_swap(note_a: int, note_b: int):
 
 def _on_selection_changed(sel_type, sel_id):
     if sel_type == "pad":
-        mapping = mapper.lookup_pad(sel_id)
-        rebuild(lambda parent: build_pad_properties(
-            parent, sel_id, mapping, on_save=_on_pad_save))
+        _on_pad_select(sel_id)
+    elif sel_type == "plugin":
+        rebuild(lambda parent: plugin_manager.build_plugin_properties(sel_id, parent))
     else:
         rebuild(None)
 
@@ -581,9 +683,9 @@ def _on_selection_changed(sel_type, sel_id):
 def _on_pad_save(note, data):
     import toml as _toml
     preset = mapper.current_preset
-    saved_idx = mapper.current_preset_index
     label = data.get("label", "")
     atype = data.get("action_type", "keystroke")
+    hotkey = data.get("hotkey", "")
 
     action_dict: dict = {"type": atype}
     if atype == "keystroke":
@@ -598,6 +700,7 @@ def _on_pad_save(note, data):
     elif atype == "plugin":
         action_dict["target"] = data.get("target", "")
 
+    # Persist to TOML
     raw = _toml.load(CONFIG_PATH)
     section = _toml_pad_section_key(raw)
     for preset_data in raw.get(section, []):
@@ -607,21 +710,110 @@ def _on_pad_save(note, data):
             if pad_data.get("note") == note:
                 pad_data["label"] = label
                 pad_data["action"] = action_dict
+                if hotkey:
+                    pad_data["hotkey"] = hotkey
+                elif "hotkey" in pad_data:
+                    del pad_data["hotkey"]
                 break
         else:
-            preset_data.setdefault("pads", []).append(
-                {"note": note, "label": label, "action": action_dict})
+            entry = {"note": note, "label": label, "action": action_dict}
+            if hotkey:
+                entry["hotkey"] = hotkey
+            preset_data.setdefault("pads", []).append(entry)
         break
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         _toml.dump(raw, f)
 
-    global config
-    config = load_config(CONFIG_PATH)
-    mapper.__init__(config)
-    mapper.set_preset(saved_idx)
-    _apply_preset_ui()
+    # In-place update: only touch this one pad
+    mapper.update_pad(note, label, action_dict, hotkey)
+    update_single_pad_label(note, label)
+    # Re-overlay plugin labels in case this pad switched to/from plugin type
+    overlay_plugin_pad_labels(plugin_manager.get_all_pad_labels())
+    hotkeys.reload_bindings(mapper)
     add_log_entry("SYS", f"Pad {note} saved to config.toml", color=(100, 255, 150))
+
+
+def _on_pad_save_quick(note, data):
+    """Auto-save handler for Quick Action Picker."""
+    # Handle partial updates (label/hotkey only changes)
+    if "extra_field" in data:
+        # Update just one field in the action_data
+        mapping = mapper.lookup_pad(note)
+        if mapping and mapping.action:
+            action_dict = {"type": mapping.action.type}
+            if mapping.action.keys: action_dict["keys"] = mapping.action.keys
+            if mapping.action.process: action_dict["process"] = mapping.action.process
+            if mapping.action.command: action_dict["command"] = mapping.action.command
+            if mapping.action.target: action_dict["target"] = mapping.action.target
+            action_dict[data["extra_field"]] = data["extra_value"]
+            mapper.update_pad(note, mapping.label, action_dict,
+                              getattr(mapping, 'hotkey', ''))
+            _persist_pad_to_toml(note, mapping.label, action_dict,
+                                 getattr(mapping, 'hotkey', ''))
+        return
+
+    if "label" in data and "action_type" not in data:
+        # Just label or hotkey change
+        mapping = mapper.lookup_pad(note)
+        if mapping:
+            label = data.get("label", mapping.label)
+            hotkey = data.get("hotkey", getattr(mapping, 'hotkey', ''))
+            action_dict = {"type": mapping.action.type}
+            if mapping.action.keys: action_dict["keys"] = mapping.action.keys
+            if mapping.action.process: action_dict["process"] = mapping.action.process
+            if mapping.action.command: action_dict["command"] = mapping.action.command
+            if mapping.action.target: action_dict["target"] = mapping.action.target
+            mapper.update_pad(note, label, action_dict, hotkey)
+            update_single_pad_label(note, label)
+            _persist_pad_to_toml(note, label, action_dict, hotkey)
+            hotkeys.reload_bindings(mapper)
+        return
+
+    # Full action assignment
+    label = data.get("label", "")
+    atype = data.get("action_type", "")
+    action_data = data.get("action_data", {})
+    hotkey = data.get("hotkey", "")
+
+    action_dict: dict = {"type": atype}
+    action_dict.update(action_data)
+
+    mapper.update_pad(note, label, action_dict, hotkey)
+    update_single_pad_label(note, label)
+    overlay_plugin_pad_labels(plugin_manager.get_all_pad_labels())
+    hotkeys.reload_bindings(mapper)
+    _persist_pad_to_toml(note, label, action_dict, hotkey)
+    add_log_entry("SYS", f"Pad {note - 15} assigned: {atype or 'cleared'}",
+                  color=(100, 255, 150))
+
+
+def _persist_pad_to_toml(note: int, label: str, action_dict: dict, hotkey: str):
+    """Persist a single pad change to config.toml."""
+    import toml as _toml
+    preset = mapper.current_preset
+    raw = _toml.load(CONFIG_PATH)
+    section = _toml_pad_section_key(raw)
+    for preset_data in raw.get(section, []):
+        if preset_data.get("name") != preset.name:
+            continue
+        for pad_data in preset_data.get("pads", []):
+            if pad_data.get("note") == note:
+                pad_data["label"] = label
+                pad_data["action"] = action_dict
+                if hotkey:
+                    pad_data["hotkey"] = hotkey
+                elif "hotkey" in pad_data:
+                    del pad_data["hotkey"]
+                break
+        else:
+            entry = {"note": note, "label": label, "action": action_dict}
+            if hotkey:
+                entry["hotkey"] = hotkey
+            preset_data.setdefault("pads", []).append(entry)
+        break
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        _toml.dump(raw, f)
 
 
 # ---- mixer tab --------------------------------------------------------------
@@ -644,35 +836,25 @@ def _create_mixer_tab():
     )
 
 
-# ---- settings window --------------------------------------------------------
-
-_settings_window_tag = "settings_window"
+# ---- settings tab -----------------------------------------------------------
 
 
-def _open_settings_window():
-    if dpg.does_item_exist(_settings_window_tag):
-        dpg.configure_item(_settings_window_tag, show=True)
-        dpg.focus_item(_settings_window_tag)
-        return
-    vp_w = dpg.get_viewport_client_width()
-    vp_h = dpg.get_viewport_client_height()
-    win_w, win_h = 500, 400
-    pos_x = max(0, (vp_w - win_w) // 2)
-    pos_y = max(0, (vp_h - win_h) // 2)
+def _create_settings_tab():
+    """Add a Settings tab to center_tabs with plugin toggles."""
+    with dpg.tab(label="  \u2699 Settings  ", parent="center_tabs",
+                 tag="tab_settings"):
+        with dpg.child_window(tag="settings_tab_content", height=-1,
+                              border=False):
+            dpg.add_spacer(height=8)
+            dpg.add_text("Plugins", color=(85, 150, 240))
+            dpg.add_separator()
+            dpg.add_spacer(height=6)
+            dpg.add_group(tag="settings_plugin_list")
 
-    with dpg.window(
-        tag=_settings_window_tag,
-        label="Settings",
-        width=win_w, height=win_h,
-        pos=(pos_x, pos_y),
-        no_collapse=True,
-        on_close=lambda: dpg.configure_item(_settings_window_tag, show=False),
-    ):
-        dpg.add_text("Plugins", color=(85, 150, 240))
-        dpg.add_separator()
-        dpg.add_spacer(height=6)
-        dpg.add_group(tag="settings_plugin_list")
 
+def _focus_settings_tab():
+    if dpg.does_item_exist("tab_settings"):
+        dpg.set_value("center_tabs", "tab_settings")
     _populate_settings_plugins()
 
 
@@ -748,7 +930,7 @@ def main():
     create_toolbar(
         preset_names=[p.name for p in config.pad_presets],
         preset_callback=on_preset_changed,
-        settings_callback=_open_settings_window,
+        settings_callback=_focus_settings_tab,
     )
     set_active_preset(saved_preset)
 
@@ -757,11 +939,13 @@ def main():
     # Center: pad grid + knobs, log
     set_pad_click_callback(_on_pad_click)
     set_pad_edit_callback(_on_pad_edit)
+    set_pad_select_callback(_on_pad_select)
     set_pad_swap_callback(_on_pad_swap)
     set_knob_edit_callback(_on_knob_edit)
     create_pad_grid(knobs=config.knobs)
     create_midi_log()
     _create_mixer_tab()
+    _create_settings_tab()
 
     # Right sidebar
     create_right_sidebar()
@@ -785,6 +969,9 @@ def main():
     set_mic_volume_display(audio.get_mic_volume())
     set_master_mute_display(audio.get_master_mute())
     set_mic_mute_display(audio.get_mic_mute())
+
+    # Restore knob display values from last session
+    _restore_knob_values()
 
     # Plugins — restore previously enabled set, or load all on first run
     saved_plugins = settings.get("enabled_plugins")
@@ -822,6 +1009,18 @@ def main():
     midi.start()
     add_log_entry("SYS", "Starting MIDI listener...", color=(100, 255, 150))
 
+    # MIDI reconnect button in status bar
+    def _on_midi_reconnect():
+        add_log_entry("SYS", "MIDI reconnect requested...", color=(255, 200, 80))
+        midi.reconnect()
+
+    if dpg.does_item_exist("midi_reconnect_btn"):
+        dpg.configure_item("midi_reconnect_btn", callback=lambda: _on_midi_reconnect())
+    register_tooltip("midi_reconnect_btn", "Reconnect MIDI device")
+
+    hotkeys.reload_bindings(mapper)
+    hotkeys.start()
+
     if leds.connect():
         add_log_entry("LED", "Hardware LED output connected", color=(100, 255, 150))
     else:
@@ -849,10 +1048,14 @@ def main():
             if dpg.does_item_exist("device_status"):
                 dpg.set_value("device_status", f"MIDI: {midi.port_name}")
                 dpg.configure_item("device_status", color=(80, 255, 120))
+            if dpg.does_item_exist("midi_reconnect_btn"):
+                dpg.configure_item("midi_reconnect_btn", show=True)
         else:
             if dpg.does_item_exist("device_status"):
                 dpg.set_value("device_status", "MIDI: searching...")
                 dpg.configure_item("device_status", color=(255, 180, 80))
+            if dpg.does_item_exist("midi_reconnect_btn"):
+                dpg.configure_item("midi_reconnect_btn", show=True)
 
         poll_dashboard()
         poll_hover()
@@ -872,6 +1075,13 @@ def main():
     duration_s = time.monotonic() - _session_start
     log_session_summary(_midi_event_count, _plugin_error_count, duration_s)
 
+    # Flush knob values before shutdown
+    if _knob_flush_timer is not None:
+        _knob_flush_timer.cancel()
+    if _knob_value_cache:
+        settings.put("knob_values", dict(_knob_value_cache))
+
+    hotkeys.stop()
     plugin_manager.unload_all()
     feedback.close()
     leds.disconnect()

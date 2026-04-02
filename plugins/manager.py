@@ -232,6 +232,25 @@ class PluginManager:
                 pass
         return None
 
+    # -- Action catalog -------------------------------------------------------
+
+    def get_all_action_catalogs(self) -> dict[str, list[dict]]:
+        """Return ``{plugin_name: [action_dicts]}`` for all loaded plugins."""
+        catalogs: dict[str, list[dict]] = {}
+        for name in list(self.enabled):
+            plugin = self.plugins.get(name)
+            if plugin is None:
+                continue
+            try:
+                cat = plugin.get_action_catalog()
+                if cat:
+                    catalogs[name] = cat
+            except Exception:
+                self._log("PLUGIN",
+                          f"{name}.get_action_catalog error: {traceback.format_exc()}",
+                          color=(255, 80, 80))
+        return catalogs
+
     # -- UI helpers -----------------------------------------------------------
 
     def get_all_pad_labels(self) -> dict[int, str]:

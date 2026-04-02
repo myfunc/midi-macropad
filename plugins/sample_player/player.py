@@ -127,6 +127,12 @@ class SamplePlayerPlugin(Plugin):
             return True
         return False
 
+    def get_action_catalog(self) -> list[dict]:
+        return [
+            {"id": f"sample_{s.name}", "label": s.label, "description": f"Play sample: {s.name}"}
+            for s in self.samples.values()
+        ]
+
     def get_pad_labels(self) -> dict[int, str]:
         if not self._active:
             return {}

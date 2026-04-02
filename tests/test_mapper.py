@@ -16,26 +16,23 @@ MINIMAL_TOML = """
 [device]
 name = "Test Device"
 
-[[modes]]
+[[pad_presets]]
 name = "ModeA"
-color = "#112233"
-icon = "a"
 
-[[modes.pads]]
+[[pad_presets.pads]]
 note = 20
 label = "Pad1"
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "keys"
 keys = "ctrl+a"
 
-[[modes]]
+[[pad_presets]]
 name = "ModeB"
-color = "#445566"
 
-[[modes.pads]]
+[[pad_presets.pads]]
 note = 18
 label = "Other"
-[modes.pads.action]
+[pad_presets.pads.action]
 type = "command"
 command = "echo hi"
 

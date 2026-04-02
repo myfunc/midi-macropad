@@ -1,10 +1,3 @@
-[device]
-name = "MPK mini play"
-
-[settings]
-double_tap_ms = 300
-long_press_ms = 2000
-
 [[knobs]]
 cc = 48
 label = "Volume"
@@ -12,7 +5,6 @@ label = "Volume"
 [knobs.action]
 type = "volume"
 target = "master"
-
 [[knobs]]
 cc = 49
 label = "Mic"
@@ -20,7 +12,6 @@ label = "Mic"
 [knobs.action]
 type = "volume"
 target = "mic"
-
 [[knobs]]
 cc = 50
 label = "Spotify"
@@ -28,7 +19,6 @@ label = "Spotify"
 [knobs.action]
 type = "volume"
 target = "spotify"
-
 [[knobs]]
 cc = 51
 label = "App"
@@ -36,12 +26,8 @@ label = "App"
 [knobs.action]
 type = "volume"
 target = "foreground"
-
-# ========== Pad Presets ==========
-
 [[pad_presets]]
 name = "Spotify"
-
 [[pad_presets.pads]]
 note = 16
 label = "Play/Pause"
@@ -50,7 +36,6 @@ label = "Play/Pause"
 type = "app_keystroke"
 keys = "space"
 process = "Spotify.exe"
-
 [[pad_presets.pads]]
 note = 17
 label = "Next"
@@ -59,7 +44,6 @@ label = "Next"
 type = "app_keystroke"
 keys = "ctrl+right"
 process = "Spotify.exe"
-
 [[pad_presets.pads]]
 note = 18
 label = "Prev"
@@ -68,7 +52,6 @@ label = "Prev"
 type = "app_keystroke"
 keys = "ctrl+left"
 process = "Spotify.exe"
-
 [[pad_presets.pads]]
 note = 19
 label = "Like"
@@ -77,7 +60,6 @@ label = "Like"
 type = "app_keystroke"
 keys = "alt+shift+b"
 process = "Spotify.exe"
-
 [[pad_presets.pads]]
 note = 20
 label = "Shuffle"
@@ -86,7 +68,6 @@ label = "Shuffle"
 type = "app_keystroke"
 keys = "ctrl+s"
 process = "Spotify.exe"
-
 [[pad_presets.pads]]
 note = 21
 label = "DJ Mix"
@@ -95,7 +76,6 @@ label = "DJ Mix"
 type = "app_keystroke"
 keys = "ctrl+shift+j"
 process = "Spotify.exe"
-
 [[pad_presets.pads]]
 note = 22
 label = "Add to PL"
@@ -103,7 +83,6 @@ label = "Add to PL"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Spotify"
-
 [[pad_presets.pads]]
 note = 23
 label = "Remove PL"
@@ -114,7 +93,6 @@ target = "Spotify"
 
 [[pad_presets]]
 name = "Voicemeeter"
-
 [[pad_presets.pads]]
 note = 16
 label = "Pad 1"
@@ -122,7 +100,6 @@ label = "Pad 1"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
-
 [[pad_presets.pads]]
 note = 17
 label = "Pad 2"
@@ -130,7 +107,6 @@ label = "Pad 2"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
-
 [[pad_presets.pads]]
 note = 18
 label = "Pad 3"
@@ -138,7 +114,6 @@ label = "Pad 3"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
-
 [[pad_presets.pads]]
 note = 19
 label = "Pad 4"
@@ -146,7 +121,6 @@ label = "Pad 4"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
-
 [[pad_presets.pads]]
 note = 20
 label = "Pad 5"
@@ -154,7 +128,6 @@ label = "Pad 5"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
-
 [[pad_presets.pads]]
 note = 21
 label = "Pad 6"
@@ -162,7 +135,6 @@ label = "Pad 6"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
-
 [[pad_presets.pads]]
 note = 22
 label = "Pad 7"
@@ -170,7 +142,6 @@ label = "Pad 7"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
-
 [[pad_presets.pads]]
 note = 23
 label = "Pad 8"
@@ -178,18 +149,24 @@ label = "Pad 8"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
-
-[[pad_presets]]
-name = "Voice Scribe"
-
 [[pad_presets.pads]]
-note = 16
-label = "Pad 1"
+note = 28
+label = "Pad 13"
 
 [pad_presets.pads.action]
 type = "plugin"
-target = "Voice Scribe"
+target = "Voicemeeter:mic_mute"
 
+[[pad_presets]]
+name = "Voice Scribe"
+[[pad_presets.pads]]
+note = 16
+label = "Pad 1"
+hotkey = "mouse5"
+
+[pad_presets.pads.action]
+type = "plugin"
+target = "Voice Scribe:Professional"
 [[pad_presets.pads]]
 note = 17
 label = "Pad 2"
@@ -197,7 +174,6 @@ label = "Pad 2"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voice Scribe"
-
 [[pad_presets.pads]]
 note = 18
 label = "Pad 3"
@@ -205,7 +181,6 @@ label = "Pad 3"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voice Scribe"
-
 [[pad_presets.pads]]
 note = 19
 label = "Pad 4"
@@ -213,7 +188,6 @@ label = "Pad 4"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voice Scribe"
-
 [[pad_presets.pads]]
 note = 20
 label = "Pad 5"
@@ -221,7 +195,6 @@ label = "Pad 5"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voice Scribe"
-
 [[pad_presets.pads]]
 note = 21
 label = "Pad 6"
@@ -229,7 +202,6 @@ label = "Pad 6"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voice Scribe"
-
 [[pad_presets.pads]]
 note = 22
 label = "Pad 7"
@@ -237,7 +209,6 @@ label = "Pad 7"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voice Scribe"
-
 [[pad_presets.pads]]
 note = 23
 label = "Pad 8"
@@ -248,7 +219,6 @@ target = "Voice Scribe"
 
 [[pad_presets]]
 name = "OBS"
-
 [[pad_presets.pads]]
 note = 16
 label = "Pad 1"
@@ -256,7 +226,6 @@ label = "Pad 1"
 [pad_presets.pads.action]
 type = "plugin"
 target = "OBS"
-
 [[pad_presets.pads]]
 note = 17
 label = "Pad 2"
@@ -264,7 +233,6 @@ label = "Pad 2"
 [pad_presets.pads.action]
 type = "plugin"
 target = "OBS"
-
 [[pad_presets.pads]]
 note = 18
 label = "Pad 3"
@@ -272,7 +240,6 @@ label = "Pad 3"
 [pad_presets.pads.action]
 type = "plugin"
 target = "OBS"
-
 [[pad_presets.pads]]
 note = 19
 label = "Pad 4"
@@ -280,7 +247,6 @@ label = "Pad 4"
 [pad_presets.pads.action]
 type = "plugin"
 target = "OBS"
-
 [[pad_presets.pads]]
 note = 20
 label = "Pad 5"
@@ -288,7 +254,6 @@ label = "Pad 5"
 [pad_presets.pads.action]
 type = "plugin"
 target = "OBS"
-
 [[pad_presets.pads]]
 note = 21
 label = "Pad 6"
@@ -296,7 +261,6 @@ label = "Pad 6"
 [pad_presets.pads.action]
 type = "plugin"
 target = "OBS"
-
 [[pad_presets.pads]]
 note = 22
 label = "Pad 7"
@@ -304,7 +268,6 @@ label = "Pad 7"
 [pad_presets.pads.action]
 type = "plugin"
 target = "OBS"
-
 [[pad_presets.pads]]
 note = 23
 label = "Pad 8"
@@ -315,7 +278,6 @@ target = "OBS"
 
 [[pad_presets]]
 name = "Sample Player"
-
 [[pad_presets.pads]]
 note = 16
 label = "Pad 1"
@@ -323,7 +285,6 @@ label = "Pad 1"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Sample Player"
-
 [[pad_presets.pads]]
 note = 17
 label = "Pad 2"
@@ -331,7 +292,6 @@ label = "Pad 2"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Sample Player"
-
 [[pad_presets.pads]]
 note = 18
 label = "Pad 3"
@@ -339,7 +299,6 @@ label = "Pad 3"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Sample Player"
-
 [[pad_presets.pads]]
 note = 19
 label = "Pad 4"
@@ -347,7 +306,6 @@ label = "Pad 4"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Sample Player"
-
 [[pad_presets.pads]]
 note = 20
 label = "Pad 5"
@@ -355,7 +313,6 @@ label = "Pad 5"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Sample Player"
-
 [[pad_presets.pads]]
 note = 21
 label = "Pad 6"
@@ -363,7 +320,6 @@ label = "Pad 6"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Sample Player"
-
 [[pad_presets.pads]]
 note = 22
 label = "Pad 7"
@@ -371,7 +327,6 @@ label = "Pad 7"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Sample Player"
-
 [[pad_presets.pads]]
 note = 23
 label = "Pad 8"
@@ -379,3 +334,10 @@ label = "Pad 8"
 [pad_presets.pads.action]
 type = "plugin"
 target = "Sample Player"
+
+[device]
+name = "MPK mini play"
+
+[settings]
+double_tap_ms = 300
+long_press_ms = 2000

@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDI Macropad - UI Mockup v2</title>
+<style>
+  :root {
+    --bg-primary: #1E1E2E;
+    --bg-secondary: #282838;
+    --bg-tertiary: #323248;
+    --bg-elevated: #3A3A52;
+    --border: #3A3A4F;
+    --border-subtle: #383858;
+    --text-primary: #E8E8F0;
+    --text-secondary: #A0A0B8;
+    --text-muted: #707088;
+    --accent: #6EB4FF;
+    --accent-dim: #4A8AD8;
+    --accent-bg: rgba(110, 180, 255, 0.12);
+    --color-scene: #64B4FF;
+    --color-mute: #969BA5;
+    --color-session: #FFC85A;
+    --color-record: #FF7878;
+    --color-replay: #B482FF;
+    --color-system: #D0D0E0;
+    --color-plugin: #5AE68C;
+    --pad-radius: 8px;
+    --panel-radius: 8px;
+    --chip-radius: 6px;
+    --transition: 150ms ease;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  /* ─── PRESET BAR (replaces toolbar) ─── */
+  .preset-bar {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 4px;
+  }
+  .preset-chip {
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--chip-radius);
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .preset-chip:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+  .preset-chip.active {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .preset-add {
+    padding: 5px 10px;
+    font-size: 14px;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--chip-radius);
+    cursor: pointer;
+    transition: all var(--transition);
+    line-height: 1;
+  }
+  .preset-add:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+  .preset-spacer { flex: 1; }
+  .settings-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--chip-radius);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    transition: all var(--transition);
+  }
+  .settings-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border);
+  }
+  .new-preset-input {
+    display: none;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent);
+    border-radius: var(--chip-radius);
+    color: var(--text-primary);
+    outline: none;
+    width: 120px;
+  }
+  .new-preset-input.visible { display: block; }
+
+  /* ─── MAIN LAYOUT ─── */
+  .main-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .top-section {
+    display: flex;
+    flex: 1;
+    min-height: 260px;
+    overflow: hidden;
+  }
+  .pad-area {
+    flex: 1;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    min-width: 0;
+  }
+
+  /* ─── PAD GRID ─── */
+  .bank-row {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+  }
+  .bank { flex: 1; min-width: 0; }
+  .bank-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 8px;
+    padding-left: 4px;
+  }
+  .pad-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .pad {
+    aspect-ratio: 1;
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border-subtle);
+    border-radius: var(--pad-radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition);
+    position: relative;
+    min-width: 68px;
+    min-height: 68px;
+    gap: 3px;
+  }
+  .pad:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .pad.selected {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+    box-shadow: 0 0 16px rgba(110, 180, 255, 0.15);
+  }
+  .pad .pad-number {
+    font-size: 10px;
+    color: var(--text-muted);
+    position: absolute;
+    top: 4px;
+    left: 6px;
+  }
+  .pad .pad-label {
+    font-size: 11px;
+    color: var(--text-primary);
+    text-align: center;
+    line-height: 1.2;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pad .pad-indicator {
+    width: 22px;
+    height: 3px;
+    border-radius: 2px;
+    margin-top: 2px;
+  }
+  .pad .lock-icon {
+    position: absolute;
+    top: 3px;
+    right: 5px;
+    font-size: 9px;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+  .pad.empty { opacity: 0.45; }
+
+  /* ─── KNOBS ─── */
+  .knobs-section { min-width: 160px; }
+  .knob-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 7px;
+  }
+  .knob {
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border-subtle);
+    border-radius: var(--pad-radius);
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .knob:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border);
+  }
+  .knob-visual {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .knob-visual::after {
+    content: '';
+    width: 2px;
+    height: 13px;
+    background: var(--accent);
+    border-radius: 1px;
+    transform-origin: bottom center;
+    position: absolute;
+    top: 4px;
+  }
+  .knob-label { font-size: 10px; color: var(--text-secondary); text-align: center; }
+  .knob-value { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .knob:nth-child(1) .knob-visual::after { transform: rotate(-45deg); }
+  .knob:nth-child(2) .knob-visual::after { transform: rotate(30deg); }
+  .knob:nth-child(3) .knob-visual::after { transform: rotate(90deg); }
+  .knob:nth-child(4) .knob-visual::after { transform: rotate(-20deg); }
+
+  /* ─── PROPERTIES PANEL ─── */
+  .properties-panel {
+    width: 290px;
+    min-width: 260px;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .props-header {
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .props-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .props-header .pad-badge {
+    background: var(--accent);
+    color: var(--bg-primary);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .props-current {
+    padding: 6px 14px 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .props-section {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .props-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .props-field { margin-bottom: 8px; }
+  .props-field label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 3px;
+  }
+  .props-field input {
+    width: 100%;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--chip-radius);
+    padding: 5px 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+    transition: border-color var(--transition);
+  }
+  .props-field input:focus { border-color: var(--accent); }
+
+  /* ─── ACTION PICKER ─── */
+  .action-group {
+    margin-bottom: 8px;
+  }
+  .action-group:last-child { margin-bottom: 0; }
+  .action-group-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .action-group-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-subtle);
+  }
+  .action-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 280px;
+  }
+  .action-chip {
+    padding: 3px 9px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .action-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .action-chip.active {
+    border-color: #fff;
+    box-shadow: 0 0 8px rgba(255,255,255,0.15);
+  }
+  .action-chip.system { background: rgba(208,208,224,0.15); color: var(--color-system); }
+  .action-chip.system.active { background: rgba(208,208,224,0.3); }
+  .action-chip.scene { background: rgba(100,180,255,0.15); color: var(--color-scene); }
+  .action-chip.scene.active { background: rgba(100,180,255,0.3); }
+  .action-chip.mute { background: rgba(150,155,165,0.15); color: var(--color-mute); }
+  .action-chip.mute.active { background: rgba(150,155,165,0.3); }
+  .action-chip.session { background: rgba(255,200,90,0.15); color: var(--color-session); }
+  .action-chip.session.active { background: rgba(255,200,90,0.3); }
+  .action-chip.record { background: rgba(255,120,120,0.15); color: var(--color-record); }
+  .action-chip.record.active { background: rgba(255,120,120,0.3); }
+  .action-chip.replay { background: rgba(180,130,255,0.15); color: var(--color-replay); }
+  .action-chip.replay.active { background: rgba(180,130,255,0.3); }
+  .action-chip.plugin { background: rgba(90,230,140,0.15); color: var(--color-plugin); }
+  .action-chip.plugin.active { background: rgba(90,230,140,0.3); }
+
+  .btn-clear {
+    margin-top: 8px;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--color-record);
+    background: rgba(255,120,120,0.08);
+    border: 1px solid rgba(255,120,120,0.25);
+    border-radius: var(--chip-radius);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .btn-clear:hover {
+    background: rgba(255,120,120,0.18);
+  }
+
+  .props-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-muted);
+    padding: 40px 20px;
+    text-align: center;
+  }
+  .props-empty .icon { font-size: 36px; opacity: 0.4; }
+  .props-empty .hint { font-size: 12px; line-height: 1.5; }
+
+  /* ─── RESIZE HANDLE (vertical) ─── */
+  .resize-handle-v {
+    height: 7px;
+    background: var(--bg-secondary);
+    cursor: ns-resize;
+    flex-shrink: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .resize-handle-v::before {
+    content: '';
+    width: 40px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    transition: background var(--transition);
+  }
+  .resize-handle-v:hover::before,
+  .resize-handle-v.active::before { background: var(--accent); }
+  .resize-handle-v::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ─── BOTTOM DUAL ZONE ─── */
+  .bottom-section {
+    height: 220px;
+    min-height: 80px;
+    max-height: 50vh;
+    display: flex;
+    flex-direction: row;
+    background: var(--bg-primary);
+    flex-shrink: 0;
+  }
+  .bottom-zone {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    overflow: hidden;
+  }
+  .bottom-zone:first-child {
+    border-right: none;
+  }
+
+  /* Horizontal resize handle between zones */
+  .resize-handle-h {
+    width: 5px;
+    background: var(--bg-secondary);
+    cursor: ew-resize;
+    flex-shrink: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .resize-handle-h::before {
+    content: '';
+    width: 3px;
+    height: 30px;
+    border-radius: 2px;
+    background: var(--border);
+    transition: background var(--transition);
+  }
+  .resize-handle-h:hover::before,
+  .resize-handle-h.active::before { background: var(--accent); }
+
+  .zone-tab-bar {
+    display: flex;
+    gap: 0;
+    padding: 0 8px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+  .zone-tab {
+    padding: 6px 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all var(--transition);
+  }
+  .zone-tab:hover { color: var(--text-primary); background: rgba(255,255,255,0.03); }
+  .zone-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .zone-tab .tab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+
+  .zone-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .zone-content-area { display: none; height: 100%; }
+  .zone-content-area.active { display: flex; flex-direction: column; }
+
+  /* Log styles */
+  .log-line { color: var(--text-secondary); }
+  .log-line .ts { color: var(--text-muted); margin-right: 6px; font-size: 11px; }
+  .log-prefix { font-weight: 600; margin-right: 5px; }
+  .log-prefix.pad { color: var(--color-plugin); }
+  .log-prefix.knob { color: var(--color-replay); }
+  .log-prefix.obs { color: #FFA54F; }
+  .log-prefix.sys { color: var(--color-scene); }
+
+  /* Mixer */
+  .mixer-container {
+    display: flex;
+    gap: 14px;
+    padding: 10px 0;
+    align-items: flex-end;
+    height: 100%;
+  }
+  .mixer-strip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 50px;
+  }
+  .mixer-strip .strip-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-family: 'Segoe UI', sans-serif;
+  }
+  .mixer-strip .strip-bar-bg {
+    width: 8px;
+    height: 90px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  .mixer-strip .strip-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    border-radius: 4px;
+    transition: height 0.3s ease;
+  }
+  .mixer-strip .strip-value {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  /* Plugin placeholder panels */
+  .plugin-panel-content {
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 13px;
+    color: var(--text-secondary);
+    padding: 8px 4px;
+  }
+  .plugin-panel-content .pp-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .plugin-panel-content .pp-status {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .plugin-panel-content .pp-status.ok { background: rgba(90,230,140,0.15); color: var(--color-plugin); }
+  .plugin-panel-content .pp-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .plugin-panel-content .pp-label { color: var(--text-muted); }
+  .plugin-panel-content .pp-value { color: var(--text-primary); }
+
+  /* ─── STATUS BAR ─── */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 4px 16px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+  .status-dot.green { background: #5AE68C; box-shadow: 0 0 6px rgba(90,230,140,0.4); }
+  .status-dot.yellow { background: #FFC85A; box-shadow: 0 0 6px rgba(255,200,90,0.4); }
+  .status-spacer { flex: 1; }
+
+  /* ─── SETTINGS MODAL ─── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.visible { display: flex; }
+  .modal {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 440px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .modal-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .modal-close {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all var(--transition);
+  }
+  .modal-close:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+  .modal-body { padding: 16px 18px; }
+  .modal-section {
+    margin-bottom: 16px;
+  }
+  .modal-section:last-child { margin-bottom: 0; }
+  .modal-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .modal-section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-subtle);
+  }
+  .modal-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .modal-row label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    min-width: 80px;
+  }
+  .modal-row select, .modal-row input {
+    flex: 1;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--chip-radius);
+    padding: 5px 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+  }
+  .modal-row select:focus, .modal-row input:focus { border-color: var(--accent); }
+  .modal-btn-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .modal-btn {
+    padding: 5px 14px;
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--chip-radius);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .modal-btn:hover { background: var(--bg-elevated); border-color: var(--accent); }
+  .modal-btn.danger { color: var(--color-record); border-color: rgba(255,120,120,0.3); }
+  .modal-btn.danger:hover { background: rgba(255,120,120,0.12); }
+
+  /* ─── SCROLLBAR ─── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  @media (max-width: 1200px) {
+    .properties-panel { width: 250px; min-width: 230px; }
+    .knobs-section { min-width: 130px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PRESET BAR -->
+<div class="preset-bar">
+  <div class="preset-chip active" onclick="switchPreset(this)">OBS</div>
+  <div class="preset-chip" onclick="switchPreset(this)">Spotify</div>
+  <div class="preset-chip" onclick="switchPreset(this)">Voicemeeter</div>
+  <div class="preset-chip" onclick="switchPreset(this)">Voice Scribe</div>
+  <div class="preset-chip" onclick="switchPreset(this)">Sample Player</div>
+  <input type="text" class="new-preset-input" id="newPresetInput" placeholder="Preset name..." />
+  <div class="preset-add" id="presetAddBtn" onclick="showNewPreset()">+</div>
+  <div class="preset-spacer"></div>
+  <div class="settings-btn" onclick="toggleSettings()" title="Settings">&#9881;</div>
+</div>
+
+<!-- MAIN AREA -->
+<div class="main-area">
+  <div class="top-section">
+    <!-- PAD AREA -->
+    <div class="pad-area">
+      <div class="bank-row">
+        <div class="bank">
+          <div class="bank-header">Bank A (16-23)</div>
+          <div class="pad-grid" id="bankA"></div>
+        </div>
+        <div class="bank">
+          <div class="bank-header">Bank B (24-31)</div>
+          <div class="pad-grid" id="bankB"></div>
+        </div>
+        <div class="knobs-section">
+          <div class="bank-header">Knobs (CC 48-51)</div>
+          <div class="knob-grid">
+            <div class="knob">
+              <div class="knob-visual"></div>
+              <div class="knob-label">Master Vol</div>
+              <div class="knob-value">72</div>
+            </div>
+            <div class="knob">
+              <div class="knob-visual"></div>
+              <div class="knob-label">Mic Gain</div>
+              <div class="knob-value">55</div>
+            </div>
+            <div class="knob">
+              <div class="knob-visual"></div>
+              <div class="knob-label">Desktop</div>
+              <div class="knob-value">100</div>
+            </div>
+            <div class="knob">
+              <div class="knob-visual"></div>
+              <div class="knob-label">Music</div>
+              <div class="knob-value">38</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROPERTIES PANEL -->
+    <div class="properties-panel" id="propsPanel"></div>
+  </div>
+
+  <!-- VERTICAL RESIZE HANDLE -->
+  <div class="resize-handle-v" id="resizeHandleV"></div>
+
+  <!-- BOTTOM DUAL ZONES -->
+  <div class="bottom-section" id="bottomSection">
+    <!-- LEFT ZONE -->
+    <div class="bottom-zone" id="zoneLeft">
+      <div class="zone-tab-bar">
+        <div class="zone-tab active" data-zone="left" data-tab="log" onclick="switchZoneTab(this)">Log</div>
+        <div class="zone-tab" data-zone="left" data-tab="mixer" onclick="switchZoneTab(this)"><span class="tab-dot" style="background:var(--color-scene)"></span>Mixer</div>
+      </div>
+      <div class="zone-content" id="zoneLeftContent">
+        <div class="zone-content-area active" data-zone="left" data-tab="log" id="logContent">
+          <div class="log-line"><span class="ts">14:32:01</span><span class="log-prefix sys">SYS</span> MIDI Macropad started</div>
+          <div class="log-line"><span class="ts">14:32:01</span><span class="log-prefix sys">SYS</span> Connected to Akai MPK Mini Play</div>
+          <div class="log-line"><span class="ts">14:32:02</span><span class="log-prefix obs">OBS</span> Session plugin loaded</div>
+          <div class="log-line"><span class="ts">14:32:02</span><span class="log-prefix sys">SYS</span> Voicemeeter connected</div>
+          <div class="log-line"><span class="ts">14:32:02</span><span class="log-prefix sys">SYS</span> VoiceScribe initialized (model: small)</div>
+          <div class="log-line"><span class="ts">14:32:03</span><span class="log-prefix sys">SYS</span> Loaded preset: OBS</div>
+          <div class="log-line"><span class="ts">14:32:15</span><span class="log-prefix pad">PAD</span> Note ON: 16 vel=127 (Bank A, Pad 1)</div>
+          <div class="log-line"><span class="ts">14:32:15</span><span class="log-prefix obs">OBS</span> Executed: Mute Mic</div>
+          <div class="log-line"><span class="ts">14:32:28</span><span class="log-prefix knob">KNOB</span> CC 48 val=72 Master Volume</div>
+          <div class="log-line"><span class="ts">14:33:05</span><span class="log-prefix obs">OBS</span> Scene switch delayed (>200ms)</div>
+          <div class="log-line"><span class="ts">14:33:10</span><span class="log-prefix pad">PAD</span> Note ON: 18 vel=110 (Bank A, Pad 3)</div>
+          <div class="log-line"><span class="ts">14:33:10</span><span class="log-prefix obs">OBS</span> Scene changed: Camera Close</div>
+          <div class="log-line"><span class="ts">14:33:42</span><span class="log-prefix pad">PAD</span> Note ON: 24 vel=100 (Bank B, Pad 1)</div>
+          <div class="log-line"><span class="ts">14:33:42</span><span class="log-prefix sys">SYS</span> VoiceScribe: recording started</div>
+        </div>
+        <div class="zone-content-area" data-zone="left" data-tab="mixer">
+          <div class="mixer-container">
+            <div class="mixer-strip">
+              <div class="strip-label">MIC</div>
+              <div class="strip-bar-bg"><div class="strip-bar" style="height:55%;background:var(--color-scene)"></div></div>
+              <div class="strip-value">-12 dB</div>
+            </div>
+            <div class="mixer-strip">
+              <div class="strip-label">Desktop</div>
+              <div class="strip-bar-bg"><div class="strip-bar" style="height:80%;background:var(--color-plugin)"></div></div>
+              <div class="strip-value">-3 dB</div>
+            </div>
+            <div class="mixer-strip">
+              <div class="strip-label">Music</div>
+              <div class="strip-bar-bg"><div class="strip-bar" style="height:38%;background:var(--color-replay)"></div></div>
+              <div class="strip-value">-18 dB</div>
+            </div>
+            <div class="mixer-strip">
+              <div class="strip-label">Discord</div>
+              <div class="strip-bar-bg"><div class="strip-bar" style="height:65%;background:var(--color-session)"></div></div>
+              <div class="strip-value">-7 dB</div>
+            </div>
+            <div class="mixer-strip">
+              <div class="strip-label">Browser</div>
+              <div class="strip-bar-bg"><div class="strip-bar" style="height:70%;background:var(--color-scene)"></div></div>
+              <div class="strip-value">-5 dB</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HORIZONTAL RESIZE HANDLE -->
+    <div class="resize-handle-h" id="resizeHandleH"></div>
+
+    <!-- RIGHT ZONE -->
+    <div class="bottom-zone" id="zoneRight">
+      <div class="zone-tab-bar">
+        <div class="zone-tab active" data-zone="right" data-tab="obs" onclick="switchZoneTab(this)"><span class="tab-dot" style="background:#FFA54F"></span>OBS</div>
+        <div class="zone-tab" data-zone="right" data-tab="voicemeeter" onclick="switchZoneTab(this)"><span class="tab-dot" style="background:var(--color-plugin)"></span>Voicemeeter</div>
+        <div class="zone-tab" data-zone="right" data-tab="reaper" onclick="switchZoneTab(this)"><span class="tab-dot" style="background:var(--color-replay)"></span>REAPER</div>
+      </div>
+      <div class="zone-content" id="zoneRightContent">
+        <div class="zone-content-area active" data-zone="right" data-tab="obs">
+          <div class="plugin-panel-content">
+            <div class="pp-header">
+              <strong>OBS Session</strong>
+              <span class="pp-status ok">Connected</span>
+            </div>
+            <div class="pp-row"><span class="pp-label">Scene</span><span class="pp-value">MM_Camera</span></div>
+            <div class="pp-row"><span class="pp-label">Recording</span><span class="pp-value" style="color:var(--color-record)">Active (00:12:34)</span></div>
+            <div class="pp-row"><span class="pp-label">Replay Buffer</span><span class="pp-value" style="color:var(--color-plugin)">Ready</span></div>
+            <div class="pp-row"><span class="pp-label">Segments</span><span class="pp-value">4</span></div>
+            <div class="pp-row"><span class="pp-label">Mic Source</span><span class="pp-value">Muted</span></div>
+            <div class="pp-row"><span class="pp-label">Desktop Source</span><span class="pp-value">Active</span></div>
+          </div>
+        </div>
+        <div class="zone-content-area" data-zone="right" data-tab="voicemeeter">
+          <div class="plugin-panel-content">
+            <div class="pp-header">
+              <strong>Voicemeeter Banana</strong>
+              <span class="pp-status ok">Connected</span>
+            </div>
+            <div class="pp-row"><span class="pp-label">Strip[0] MIC</span><span class="pp-value">-12.0 dB &rarr; B1</span></div>
+            <div class="pp-row"><span class="pp-label">Strip[3] DESKTOP</span><span class="pp-value">0.0 dB &rarr; A1</span></div>
+            <div class="pp-row"><span class="pp-label">Strip[4] SEND2MIC</span><span class="pp-value">-6.0 dB &rarr; A1</span></div>
+            <div class="pp-row"><span class="pp-label">Bus A1</span><span class="pp-value">Headphones (Intel SST)</span></div>
+            <div class="pp-row"><span class="pp-label">Bus B1</span><span class="pp-value">Virtual Mic Out</span></div>
+            <div class="pp-row"><span class="pp-label">EQ (Bus B1)</span><span class="pp-value" style="color:var(--color-plugin)">ON</span></div>
+          </div>
+        </div>
+        <div class="zone-content-area" data-zone="right" data-tab="reaper">
+          <div class="plugin-panel-content">
+            <div class="pp-header">
+              <strong>REAPER Bridge</strong>
+              <span class="pp-status ok">Connected</span>
+            </div>
+            <div class="pp-row"><span class="pp-label">Project</span><span class="pp-value">Session_2026-03-31</span></div>
+            <div class="pp-row"><span class="pp-label">Transport</span><span class="pp-value">Stopped</span></div>
+            <div class="pp-row"><span class="pp-label">BPM</span><span class="pp-value">120</span></div>
+            <div class="pp-row"><span class="pp-label">Tracks</span><span class="pp-value">8</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div class="status-bar">
+  <div class="status-item">
+    <span class="status-dot green"></span>
+    MIDI: MPK mini play 0
+  </div>
+  <div class="status-item">
+    <span class="status-dot green"></span>
+    OBS: OK
+  </div>
+  <div class="status-item" style="color:var(--color-scene)">Scene: MM_Camera</div>
+  <div class="status-item">
+    <span class="status-dot yellow"></span>
+    Session: Recording
+  </div>
+  <div class="status-item">Segments: 4</div>
+  <div class="status-spacer"></div>
+  <div class="status-item" style="color:var(--text-muted)">v2.0 mockup</div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button class="modal-close" onclick="toggleSettings()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="modal-section-title">Profile Management</div>
+        <div class="modal-row">
+          <label>Active Profile</label>
+          <select>
+            <option>Main</option>
+            <option>Gaming</option>
+            <option>Music Production</option>
+          </select>
+        </div>
+        <div class="modal-btn-row">
+          <button class="modal-btn">Save Profile</button>
+          <button class="modal-btn">Copy Profile</button>
+          <button class="modal-btn">New Profile</button>
+          <button class="modal-btn danger">Delete Profile</button>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">MIDI Device</div>
+        <div class="modal-row">
+          <label>Input</label>
+          <select>
+            <option>MPK mini play 0</option>
+            <option>None</option>
+          </select>
+        </div>
+        <div class="modal-row">
+          <label>Output</label>
+          <select>
+            <option>MPK mini play 1</option>
+            <option>None</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">General</div>
+        <div class="modal-row">
+          <label>Start minimized</label>
+          <input type="checkbox" style="flex:0;width:18px;height:18px;" />
+        </div>
+        <div class="modal-row">
+          <label>Auto-connect</label>
+          <input type="checkbox" checked style="flex:0;width:18px;height:18px;" />
+        </div>
+        <div class="modal-row">
+          <label>MIDI Feedback</label>
+          <input type="checkbox" checked style="flex:0;width:18px;height:18px;" />
+        </div>
+        <div class="modal-row">
+          <label>Log level</label>
+          <select>
+            <option>Info</option>
+            <option>Debug</option>
+            <option>Warning</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── PAD DATA ───
+const bankAData = [
+  { n: 16, label: 'Mute Mic', type: 'mute', plugin: true },
+  { n: 17, label: 'Deafen', type: 'mute', plugin: true },
+  { n: 18, label: 'Camera', type: 'scene' },
+  { n: 19, label: 'Screen', type: 'scene' },
+  { n: 20, label: 'Start Rec', type: 'record' },
+  { n: 21, label: 'Stop Session', type: 'session' },
+  { n: 22, label: 'Marker', type: 'session' },
+  { n: 23, label: 'Replay', type: 'replay' },
+];
+
+const bankBData = [
+  { n: 24, label: 'VoiceScribe', type: 'plugin', plugin: true },
+  { n: 25, label: 'Sample: Kick', type: 'plugin', plugin: true },
+  { n: 26, label: 'Sample: HiHat', type: 'plugin', plugin: true },
+  { n: 27, label: 'Sample: Snare', type: 'plugin', plugin: true },
+  { n: 28, label: 'Launch OBS', type: 'system' },
+  { n: 29, label: 'Vol Up', type: 'system' },
+  { n: 30, label: '', type: 'empty' },
+  { n: 31, label: '', type: 'empty' },
+];
+
+const colorMap = {
+  scene: 'var(--color-scene)', mute: 'var(--color-mute)',
+  session: 'var(--color-session)', record: 'var(--color-record)',
+  replay: 'var(--color-replay)', system: 'var(--color-system)',
+  plugin: 'var(--color-plugin)', empty: 'transparent',
+};
+
+function createPad(data) {
+  const pad = document.createElement('div');
+  pad.className = 'pad' + (data.type === 'empty' ? ' empty' : '');
+  pad.dataset.note = data.n;
+  pad.dataset.type = data.type;
+  pad.innerHTML = `
+    <span class="pad-number">${data.n}</span>
+    ${data.plugin ? '<span class="lock-icon">&#128274;</span>' : ''}
+    <span class="pad-label">${data.label || '---'}</span>
+    <span class="pad-indicator" style="background:${colorMap[data.type]}"></span>
+  `;
+  pad.addEventListener('click', () => selectPad(pad, data));
+  return pad;
+}
+
+const bankAEl = document.getElementById('bankA');
+const bankBEl = document.getElementById('bankB');
+bankAData.forEach(d => bankAEl.appendChild(createPad(d)));
+bankBData.forEach(d => bankBEl.appendChild(createPad(d)));
+
+// ─── PAD SELECTION ───
+let selectedPad = null;
+
+function selectPad(padEl, data) {
+  if (selectedPad) selectedPad.classList.remove('selected');
+  padEl.classList.add('selected');
+  selectedPad = padEl;
+  showProperties(data);
+}
+
+function showProperties(data) {
+  const panel = document.getElementById('propsPanel');
+  const isPlugin = data.plugin;
+  const currentAction = data.type !== 'empty' ? data.type : null;
+  const padIndex = data.n - (data.n >= 24 ? 24 : 16) + 1;
+
+  panel.innerHTML = `
+    <div class="props-header">
+      <h3><span class="pad-badge">Pad ${padIndex}</span> (note ${data.n})</h3>
+    </div>
+    <div class="props-current">Current: <strong>${data.label || 'Not assigned'}</strong></div>
+
+    <div class="props-section">
+      <div class="props-field">
+        <label>Label</label>
+        <input type="text" value="${data.label}" placeholder="Pad label...">
+      </div>
+      <div class="props-field">
+        <label>Hotkey</label>
+        <input type="text" value="${data.n === 16 ? 'Ctrl+Shift+M' : ''}" placeholder="Click to set hotkey...">
+      </div>
+    </div>
+
+    <div class="props-section">
+      <div class="props-section-title">Assign Action</div>
+
+      <div class="action-group">
+        <div class="action-group-label">System</div>
+        <div class="action-grid">
+          <div class="action-chip system ${currentAction === 'system' ? 'active' : ''}" onclick="clickChip(this)">Key</div>
+          <div class="action-chip system" onclick="clickChip(this)">AppKey</div>
+          <div class="action-chip system" onclick="clickChip(this)">Shell</div>
+          <div class="action-chip system" onclick="clickChip(this)">Launch</div>
+          <div class="action-chip system" onclick="clickChip(this)">Vol</div>
+          <div class="action-chip system" onclick="clickChip(this)">Scroll</div>
+        </div>
+      </div>
+
+      <div class="action-group">
+        <div class="action-group-label">OBS</div>
+        <div class="action-grid">
+          <div class="action-chip scene ${currentAction === 'scene' ? 'active' : ''}" onclick="clickChip(this)">Screen</div>
+          <div class="action-chip scene" onclick="clickChip(this)">Camera</div>
+          <div class="action-chip scene" onclick="clickChip(this)">PiP</div>
+          <div class="action-chip scene" onclick="clickChip(this)">Cam+App</div>
+          <div class="action-chip mute ${currentAction === 'mute' ? 'active' : ''}" onclick="clickChip(this)">Mute Mic</div>
+          <div class="action-chip mute" onclick="clickChip(this)">Mute Desk</div>
+          <div class="action-chip mute" onclick="clickChip(this)">Mute AUX</div>
+          <div class="action-chip session ${currentAction === 'session' ? 'active' : ''}" onclick="clickChip(this)">Session</div>
+          <div class="action-chip record ${currentAction === 'record' ? 'active' : ''}" onclick="clickChip(this)">Record</div>
+          <div class="action-chip replay ${currentAction === 'replay' ? 'active' : ''}" onclick="clickChip(this)">Replay</div>
+        </div>
+      </div>
+
+      <div class="action-group">
+        <div class="action-group-label">VM</div>
+        <div class="action-grid">
+          <div class="action-chip plugin" onclick="clickChip(this)">Mic Mute</div>
+          <div class="action-chip plugin" onclick="clickChip(this)">Desk Mute</div>
+          <div class="action-chip plugin" onclick="clickChip(this)">EQ</div>
+          <div class="action-chip plugin" onclick="clickChip(this)">Gate</div>
+        </div>
+      </div>
+
+      <button class="btn-clear" onclick="clearAction()">Clear Assignment</button>
+    </div>
+
+    ${isPlugin ? `
+    <div class="props-section">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted)">
+        <span>&#128274;</span> Managed by plugin &mdash; some fields read-only
+      </div>
+    </div>
+    ` : ''}
+  `;
+}
+
+function showEmptyProperties() {
+  document.getElementById('propsPanel').innerHTML = `
+    <div class="props-empty">
+      <div class="icon">&#127899;</div>
+      <div class="hint">Select a pad to view<br>and edit its properties</div>
+    </div>
+  `;
+}
+
+function clickChip(el) {
+  const section = el.closest('.props-section');
+  section.querySelectorAll('.action-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  el.style.transform = 'scale(0.93)';
+  setTimeout(() => el.style.transform = '', 100);
+}
+
+function clearAction() {
+  document.querySelectorAll('#propsPanel .action-chip').forEach(c => c.classList.remove('active'));
+}
+
+showEmptyProperties();
+setTimeout(() => { const p = bankAEl.querySelector('.pad'); if (p) p.click(); }, 300);
+
+// ─── PRESET SWITCHING ───
+function switchPreset(chip) {
+  document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  chip.style.transform = 'scale(0.95)';
+  setTimeout(() => chip.style.transform = '', 120);
+}
+
+function showNewPreset() {
+  const input = document.getElementById('newPresetInput');
+  const btn = document.getElementById('presetAddBtn');
+  if (input.classList.contains('visible')) {
+    if (input.value.trim()) {
+      const chip = document.createElement('div');
+      chip.className = 'preset-chip';
+      chip.textContent = input.value.trim();
+      chip.onclick = function() { switchPreset(this); };
+      btn.parentNode.insertBefore(chip, input);
+      input.value = '';
+    }
+    input.classList.remove('visible');
+    btn.style.display = '';
+  } else {
+    input.classList.add('visible');
+    input.focus();
+    btn.style.display = 'none';
+  }
+}
+
+document.getElementById('newPresetInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { document.getElementById('presetAddBtn').style.display = ''; showNewPreset(); }
+  if (e.key === 'Escape') { this.value = ''; this.classList.remove('visible'); document.getElementById('presetAddBtn').style.display = ''; }
+});
+
+// ─── SETTINGS MODAL ───
+function toggleSettings() {
+  document.getElementById('settingsModal').classList.toggle('visible');
+}
+document.getElementById('settingsModal').addEventListener('click', function(e) {
+  if (e.target === this) toggleSettings();
+});
+
+// ─── ZONE TABS ───
+function switchZoneTab(tab) {
+  const zone = tab.dataset.zone;
+  const tabName = tab.dataset.tab;
+  document.querySelectorAll(`.zone-tab[data-zone="${zone}"]`).forEach(t => t.classList.remove('active'));
+  document.querySelectorAll(`.zone-content-area[data-zone="${zone}"]`).forEach(c => c.classList.remove('active'));
+  tab.classList.add('active');
+  document.querySelector(`.zone-content-area[data-zone="${zone}"][data-tab="${tabName}"]`).classList.add('active');
+}
+
+// ─── VERTICAL RESIZE (top/bottom split) ───
+const resizeV = document.getElementById('resizeHandleV');
+const bottomSection = document.getElementById('bottomSection');
+let isResizingV = false;
+
+resizeV.addEventListener('mousedown', (e) => {
+  isResizingV = true;
+  resizeV.classList.add('active');
+  document.body.style.cursor = 'ns-resize';
+  e.preventDefault();
+});
+
+// ─── HORIZONTAL RESIZE (left/right zones) ───
+const resizeH = document.getElementById('resizeHandleH');
+const zoneLeft = document.getElementById('zoneLeft');
+const zoneRight = document.getElementById('zoneRight');
+let isResizingH = false;
+let resizeHStart = 0;
+let leftStartWidth = 0;
+
+resizeH.addEventListener('mousedown', (e) => {
+  isResizingH = true;
+  resizeH.classList.add('active');
+  document.body.style.cursor = 'ew-resize';
+  resizeHStart = e.clientX;
+  leftStartWidth = zoneLeft.getBoundingClientRect().width;
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (isResizingV) {
+    const windowH = window.innerHeight;
+    const statusBarH = 28;
+    const newH = windowH - e.clientY - statusBarH;
+    const clamped = Math.max(80, Math.min(newH, windowH * 0.5));
+    bottomSection.style.height = clamped + 'px';
+  }
+  if (isResizingH) {
+    const totalW = bottomSection.getBoundingClientRect().width - 5; // minus handle width
+    const delta = e.clientX - resizeHStart;
+    let newLeftW = leftStartWidth + delta;
+    newLeftW = Math.max(200, Math.min(newLeftW, totalW - 200));
+    const pct = (newLeftW / totalW) * 100;
+    zoneLeft.style.flex = 'none';
+    zoneLeft.style.width = pct + '%';
+    zoneRight.style.flex = '1';
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  if (isResizingV) {
+    isResizingV = false;
+    resizeV.classList.remove('active');
+    document.body.style.cursor = '';
+  }
+  if (isResizingH) {
+    isResizingH = false;
+    resizeH.classList.remove('active');
+    document.body.style.cursor = '';
+  }
+});
+</script>
+</body>
+</html>

@@ -43,6 +43,8 @@ KNOB_POINTER_OUTLINE = (100, 110, 180, 255)
 KNOB_GLOW_RADIUS = 7.0
 KNOB_POINTER_RADIUS = 4.0
 KNOB_TRACK_THICKNESS = 6.0
+
+
 KNOB_VALUE_THICKNESS = 7.0
 
 CHILD_ROUNDING = 8
@@ -60,6 +62,9 @@ _on_pad_click_cb = None
 _on_pad_edit_cb = None
 _on_pad_swap_cb = None
 _on_knob_edit_cb = None
+_on_pad_select_cb = None
+
+_DOUBLE_CLICK_THRESHOLD = 0.3  # seconds
 
 _swap_mode_note: int | None = None
 
@@ -82,6 +87,12 @@ def set_pad_swap_callback(cb):
 def set_knob_edit_callback(cb):
     global _on_knob_edit_cb
     _on_knob_edit_cb = cb
+
+
+def set_pad_select_callback(cb):
+    """Set callback for single-click pad selection (shows properties)."""
+    global _on_pad_select_cb
+    _on_pad_select_cb = cb
 
 
 def _note_to_human(note: int) -> int:
@@ -238,6 +249,12 @@ def create_pad_grid(parent="pad_area", knobs=None):
         with dpg.group(horizontal=True):
             dpg.add_spacer(width=8)
             with dpg.group():
+                # Bank labels
+                with dpg.group(horizontal=True):
+                    dpg.add_text("Bank A", color=(85, 88, 100))
+                    dpg.add_spacer(width=PAD_W * 4 + PAD_SPACING * 3 - 60)
+                    dpg.add_text("Bank B", color=(85, 88, 100))
+                dpg.add_spacer(height=2)
                 with dpg.group(horizontal=True):
                     _add_pad_row(TOP_ROW_NOTES)
                 dpg.add_spacer(height=PAD_SPACING)
@@ -452,8 +469,17 @@ def _create_pad_widget(note: int, default_label: str):
     def make_swap_cb(n=note):
         return lambda: _on_swap_click(n)
 
+    def make_drop_cb(n=note):
+        def cb(sender, app_data):
+            drag_note = app_data
+            if drag_note != n and _on_pad_swap_cb:
+                _on_pad_swap_cb(drag_note, n)
+        return cb
+
     with dpg.child_window(tag=container_tag, width=PAD_W, height=PAD_H,
-                          border=True, no_scrollbar=True):
+                          border=True, no_scrollbar=True,
+                          drop_callback=make_drop_cb(),
+                          payload_type="pad_swap"):
         with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp,
                        pad_outerX=False, no_pad_innerX=True):
             dpg.add_table_column(init_width_or_weight=0.3)
@@ -461,6 +487,7 @@ def _create_pad_widget(note: int, default_label: str):
             dpg.add_table_column(init_width_or_weight=0.3)
             with dpg.table_row():
                 edit_btn = dpg.add_button(
+                    tag=f"pad_edit_{note}",
                     label="\u270E", width=26, height=TOP_ROW_H, callback=make_edit_cb()
                 )
                 dpg.bind_item_theme(edit_btn, _get_icon_btn_theme())
@@ -476,6 +503,10 @@ def _create_pad_widget(note: int, default_label: str):
             callback=make_body_cb(),
         )
         dpg.bind_item_theme(btn, _get_body_btn_theme())
+        # Make pad body a drag source for DnD reordering
+        with dpg.drag_payload(parent=btn, payload_type="pad_swap",
+                              drag_data=note):
+            dpg.add_text(default_label, tag=f"pad_drag_label_{note}")
 
         with dpg.table(header_row=False, policy=dpg.mvTable_SizingStretchProp,
                        pad_outerX=False, no_pad_innerX=True):
@@ -512,8 +543,21 @@ def _on_pad_body_click(note: int):
         if source != note and _on_pad_swap_cb:
             _on_pad_swap_cb(source, note)
         return
-    if _on_pad_click_cb:
-        _on_pad_click_cb(note)
+    # Single click = select (show properties), double click = execute
+    now = time.monotonic()
+    last = _pad_press_times.get(note, 0.0)
+    _pad_press_times[note] = now
+    if now - last < _DOUBLE_CLICK_THRESHOLD:
+        # Double click — execute the action
+        _pad_press_times[note] = 0.0  # Reset to prevent triple-click
+        if _on_pad_click_cb:
+            _on_pad_click_cb(note)
+    else:
+        # Single click — select for editing
+        if _on_pad_select_cb:
+            _on_pad_select_cb(note)
+        elif _on_pad_edit_cb:
+            _on_pad_edit_cb(note)
 
 
 def _on_swap_click(note: int):
@@ -560,18 +604,43 @@ def update_pad_labels(pads):
         tags = _pad_tags.get(pad.note)
         if tags and dpg.does_item_exist(tags["body"]):
             dpg.set_item_label(tags["body"], pad.label)
+        drag_tag = f"pad_drag_label_{pad.note}"
+        if dpg.does_item_exist(drag_tag):
+            dpg.set_value(drag_tag, pad.label)
 
 
-def overlay_plugin_pad_labels(labels: dict[int, str]):
+def update_single_pad_label(note: int, label: str):
+    """Update just one pad's label without touching others."""
+    tags = _pad_tags.get(note)
+    if tags and dpg.does_item_exist(tags["body"]):
+        dpg.set_item_label(tags["body"], label)
+    drag_tag = f"pad_drag_label_{note}"
+    if dpg.does_item_exist(drag_tag):
+        dpg.set_value(drag_tag, label)
+
+
+def overlay_plugin_pad_labels(labels: dict[int, str], locked_notes: set[int] | None = None):
+    """Update pad labels from plugins. Optionally mark locked pads."""
+    locked = locked_notes or set()
     for note, label in labels.items():
         tags = _pad_tags.get(note)
         if tags and dpg.does_item_exist(tags["body"]):
             dpg.set_item_label(tags["body"], label)
+        drag_tag = f"pad_drag_label_{note}"
+        if dpg.does_item_exist(drag_tag):
+            dpg.set_value(drag_tag, label)
     for note in PAD_NOTES:
         swap_tag = f"pad_swap_{note}"
         if dpg.does_item_exist(swap_tag):
             is_plugin = note in labels
             dpg.configure_item(swap_tag, show=not is_plugin)
+        # Show lock indicator on edit button for locked pads
+        edit_tag = f"pad_edit_{note}"
+        if dpg.does_item_exist(edit_tag):
+            if note in locked:
+                dpg.configure_item(edit_tag, label="L", enabled=False)
+            else:
+                dpg.configure_item(edit_tag, label="\u270E", enabled=True)
 
 
 def flash_pad(note: int, velocity: int = 127):

@@ -42,6 +42,7 @@ class MidiListener:
         self.event_queue = event_queue
         self._thread = None
         self._running = False
+        self._active_port = None
         self.port_name = None
         self.connected = False
         self._log = log_fn or (lambda *args, **kwargs: None)
@@ -65,8 +66,22 @@ class MidiListener:
     
     def stop(self):
         self._running = False
+        # Close any open port to unblock the read loop
+        if hasattr(self, '_active_port') and self._active_port is not None:
+            try:
+                self._active_port.close()
+            except Exception:
+                pass
         if self._thread:
             self._thread.join(timeout=2)
+
+    def reconnect(self):
+        """Force reconnect: stop current connection, restart listener thread."""
+        self._emit_log("info", "MIDI reconnect requested...")
+        self.stop()
+        self.connected = False
+        self.port_name = None
+        self.start()
     
     def _run(self):
         warned_missing = False
@@ -86,6 +101,7 @@ class MidiListener:
             try:
                 warned_missing = False
                 with mido.open_input(self.port_name) as port:
+                    self._active_port = port
                     self.connected = True
                     self._emit_log("info", f"Connected to MIDI input: {self.port_name}")
                     for msg in port:
@@ -98,6 +114,8 @@ class MidiListener:
                 self.connected = False
                 self._emit_log("error", f"MIDI input '{self.port_name}' failed: {exc}")
                 time.sleep(1)
+            finally:
+                self._active_port = None
     
     def _normalize(self, msg) -> MidiEvent | None:
         ts = time.time()
