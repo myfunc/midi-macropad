@@ -356,6 +356,51 @@ body {
 .settings-toggle input { accent-color: var(--accent); cursor: pointer; }
 .settings-toggle-label { color: var(--text-secondary); min-width: 24px; }
 
+/* ── Voicemeeter ── */
+.vm-panel-content { padding: 10px 12px; height: 100%; overflow-y: auto; font-size: 12px; }
+.vm-section-title {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 6px;
+  display: flex; align-items: center; gap: 6px;
+}
+.vm-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border-subtle); }
+.vm-strips { display: flex; flex-direction: column; gap: 3px; }
+.vm-strip-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 6px; background: var(--bg-secondary);
+}
+.vm-strip-name { font-weight: 600; min-width: 65px; font-size: 11px; }
+.vm-strip-device { flex: 1; color: var(--text-muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vm-strip-gain { font-size: 10px; color: var(--text-secondary); min-width: 45px; text-align: right; font-family: monospace; }
+.vm-mute-indicator {
+  width: 16px; height: 16px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; flex-shrink: 0;
+}
+.vm-mute-indicator.muted { background: #FF6B6B; color: #fff; }
+.vm-mute-indicator.live { background: var(--bg-tertiary); color: transparent; }
+.vm-bus-badges { display: flex; gap: 3px; }
+.vm-bus-badge {
+  padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+}
+.vm-bus-badge.active { background: rgba(100,180,255,0.2); color: #64B4FF; }
+.vm-bus-badge.inactive { background: var(--bg-tertiary); color: var(--text-muted); opacity: 0.4; }
+.vm-badge { padding: 1px 6px; border-radius: 3px; font-size: 8px; font-weight: 700; }
+.vm-proc-row { display: flex; gap: 5px; flex-wrap: wrap; }
+.vm-proc-badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.vm-proc-badge.on { background: rgba(90,230,140,0.18); color: #5AE68C; }
+.vm-proc-badge.off { background: var(--bg-tertiary); color: var(--text-muted); }
+.vm-audience { padding: 6px 8px; border-radius: 6px; background: var(--bg-secondary); font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
+.vm-audience-row { display: flex; gap: 6px; align-items: center; }
+.vm-audience-icon { font-size: 13px; width: 18px; text-align: center; }
+.vm-audience-label { color: var(--text-muted); min-width: 80px; }
+.vm-audience-chips { display: flex; gap: 3px; flex-wrap: wrap; }
+.vm-chip { padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 500; }
+.vm-chip.hear { background: rgba(100,180,255,0.15); color: #64B4FF; }
+.vm-chip.send { background: rgba(90,230,140,0.15); color: #5AE68C; }
+.vm-chip.muted { background: rgba(255,107,107,0.15); color: #FF6B6B; text-decoration: line-through; }
+.vm-ducking-row { display: flex; align-items: center; gap: 8px; }
+
 /* ── Dockview theme overrides ── */
 .dockview-theme-dark {
   --dv-background-color: var(--bg-primary);

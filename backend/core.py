@@ -367,5 +367,28 @@ class AppCore:
                 "is_replay_buffer_active": self.obs.is_replay_buffer_active,
                 "scenes": self.obs.scene_names,
             },
+            "voicemeeter": self._get_vm_state(),
             "logs": self.log_buffer[-50:],
         }
+
+    def _get_vm_state(self) -> dict:
+        """Extract Voicemeeter plugin state for API."""
+        vm_plugin = self.plugin_manager.plugins.get("Voicemeeter")
+        if not vm_plugin:
+            return {"connected": False}
+        try:
+            return {
+                "connected": getattr(vm_plugin, '_vm', None) is not None
+                             and getattr(vm_plugin._vm, 'connected', False),
+                "mic_mute": getattr(vm_plugin, '_mic_mute', False),
+                "desk_mute": getattr(vm_plugin, '_desk_mute', False),
+                "eq_on": getattr(vm_plugin, '_eq_on', False),
+                "send2mic": getattr(vm_plugin, '_s2m_b1', False),
+                "gate_on": getattr(vm_plugin, '_gate_on', False),
+                "monitor": getattr(vm_plugin, '_monitor', False),
+                "comp_on": getattr(vm_plugin, '_comp_on', False),
+                "mic_gain": getattr(vm_plugin, '_mic_gain', 0.0),
+                "duck_enabled": getattr(vm_plugin, '_duck_enabled', False),
+            }
+        except Exception:
+            return {"connected": False}

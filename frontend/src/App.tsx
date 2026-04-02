@@ -15,12 +15,14 @@ import { PropertiesPanel } from './panels/PropertiesPanel'
 import { LogPanel } from './panels/LogPanel'
 import { ObsPanel } from './panels/ObsPanel'
 import { SettingsPanel } from './panels/SettingsPanel'
+import { VoicemeeterPanel } from './panels/VoicemeeterPanel'
 
 const components: Record<string, React.FC<any>> = {
   padgrid: PadGridPanel,
   properties: PropertiesPanel,
   log: LogPanel,
   obs: ObsPanel,
+  voicemeeter: VoicemeeterPanel,
   settings: SettingsPanel,
 }
 
@@ -41,6 +43,7 @@ const PANEL_CATALOG = [
   { id: 'properties', title: 'Properties' },
   { id: 'log', title: 'Log' },
   { id: 'obs', title: 'OBS' },
+  { id: 'voicemeeter', title: 'Voicemeeter' },
   { id: 'settings', title: 'Settings' },
 ] as const
 
