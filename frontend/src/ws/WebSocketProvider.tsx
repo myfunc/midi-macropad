@@ -64,7 +64,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     const s = store.getState()
 
     if (msg.type === 'response' && 'id' in msg && msg.id === 'handshake') {
-      s.setInitialState(msg.payload as unknown as Record<string, unknown>)
+      const payload = msg.payload as unknown as Record<string, unknown>
+      console.log('[WS] Handshake received, presets:', (payload.presets as any)?.list?.length)
+      s.setInitialState(payload)
       return
     }
 

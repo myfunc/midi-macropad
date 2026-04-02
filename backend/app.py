@@ -83,23 +83,33 @@ def create_app(core: AppCore) -> FastAPI:
     @app.post("/api/presets/{index}/activate")
     async def activate_preset(index: int):
         if 0 <= index < len(core.config.pad_presets):
-            core.mapper.set_preset(index)
-            import settings
-            settings.put("preset_index", index)
-            core.plugin_manager.on_mode_changed(core.mapper.current_preset.name)
-            core.plugin_manager.notify_preset_changed(core.mapper)
-            core.event_bus.publish("preset.changed", {
-                "index": index,
-                "name": core.mapper.current_preset.name,
-                "pads": core.get_state_snapshot()["pads"],
-            })
-            return {"ok": True, "name": core.mapper.current_preset.name}
+            try:
+                core.mapper.set_preset(index)
+                import settings
+                settings.put("preset_index", index)
+                # These may touch DearPyGui internals in plugins — wrap safely
+                try:
+                    core.plugin_manager.on_mode_changed(core.mapper.current_preset.name)
+                except Exception:
+                    pass
+                try:
+                    core.plugin_manager.notify_preset_changed(core.mapper)
+                except Exception:
+                    pass
+                core.event_bus.publish("preset.changed", {
+                    "index": index,
+                    "name": core.mapper.current_preset.name,
+                    "pads": core.get_state_snapshot()["pads"],
+                })
+                return {"ok": True, "name": core.mapper.current_preset.name}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, 500)
         return JSONResponse({"error": "invalid index"}, 400)
 
     @app.get("/api/plugins")
     async def get_plugins():
         result = []
-        for info in core.plugin_manager.discovered:
+        for info in core.plugin_manager.discover():
             result.append({
                 "name": info["name"],
                 "version": info.get("version", ""),

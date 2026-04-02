@@ -79,8 +79,9 @@ export function PadGridPanel(_props: IDockviewPanelProps) {
   const flashedPads = useAppStore(s => s.flashedPads)
   const selectPad = useAppStore(s => s.selectPad)
 
-  const bankA = [16, 17, 18, 19, 20, 21, 22, 23]
-  const bankB = [24, 25, 26, 27, 28, 29, 30, 31]
+  // MPK Mini Play layout: top row = 20-23, bottom row = 16-19
+  const bankA = [20, 21, 22, 23, 16, 17, 18, 19]
+  const bankB = [28, 29, 30, 31, 24, 25, 26, 27]
 
   function triggerPad(note: number) {
     fetch(`/api/pads/${note}/press`, { method: 'POST' })
