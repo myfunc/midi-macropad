@@ -330,6 +330,31 @@ body {
   cursor: pointer; transition: all var(--transition);
 }
 .settings-btn:hover { background: var(--bg-elevated); border-color: var(--accent); }
+.settings-btn-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.settings-select {
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--chip-radius); padding: 4px 8px;
+  color: var(--text-primary); font-size: 12px; outline: none; min-width: 100px;
+}
+.settings-select:focus { border-color: var(--accent); }
+.settings-input-sm {
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--chip-radius); padding: 4px 8px;
+  color: var(--text-primary); font-size: 12px; outline: none; width: 100px;
+}
+.settings-input-sm:focus { border-color: var(--accent); }
+.settings-input-num {
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--chip-radius); padding: 4px 8px;
+  color: var(--text-primary); font-size: 12px; outline: none; width: 60px; text-align: center;
+}
+.settings-checkbox { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.settings-range { flex: 1; accent-color: var(--accent); cursor: pointer; height: 4px; }
+.settings-toggle {
+  display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11px;
+}
+.settings-toggle input { accent-color: var(--accent); cursor: pointer; }
+.settings-toggle-label { color: var(--text-secondary); min-width: 24px; }
 
 /* ── Dockview theme overrides ── */
 .dockview-theme-dark {

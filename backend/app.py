@@ -146,6 +146,69 @@ def create_app(core: AppCore) -> FastAPI:
             })
         return result
 
+    # ── Settings & Profiles ────────────────────────────────────────────
+
+    @app.get("/api/settings")
+    async def get_settings():
+        import settings
+        return {
+            "values": settings.get_all(),
+            "profiles": settings.list_profiles(),
+            "active_profile": settings.active_profile(),
+        }
+
+    @app.put("/api/settings/{key}")
+    async def put_setting(key: str, body: dict):
+        import settings
+        value = body.get("value")
+        settings.put(key, value)
+        core.event_bus.publish("settings.changed", {"key": key, "value": value})
+        return {"ok": True}
+
+    @app.get("/api/profiles")
+    async def get_profiles():
+        import settings
+        return {
+            "profiles": settings.list_profiles(),
+            "active": settings.active_profile(),
+        }
+
+    @app.post("/api/profiles/{name}/load")
+    async def load_profile(name: str):
+        import settings
+        settings.load_profile(name)
+        core.event_bus.publish("settings.profile_changed", {"name": name})
+        return {"ok": True}
+
+    @app.post("/api/profiles/{name}/save")
+    async def save_profile(name: str):
+        import settings
+        settings.save_profile(name)
+        return {"ok": True}
+
+    @app.post("/api/plugins/{name}/toggle")
+    async def toggle_plugin(name: str):
+        import settings
+        is_loaded = name in core.plugin_manager.enabled
+        if is_loaded:
+            try:
+                core.plugin_manager.unload_plugin(name)
+            except Exception:
+                pass
+        else:
+            for info in core.plugin_manager.discover():
+                if info["name"] == name:
+                    try:
+                        core.plugin_manager.load_plugin(info)
+                    except Exception as exc:
+                        return JSONResponse({"error": str(exc)}, 500)
+                    break
+        settings.put("enabled_plugins", list(core.plugin_manager.enabled))
+        core.event_bus.publish("plugins.changed", {
+            "name": name, "enabled": name in core.plugin_manager.enabled,
+        })
+        return {"ok": True, "enabled": name in core.plugin_manager.enabled}
+
     # ── Operations (async background tasks) ──────────────────────────
 
     @app.post("/api/ops/start")
