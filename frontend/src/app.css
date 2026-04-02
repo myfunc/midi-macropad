@@ -68,6 +68,30 @@ body {
   font-weight: 600;
 }
 .preset-spacer { flex: 1; }
+.toolbar-btn {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent;
+  border-radius: var(--chip-radius); color: var(--text-secondary);
+  cursor: pointer; font-size: 16px; transition: all var(--transition);
+}
+.toolbar-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border); }
+
+/* Panel menu dropdown */
+.panel-menu {
+  position: absolute; top: 100%; right: 0; margin-top: 4px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 8px; min-width: 150px; z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4); padding: 4px 0;
+}
+.panel-menu-item {
+  padding: 6px 14px; font-size: 12px; color: var(--text-secondary);
+  cursor: pointer; transition: all var(--transition);
+}
+.panel-menu-item:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.panel-menu-item.reset { color: var(--text-muted); }
+.panel-menu-item.reset:hover { color: #FF7878; }
+.panel-menu-divider { height: 1px; background: var(--border-subtle); margin: 4px 0; }
 
 /* ── Status Bar ── */
 .status-bar {

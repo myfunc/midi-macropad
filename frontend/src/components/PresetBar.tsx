@@ -1,8 +1,17 @@
+import { useState } from 'react'
 import { useAppStore } from '../stores/useAppStore'
 
-export function PresetBar() {
+interface PresetBarProps {
+  onOpenSettings: () => void
+  onTogglePanel: (id: string, title: string) => void
+  onResetLayout: () => void
+  panels: readonly { id: string; title: string }[]
+}
+
+export function PresetBar({ onOpenSettings, onTogglePanel, onResetLayout, panels }: PresetBarProps) {
   const presets = useAppStore(s => s.presets)
   const currentIndex = useAppStore(s => s.currentPresetIndex)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   function switchPreset(index: number) {
     fetch(`/api/presets/${index}/activate`, { method: 'POST' })
@@ -20,6 +29,42 @@ export function PresetBar() {
         </button>
       ))}
       <div className="preset-spacer" />
+
+      {/* View menu */}
+      <div style={{ position: 'relative' }}>
+        <button
+          className="toolbar-btn"
+          onClick={() => setMenuOpen(!menuOpen)}
+          title="Panels"
+        >
+          &#9783;
+        </button>
+        {menuOpen && (
+          <div className="panel-menu" onMouseLeave={() => setMenuOpen(false)}>
+            {panels.map(p => (
+              <div
+                key={p.id}
+                className="panel-menu-item"
+                onClick={() => { onTogglePanel(p.id, p.title); setMenuOpen(false) }}
+              >
+                {p.title}
+              </div>
+            ))}
+            <div className="panel-menu-divider" />
+            <div
+              className="panel-menu-item reset"
+              onClick={() => { onResetLayout(); setMenuOpen(false) }}
+            >
+              Reset Layout
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Settings gear */}
+      <button className="toolbar-btn" onClick={onOpenSettings} title="Settings">
+        &#9881;
+      </button>
     </div>
   )
 }

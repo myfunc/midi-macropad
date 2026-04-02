@@ -1,7 +1,8 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   DockviewReact,
   type DockviewReadyEvent,
+  type DockviewApi,
   type IWatermarkPanelProps,
 } from 'dockview-react'
 import 'dockview-core/dist/styles/dockview.css'
@@ -34,9 +35,21 @@ function Watermark(_props: IWatermarkPanelProps) {
   )
 }
 
+// Panels that can be toggled from the toolbar
+const PANEL_CATALOG = [
+  { id: 'padgrid', title: 'Pad Grid' },
+  { id: 'properties', title: 'Properties' },
+  { id: 'log', title: 'Log' },
+  { id: 'obs', title: 'OBS' },
+  { id: 'settings', title: 'Settings' },
+] as const
+
 export default function App() {
+  const dockApiRef = useRef<DockviewApi | null>(null)
+
   const onReady = useCallback((event: DockviewReadyEvent) => {
     const api = event.api
+    dockApiRef.current = api
 
     // Try to restore saved layout
     const saved = localStorage.getItem('dockview-layout')
@@ -89,10 +102,33 @@ export default function App() {
     })
   }, [])
 
+  function togglePanel(id: string, title: string) {
+    const api = dockApiRef.current
+    if (!api) return
+    const existing = api.getPanel(id)
+    if (existing) {
+      // Panel exists — focus it
+      existing.api.setActive()
+    } else {
+      // Panel doesn't exist — create it
+      api.addPanel({ id, component: id, title, floating: { width: 400, height: 500 } })
+    }
+  }
+
+  function resetLayout() {
+    localStorage.removeItem('dockview-layout')
+    window.location.reload()
+  }
+
   return (
     <WebSocketProvider>
       <div className="app-root">
-        <PresetBar />
+        <PresetBar
+          onOpenSettings={() => togglePanel('settings', 'Settings')}
+          onTogglePanel={togglePanel}
+          onResetLayout={resetLayout}
+          panels={PANEL_CATALOG}
+        />
         <div className="dock-container">
           <DockviewReact
             components={components}
