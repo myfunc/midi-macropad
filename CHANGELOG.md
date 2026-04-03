@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-04-02 — Web UI
+
+### Added — Web UI (альтернативный фронтенд)
+
+**Архитектура:**
+- React + TypeScript + Vite фронтенд с dockview (свободный докинг панелей)
+- FastAPI + uvicorn бэкенд с WebSocket real-time events
+- pywebview интеграция для desktop shell (опционально)
+- Zustand state management с WebSocket sync
+- `web_main.py` — entry point (--dev, --browser, или pywebview)
+- `launcher.pyw` — tkinter GUI менеджер процессов (double-click запуск)
+- `MIDI Macropad Web.bat` — ярлык для Explorer
+
+**Панели (все dockable — drag/tab/split/float):**
+- **Pad Grid** — 2 банка × 4 пада + 4 knob'а, drag & drop swap, flash при MIDI
+- **Properties** — Action Picker с grouped chips (System/OBS/VM), hotkey, label
+- **Log** — real-time лог с auto-scroll и цветными prefix'ами
+- **OBS** — статус подключения, сцена, запись, replay buffer
+- **Voicemeeter** — strips (MIC/DESKTOP/SEND2MIC), buses, processing, audience, ducking
+- **Voice Scribe** — phase indicator, last output (original + result), prompt cards, chat
+- **Settings** — profiles, MIDI device, general (transpose, caps), plugins toggle, OBS connection
+
+**Инфраструктура:**
+- PresetBar с chips + меню ☰ (открыть любую панель) + ⚙ (Settings)
+- StatusBar с MIDI/OBS/Scene индикаторами
+- Toast уведомления с анимацией
+- Layout persistence на бэкенд (settings.json) с localStorage fallback
+- Multi-tab protection (BroadcastChannel leader election)
+- OperationManager — async background tasks с идемпотентностью и progress
+- RequestLoggingMiddleware — HTTP запросы с таймингом
+- Global exception handler → WebSocket push → toast
+- RotatingFileHandler (5MB × 3)
+- Auto-restart бэкенда при crash (max 3 попытки, backoff)
+- Rebuild UI кнопка в лаунчере (без рестарта бэкенда)
+
+**Headless mode (MACROPAD_HEADLESS=1):**
+- Plugins работают без DearPyGui — headless guards в _refresh_ui, _rebuild_pad_grid, _set_status
+- Plugin poll отключён (DLL thread-safety), MIDI events работают
+- Thread safety: RLock на shared state (preset switch, pad swap, MIDI events)
+
+**REST API:**
+- GET /api/state, /api/pads, /api/presets, /api/plugins, /api/midi/status
+- POST /api/pads/{note}/press, /api/pads/swap, /api/presets/{index}/activate
+- GET/PUT /api/settings/{key}, GET /api/profiles, POST /api/profiles/{name}/load|save
+- POST /api/plugins/{name}/toggle, /api/midi/reconnect
+- GET /api/voice-scribe/state, POST /api/voice-scribe/new-chat
+- POST /api/ops/start, GET /api/ops/{id}, POST /api/ops/{id}/cancel
+
+**Совместимость:**
+- main.py (DearPyGui) НЕ затронут — оба фронтенда работают независимо
+- Общие модули: mapper, midi_listener, audio, settings, plugins — без изменений
+- 3 файла плагинов изменены (только headless guards, обратно совместимо)
+
 ## [Unreleased] - 2026-03-29
 
 ### Added
