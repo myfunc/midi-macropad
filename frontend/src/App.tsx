@@ -12,7 +12,7 @@ import { StatusBar } from './components/StatusBar'
 import { useAppStore } from './stores/useAppStore'
 import { useTabLeader } from './hooks/useTabLeader'
 import { loadLayout, saveLayout } from './hooks/useLayoutPersistence'
-import { PadGridPanel } from './panels/PadGridPanel'
+import { BankAPanel, BankBPanel, KnobsPanel } from './panels/PadGridPanel'
 import { PropertiesPanel } from './panels/PropertiesPanel'
 import { LogPanel } from './panels/LogPanel'
 import { ObsPanel } from './panels/ObsPanel'
@@ -21,7 +21,9 @@ import { VoiceScribePanel } from './panels/VoiceScribePanel'
 import { SettingsPanel } from './panels/SettingsPanel'
 
 const components: Record<string, React.FC<any>> = {
-  padgrid: PadGridPanel,
+  bankA: BankAPanel,
+  bankB: BankBPanel,
+  knobs: KnobsPanel,
   properties: PropertiesPanel,
   log: LogPanel,
   obs: ObsPanel,
@@ -42,7 +44,9 @@ function Watermark(_props: IWatermarkPanelProps) {
 }
 
 const PANEL_CATALOG = [
-  { id: 'padgrid', title: 'Pad Grid' },
+  { id: 'bankA', title: 'Bank A' },
+  { id: 'bankB', title: 'Bank B' },
+  { id: 'knobs', title: 'Knobs' },
   { id: 'properties', title: 'Properties' },
   { id: 'log', title: 'Log' },
   { id: 'obs', title: 'OBS' },
@@ -90,17 +94,25 @@ export default function App() {
   }
 
   function buildDefaultLayout(api: DockviewApi) {
-    const padgrid = api.addPanel({
-      id: 'padgrid', component: 'padgrid', title: 'Pad Grid',
+    const bankA = api.addPanel({
+      id: 'bankA', component: 'bankA', title: 'Bank A',
+    })
+    api.addPanel({
+      id: 'bankB', component: 'bankB', title: 'Bank B',
+      position: { referencePanel: bankA, direction: 'right' },
+    })
+    api.addPanel({
+      id: 'knobs', component: 'knobs', title: 'Knobs',
+      position: { referencePanel: bankA, direction: 'right' },
     })
     api.addPanel({
       id: 'properties', component: 'properties', title: 'Properties',
-      position: { referencePanel: padgrid, direction: 'right' },
+      position: { referencePanel: bankA, direction: 'right' },
       initialWidth: 280,
     })
     const log = api.addPanel({
       id: 'log', component: 'log', title: 'Log',
-      position: { referencePanel: padgrid, direction: 'below' },
+      position: { referencePanel: bankA, direction: 'below' },
       initialHeight: 200,
     })
     api.addPanel({

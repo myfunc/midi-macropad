@@ -1041,9 +1041,4 @@ class VoiceScribePlugin(Plugin):
 
     def _reload_and_refresh_pads(self) -> None:
         self._load_prompts()
-        if self._active:
-            try:
-                from ui.pad_grid import overlay_plugin_pad_labels
-                overlay_plugin_pad_labels(self.get_pad_labels())
-            except Exception:
-                pass
+        # Web UI refreshes pad labels via WebSocket events; no direct UI call needed.

@@ -27,8 +27,15 @@ Desktop.ini
 # Runtime / user data
 logs/
 .macropad.pid
+.launcher.pid
 settings.json
 .env
+
+# User profiles contain secrets (Spotify tokens, OBS passwords)
+profiles/*.json
+
+# Frontend build artifacts
+frontend/tsconfig.tsbuildinfo
 
 # Secrets
 plugins/voice_scribe/.api_key
@@ -52,3 +59,9 @@ backups/
 
 # Sample packs (can be large, user-supplied)
 plugins/sample_player/packs/*/samples/
+
+# Local-only: OBS scene snapshots (kept on disk, not in repo)
+obs_backup/
+
+# Local-only: research notes directory
+researches/

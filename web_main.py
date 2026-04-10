@@ -15,7 +15,7 @@ import webbrowser
 os.environ.setdefault("PYTHONUTF8", "1")
 sys.path.insert(0, os.path.dirname(__file__))
 
-HOST = "127.0.0.1"
+HOST = "10.0.0.27"
 PORT = 8741
 
 
@@ -57,6 +57,7 @@ def main():
         ],
     )
     log = logging.getLogger("web_main")
+    logging.getLogger("hotkey_listener").setLevel(logging.DEBUG)
 
     try:
         from backend.core import AppCore
@@ -94,31 +95,14 @@ def main():
         if args.browser:
             webbrowser.open(base_url)
             log.info(f"Opened browser at {base_url}")
-            try:
-                # Keep alive — check server thread health
-                while server_thread.is_alive():
-                    time.sleep(1)
-                log.warning("Server thread stopped unexpectedly")
-            except KeyboardInterrupt:
-                log.info("Ctrl+C received")
-        else:
-            try:
-                import webview
-                window = webview.create_window(
-                    "MIDI Macropad",
-                    url=base_url,
-                    width=1280, height=820,
-                    min_size=(900, 600),
-                )
-                webview.start()
-            except ImportError:
-                log.warning("pywebview not installed, falling back to browser")
-                webbrowser.open(base_url)
-                try:
-                    while server_thread.is_alive():
-                        time.sleep(1)
-                except KeyboardInterrupt:
-                    pass
+
+        # Keep alive — wait for server thread or Ctrl+C
+        try:
+            while server_thread.is_alive():
+                time.sleep(1)
+            log.warning("Server thread stopped unexpectedly")
+        except KeyboardInterrupt:
+            log.info("Ctrl+C received")
 
         server.should_exit = True
         try:

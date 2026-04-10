@@ -67,6 +67,7 @@ class AppCore:
         )
         self.feedback = FeedbackService(
             self.config.device_name, log_fn=self._runtime_log,
+            mode=settings.get("feedback_mode", "midi"),
         )
         self.plugin_manager.set_runtime_services({"feedback": self.feedback})
 
@@ -115,6 +116,15 @@ class AppCore:
             "feedback": self.feedback,
             "obs": self.obs,
         })
+
+        # Notify plugins about current preset so they activate correctly
+        try:
+            preset = self.mapper.current_preset
+            if preset:
+                self.plugin_manager.on_mode_changed(preset.name)
+                self.plugin_manager.notify_preset_changed(self.mapper)
+        except Exception as exc:
+            self._runtime_log("ERR", f"Initial mode sync failed: {exc}", (255, 80, 80))
 
         self._runtime_log("SYS", "AppCore bootstrapped", (100, 255, 150))
 
@@ -204,6 +214,10 @@ class AppCore:
                     self._runtime_log("PAD",
                         f"{label} (note {event.note}, vel {event.velocity}) [plugin]",
                         (200, 150, 255))
+                    # Push updated pad states (toggle may have changed)
+                    self.event_bus.publish("pads.updated", {
+                        "pads": self.get_state_snapshot()["pads"],
+                    })
                 else:
                     mapping = self.mapper.lookup_pad(event.note)
                     if mapping:
@@ -239,7 +253,7 @@ class AppCore:
             self._runtime_log("ERR", f"Event error: {exc}", (255, 80, 80))
 
     # ------------------------------------------------------------------
-    # Action execution (mirrors main.py _execute_action)
+    # Action execution
     # ------------------------------------------------------------------
 
     def _execute_action(self, action) -> None:
@@ -326,6 +340,13 @@ class AppCore:
         for note_str, label in {str(k): v for k, v in plugin_labels.items()}.items():
             if note_str in pads:
                 pads[note_str]["label"] = label
+
+        # Plugin toggle states overlay
+        plugin_states = self.plugin_manager.get_all_pad_states()
+        for note_int, state in plugin_states.items():
+            note_str = str(note_int)
+            if note_str in pads:
+                pads[note_str]["toggle_state"] = state
 
         # Knobs
         knobs = []

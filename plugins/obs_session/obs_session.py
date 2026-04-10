@@ -253,11 +253,6 @@ class OBSSessionPlugin(Plugin):
                 else:
                     self._slot_map[note] = DEFAULT_SLOT_MAP.get(note)
 
-        # Migrate old single working_scene setting
-        old_ws = saved.get("working_scene")
-        if old_ws and not saved.get("scene_screen"):
-            self.scene_pip = str(old_ws).strip()
-
         self._persist_settings()
 
         self.connected = False

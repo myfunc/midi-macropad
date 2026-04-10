@@ -499,14 +499,126 @@ class MidiCuePlayer:
             self._port = None
 
 
-class FeedbackService:
-    """Single entry point for user-facing MIDI cues."""
+class AudioCuePlayer:
+    """Synthesize cues as audio and play through system output device."""
 
-    def __init__(self, device_name: str, log_fn=None):
+    _SAMPLE_RATE = 44100
+
+    def __init__(self, log_fn=None):
+        self._log = log_fn or (lambda *args, **kwargs: None)
+        self._queue: queue.Queue[str | None] = queue.Queue()
+        self._worker = threading.Thread(target=self._run, daemon=True)
+        self._worker.start()
+
+    @staticmethod
+    def _midi_to_freq(note: int) -> float:
+        return 440.0 * (2.0 ** ((note - 69) / 12.0))
+
+    def _synth_step(self, step: MidiStep, shift: int = 0) -> "numpy.ndarray":
+        import numpy as np
+        sr = self._SAMPLE_RATE
+        dur = step.duration_ms / 1000.0
+        t = np.linspace(0, dur, int(sr * dur), endpoint=False, dtype=np.float32)
+        signal = np.zeros_like(t)
+        amp = (step.velocity / 127.0) * 0.35
+        for note in step.notes:
+            freq = self._midi_to_freq(max(0, min(127, note + shift)))
+            # Sine + soft overtone for warmth
+            signal += amp * np.sin(2 * np.pi * freq * t)
+            signal += amp * 0.2 * np.sin(2 * np.pi * freq * 2 * t)
+        # Envelope: fast attack, smooth release
+        env_len = min(int(sr * 0.01), len(t))
+        rel_len = min(int(sr * 0.05), len(t))
+        envelope = np.ones_like(t)
+        envelope[:env_len] = np.linspace(0, 1, env_len)
+        envelope[-rel_len:] = np.linspace(1, 0, rel_len)
+        signal *= envelope
+        return np.clip(signal, -1.0, 1.0)
+
+    def play(self, cue_id: str) -> bool:
+        if cue_id not in MIDI_CUES:
+            return False
+        self._queue.put(cue_id)
+        return True
+
+    def _run(self) -> None:
+        while True:
+            cue_id = self._queue.get()
+            if cue_id is None:
+                return
+            try:
+                self._play_cue(cue_id)
+            except Exception as exc:
+                self._log("AUDIO_FB", f"Audio cue failed: {exc}", color=(255, 80, 80))
+            finally:
+                self._queue.task_done()
+
+    def _play_cue(self, cue_id: str) -> None:
+        import numpy as np
+        import sounddevice as sd
+
+        cue = MIDI_CUES.get(cue_id)
+        if cue is None:
+            return
+        shift = _transpose if cue_id.startswith("mode.") else 0
+
+        # Build full waveform
+        segments = []
+        for step in cue.steps:
+            segments.append(self._synth_step(step, shift))
+            if step.gap_ms > 0:
+                gap_samples = int(self._SAMPLE_RATE * step.gap_ms / 1000.0)
+                segments.append(np.zeros(gap_samples, dtype=np.float32))
+
+        audio = np.concatenate(segments)
+        vol = cue.volume / 127.0
+        audio *= vol
+
+        sd.play(audio, self._SAMPLE_RATE, blocking=True)
+
+    def close(self) -> None:
+        self._queue.put(None)
+
+
+# Feedback modes
+FEEDBACK_MODE_MIDI = "midi"
+FEEDBACK_MODE_AUDIO = "audio"
+FEEDBACK_MODE_BOTH = "both"
+FEEDBACK_MODE_OFF = "off"
+
+
+class FeedbackService:
+    """Single entry point for user-facing feedback cues.
+
+    Supports two output backends:
+      - MIDI: sends to MPK Mini Play's GM synth
+      - Audio: synthesizes and plays through system audio output
+    """
+
+    def __init__(self, device_name: str, log_fn=None, mode: str = FEEDBACK_MODE_MIDI):
+        self._log = log_fn or (lambda *args, **kwargs: None)
         self._midi = MidiCuePlayer(device_name=device_name, log_fn=log_fn)
+        self._audio = AudioCuePlayer(log_fn=log_fn)
+        self._mode = mode
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: str) -> None:
+        if value in (FEEDBACK_MODE_MIDI, FEEDBACK_MODE_AUDIO, FEEDBACK_MODE_BOTH, FEEDBACK_MODE_OFF):
+            self._mode = value
 
     def emit(self, cue_id: str) -> bool:
-        return self._midi.play(cue_id)
+        if self._mode == FEEDBACK_MODE_OFF:
+            return False
+        sent = False
+        if self._mode in (FEEDBACK_MODE_MIDI, FEEDBACK_MODE_BOTH):
+            sent = self._midi.play(cue_id) or sent
+        if self._mode in (FEEDBACK_MODE_AUDIO, FEEDBACK_MODE_BOTH):
+            sent = self._audio.play(cue_id) or sent
+        return sent
 
     def emit_action(self, cue_id: str = "action.default") -> bool:
         return self.emit(cue_id)
@@ -525,3 +637,4 @@ class FeedbackService:
 
     def close(self) -> None:
         self._midi.close()
+        self._audio.close()

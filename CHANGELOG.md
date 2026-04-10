@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-09 — Legacy cleanup
+
+### Removed — старый Python UI (DearPyGui)
+
+Web UI стал единственным фронтендом. Полностью удалён старый desktop UI.
+
+- `main.py` (1103 строки) — старая точка входа DearPyGui
+- `ui/` — все DearPyGui компоненты (dashboard, pad_grid, pad_editor, quick_action_picker, sidebar_left/right, toolbar, status_bar, volume_panel, midi_log, selection)
+- `app_detector.py` — foreground window detection (использовалось только `main.py`)
+- `MIDI Macropad.bat`, `MIDI Macropad Desktop Shortcut.lnk` — старые ярлыки запуска
+- `docs/ui-mockup-*.html`, `docs/voicemeeter-integration.html` — мокапы прототипа
+- `__pycache__/`, `backups/` — артефакты и старые бэкапы
+
+### Changed
+
+- **`README.md`** полностью переписан под Web UI (убрано упоминание `main.py`, добавлен launcher quickstart).
+- **`.gitignore`**: `obs_backup/` и `researches/` добавлены (локально хранятся, но не в репозитории).
+- **`mapper.py`**: убрано упоминание legacy `[[modes]]` формата в docstring (парсера уже не было).
+- **`plugins/voice_scribe/scribe.py`**: убран lazy-import `ui.pad_grid` в `_reload_and_refresh_pads` — Web UI обновляет labels через WebSocket.
+- **`plugins/obs_session/obs_session.py`**: убран backward-compat код миграции `working_scene` (все settings.json уже смигрированы).
+- **`plugins/voicemeeter/voicemeeter.py`**: убран устаревший комментарий со ссылкой на `main.py`.
+- **`backend/core.py`**: обновлён заголовок секции Action execution (убрана ссылка на `main.py`).
+
+### Migration notes
+
+Если вы запускали приложение через `python main.py` или `MIDI Macropad.bat` — теперь используйте `python launcher.pyw` или `MIDI Macropad Web.bat`.
+
+---
+
 ## [2.0.0] - 2026-04-02 — Web UI
 
 ### Added — Web UI (альтернативный фронтенд)

@@ -68,7 +68,7 @@ def _parse_pad(pad_data: dict) -> PadMapping:
 
 
 def load_config(path: str | Path) -> AppConfig:
-    """Load config from TOML file. Supports both new (pad_presets) and legacy (modes) format."""
+    """Load config from TOML file."""
     data = toml.load(str(path))
 
     cfg = AppConfig()

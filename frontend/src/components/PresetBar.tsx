@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useAppStore } from '../stores/useAppStore'
 
 interface PresetBarProps {
@@ -12,6 +12,15 @@ export function PresetBar({ onOpenSettings, onTogglePanel, onResetLayout, panels
   const presets = useAppStore(s => s.presets)
   const currentIndex = useAppStore(s => s.currentPresetIndex)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement)
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().then(() => setIsFullscreen(false))
+    } else {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true))
+    }
+  }, [])
 
   function switchPreset(index: number) {
     fetch(`/api/presets/${index}/activate`, { method: 'POST' })
@@ -60,6 +69,11 @@ export function PresetBar({ onOpenSettings, onTogglePanel, onResetLayout, panels
           </div>
         )}
       </div>
+
+      {/* Fullscreen */}
+      <button className="toolbar-btn" onClick={toggleFullscreen} title="Fullscreen">
+        {isFullscreen ? '\u2716' : '\u26F6'}
+      </button>
 
       {/* Settings gear */}
       <button className="toolbar-btn" onClick={onOpenSettings} title="Settings">

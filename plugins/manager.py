@@ -267,6 +267,18 @@ class PluginManager:
                           color=(255, 80, 80))
         return labels
 
+    def get_all_pad_states(self) -> dict[int, bool | None]:
+        states: dict[int, bool | None] = {}
+        for name in self.enabled:
+            plugin = self.plugins.get(name)
+            if plugin is None:
+                continue
+            try:
+                states.update(plugin.get_pad_states())
+            except Exception:
+                pass
+        return states
+
     def get_plugin_controlled_notes(self) -> set[int]:
         """Return the set of MIDI notes currently managed by any active plugin."""
         notes: set[int] = set()

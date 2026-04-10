@@ -27,7 +27,10 @@ def create_app(core: AppCore) -> FastAPI:
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=[
+            "http://localhost:5173", "http://127.0.0.1:5173",
+            "http://10.0.0.27:5173", "http://10.0.0.27:8741",
+        ],
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -97,6 +100,44 @@ def create_app(core: AppCore) -> FastAPI:
         })
         return {"ok": True}
 
+    @app.patch("/api/pads/{note}")
+    async def update_pad(note: int, body: dict):
+        """Update pad label, hotkey, and/or action."""
+        pad = core.mapper.registry.get_pad(note)
+        if not pad:
+            return JSONResponse({"error": f"Pad {note} not found"}, 404)
+        label = body.get("label", pad.label)
+        hotkey = body.get("hotkey", pad.hotkey)
+        action_data = body.get("action")
+        # Build action dict from current pad or from body
+        if action_data is None:
+            action_dict = {"type": pad.action_type}
+            action_dict.update(pad.action_data)
+        else:
+            action_dict = action_data
+        log.info("PATCH pad %d: label=%r hotkey=%r action=%r", note, label, hotkey, action_dict)
+        with core._lock:
+            core.mapper.update_pad(note, label, action_dict, hotkey=hotkey)
+            core.hotkeys.reload_bindings(core.mapper)
+        # Verify hotkey was applied
+        updated = core.mapper.registry.get_pad(note)
+        log.info("PATCH pad %d result: hotkey=%r action_type=%r", note, updated.hotkey if updated else '?', updated.action_type if updated else '?')
+        core.event_bus.publish("pads.updated", {
+            "pads": core.get_state_snapshot()["pads"],
+        })
+        return {"ok": True}
+
+    @app.delete("/api/pads/{note}/action")
+    async def clear_pad_action(note: int):
+        """Clear pad action and hotkey."""
+        with core._lock:
+            core.mapper.update_pad(note, "", {"type": ""}, hotkey="")
+            core.hotkeys.reload_bindings(core.mapper)
+        core.event_bus.publish("pads.updated", {
+            "pads": core.get_state_snapshot()["pads"],
+        })
+        return {"ok": True}
+
     @app.get("/api/presets")
     async def get_presets():
         return {
@@ -124,6 +165,11 @@ def create_app(core: AppCore) -> FastAPI:
                 core.plugin_manager.notify_preset_changed(core.mapper)
             except Exception as exc:
                 log.warning("notify_preset_changed error: %s", exc)
+            # Play mode melody via MIDI feedback
+            mode_key = core.mapper.current_preset.name.lower().replace(" ", "_")
+            cue_id = f"mode.{mode_key}"
+            core.feedback.emit(cue_id)
+
             core.event_bus.publish("preset.changed", {
                 "index": index,
                 "name": core.mapper.current_preset.name,
@@ -162,6 +208,9 @@ def create_app(core: AppCore) -> FastAPI:
         import settings
         value = body.get("value")
         settings.put(key, value)
+        # Apply runtime side-effects
+        if key == "feedback_mode":
+            core.feedback.mode = value
         core.event_bus.publish("settings.changed", {"key": key, "value": value})
         return {"ok": True}
 
@@ -221,8 +270,9 @@ def create_app(core: AppCore) -> FastAPI:
             for p in getattr(vs, '_prompt_list', []):
                 system = p.get("system", "")
                 prompts.append({
+                    "pad": p.get("pad", 0),
                     "label": p.get("label", "?"),
-                    "description": (system[:60] + "...") if len(system) > 60 else system,
+                    "system": system,
                 })
             return {
                 "active": getattr(vs, '_active', False),
@@ -234,11 +284,10 @@ def create_app(core: AppCore) -> FastAPI:
                 "last_prompt_label": getattr(vs, '_last_prompt_label', ''),
                 "chat_model": getattr(vs, 'chat_model', ''),
                 "transcription_model": getattr(vs, 'transcription_model', ''),
-                "input_language": getattr(vs, 'input_language', ''),
-                "output_language": getattr(vs, 'output_language', ''),
                 "prompts": prompts,
                 "chat_history_length": len(getattr(vs, '_chat_history', [])),
                 "mic_device": getattr(vs, 'mic_device', None),
+                "whisper_prompt": getattr(vs, '_whisper_prompt', ''),
             }
         except Exception as exc:
             return JSONResponse({"error": str(exc)}, 500)
@@ -255,6 +304,80 @@ def create_app(core: AppCore) -> FastAPI:
             vs._last_result = ""
             vs._status = "New chat"
             core._runtime_log("VS", "New chat started", (100, 255, 150))
+            return {"ok": True}
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, 500)
+
+    @app.put("/api/voice-scribe/prompts")
+    async def voice_scribe_save_prompts(body: dict):
+        """Bulk save all prompts + whisper_prompt."""
+        vs = core.plugin_manager.plugins.get("Voice Scribe")
+        if not vs:
+            return JSONResponse({"error": "Plugin not loaded"}, 404)
+        try:
+            prompt_list = body.get("prompts", [])
+            whisper_prompt = body.get("whisper_prompt", "")
+            # Update plugin state
+            vs._whisper_prompt = whisper_prompt.strip()
+            vs._prompt_list = []
+            for p in prompt_list:
+                entry = {
+                    "pad": int(p.get("pad", 0)),
+                    "label": p.get("label", "").strip(),
+                }
+                system = p.get("system", "").strip()
+                if system:
+                    entry["system"] = system
+                vs._prompt_list.append(entry)
+            vs._prompt_list.sort(key=lambda x: x["pad"])
+            # Persist and reload
+            vs._save_prompts_to_file()
+            vs._load_prompts()
+            core._runtime_log("VS", "Prompts saved from Web UI", (80, 255, 120))
+            return {"ok": True, "count": len(vs._prompt_list)}
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, 500)
+
+    @app.post("/api/voice-scribe/prompts")
+    async def voice_scribe_add_prompt(body: dict):
+        """Add a single prompt."""
+        vs = core.plugin_manager.plugins.get("Voice Scribe")
+        if not vs:
+            return JSONResponse({"error": "Plugin not loaded"}, 404)
+        try:
+            label = body.get("label", "New Prompt").strip()
+            system = body.get("system", "").strip()
+            # Find next free pad number
+            used_pads = {p.get("pad", 0) for p in vs._prompt_list}
+            pad = 1
+            while pad in used_pads:
+                pad += 1
+            entry = {"pad": pad, "label": label}
+            if system:
+                entry["system"] = system
+            vs._prompt_list.append(entry)
+            vs._prompt_list.sort(key=lambda x: x["pad"])
+            vs._save_prompts_to_file()
+            vs._load_prompts()
+            core._runtime_log("VS", f"Prompt added: {label} (pad {pad})", (80, 255, 120))
+            return {"ok": True, "pad": pad}
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, 500)
+
+    @app.delete("/api/voice-scribe/prompts/{pad}")
+    async def voice_scribe_delete_prompt(pad: int):
+        """Delete a prompt by pad number."""
+        vs = core.plugin_manager.plugins.get("Voice Scribe")
+        if not vs:
+            return JSONResponse({"error": "Plugin not loaded"}, 404)
+        try:
+            before = len(vs._prompt_list)
+            vs._prompt_list = [p for p in vs._prompt_list if p.get("pad") != pad]
+            if len(vs._prompt_list) == before:
+                return JSONResponse({"error": f"Pad {pad} not found"}, 404)
+            vs._save_prompts_to_file()
+            vs._load_prompts()
+            core._runtime_log("VS", f"Prompt deleted: pad {pad}", (255, 180, 80))
             return {"ok": True}
         except Exception as exc:
             return JSONResponse({"error": str(exc)}, 500)

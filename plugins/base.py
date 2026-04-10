@@ -62,6 +62,13 @@ class Plugin(ABC):
         """Return custom pad labels ``{note: label}`` for UI display."""
         return {}
 
+    def get_pad_states(self) -> dict[int, bool | None]:
+        """Return toggle states ``{note: True/False/None}`` for UI display.
+
+        True = ON/active, False = OFF/inactive, None = not a toggle.
+        """
+        return {}
+
     def on_mode_changed(self, mode_name: str) -> None:
         pass
 

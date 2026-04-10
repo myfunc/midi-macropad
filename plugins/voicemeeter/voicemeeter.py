@@ -439,8 +439,6 @@ class VoicemeeterPlugin(Plugin):
 
         return False
 
-    # Joystick is now used globally for mode switching (see main.py)
-
     # ── helpers ─────────────────────────────────────────────────────────────────
 
     def _process_ducking(self):
@@ -520,6 +518,30 @@ class VoicemeeterPlugin(Plugin):
                 out[note] = "COMP" if self._comp_on else "COMP OFF"
             elif aid == "reconnect":
                 out[note] = "RESYNC"
+        return out
+
+    def get_pad_states(self) -> dict[int, bool | None]:
+        if not self._active:
+            return {}
+        self._ensure_action_mapping()
+        out: dict[int, bool | None] = {}
+        for note, aid in self._note_to_action.items():
+            if aid == "mic_mute":
+                out[note] = not self._mic_mute  # MIC active = not muted
+            elif aid == "desk_mute":
+                out[note] = not self._desk_mute
+            elif aid == "eq_toggle":
+                out[note] = self._eq_on
+            elif aid == "send2mic":
+                out[note] = self._s2m_b1
+            elif aid == "gate":
+                out[note] = self._gate_on
+            elif aid == "monitor":
+                out[note] = self._monitor
+            elif aid == "comp":
+                out[note] = self._comp_on
+            elif aid == "reconnect":
+                out[note] = None  # not a toggle
         return out
 
     def get_status(self) -> tuple[str, tuple[int, int, int]] | None:

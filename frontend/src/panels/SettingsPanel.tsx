@@ -131,13 +131,17 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
       <div className="settings-section">
         <div className="settings-section-title">General</div>
         <div className="settings-row">
-          <span className="settings-label">MIDI Feedback</span>
-          <input
-            type="checkbox"
-            className="settings-checkbox"
-            checked={!!vals.midi_feedback}
-            onChange={(e) => saveSetting('midi_feedback', e.target.checked)}
-          />
+          <span className="settings-label">Feedback</span>
+          <select
+            className="settings-select"
+            value={String(vals.feedback_mode || 'midi')}
+            onChange={(e) => saveSetting('feedback_mode', e.target.value)}
+          >
+            <option value="midi">MIDI (keyboard)</option>
+            <option value="audio">Audio (output)</option>
+            <option value="both">Both</option>
+            <option value="off">Off</option>
+          </select>
         </div>
         <div className="settings-row">
           <span className="settings-label">Transpose</span>

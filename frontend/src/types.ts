@@ -7,6 +7,7 @@ export interface PadEntry {
   hotkey: string
   locked: boolean
   color: [number, number, number]
+  toggle_state?: boolean | null  // true=ON, false=OFF, null/undefined=not a toggle
 }
 
 export interface KnobEntry {

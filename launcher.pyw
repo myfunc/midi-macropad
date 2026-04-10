@@ -26,7 +26,7 @@ FRONTEND_DIR = ROOT / "frontend"
 PID_FILE = ROOT / ".launcher.pid"
 LOCK_FILE = ROOT / ".launcher.lock"
 
-HOST = "127.0.0.1"
+HOST = "10.0.0.27"
 PORT = 8741
 URL = f"http://{HOST}:{PORT}"
 
@@ -49,7 +49,6 @@ def _read_pid() -> int | None:
 
 def _is_process_alive(pid: int) -> bool:
     try:
-        # Signal 0 checks if process exists without killing it
         os.kill(pid, 0)
         return True
     except (OSError, ProcessLookupError):
@@ -71,7 +70,6 @@ def _check_duplicate() -> bool:
     old_pid = _read_pid()
     if old_pid and _is_process_alive(old_pid) and _is_port_in_use(PORT):
         return True
-    # Stale PID — clean up
     if old_pid and not _is_process_alive(old_pid):
         PID_FILE.unlink(missing_ok=True)
     return False
@@ -99,7 +97,6 @@ def _needs_build() -> bool:
     dist = FRONTEND_DIR / "dist" / "index.html"
     if not dist.exists():
         return True
-    # Rebuild if any source file is newer than dist
     dist_mtime = dist.stat().st_mtime
     for f in (FRONTEND_DIR / "src").rglob("*"):
         if f.stat().st_mtime > dist_mtime:
@@ -113,9 +110,7 @@ def run_launcher():
     import tkinter as tk
     from tkinter import ttk
 
-    # Check duplicate before even showing UI
     if _check_duplicate():
-        # Already running — just open browser and exit
         webbrowser.open(URL)
         return
 
@@ -123,11 +118,10 @@ def run_launcher():
 
     root = tk.Tk()
     root.title("MIDI Macropad Launcher")
-    root.geometry("480x380")
+    root.geometry("620x400")
     root.resizable(False, False)
     root.configure(bg="#1E1E2E")
 
-    # Try to set icon
     ico = ROOT / "app_icon.ico"
     if ico.exists():
         try:
@@ -135,75 +129,123 @@ def run_launcher():
         except Exception:
             pass
 
-    # Style
+    # -- Colors & style --
+    BG = "#1E1E2E"
+    BG2 = "#282838"
+    BG_BTN = "#323248"
+    FG = "#E8E8F0"
+    FG_MUTED = "#A0A0B8"
+    ACCENT = "#6EB4FF"
+    GREEN = "#5AE68C"
+    YELLOW = "#FFC85A"
+    RED = "#FF7878"
+
     style = ttk.Style()
     style.theme_use("clam")
-    style.configure("TFrame", background="#1E1E2E")
-    style.configure("TLabel", background="#1E1E2E", foreground="#E8E8F0", font=("Segoe UI", 10))
-    style.configure("Title.TLabel", font=("Segoe UI", 14, "bold"), foreground="#6EB4FF")
-    style.configure("Status.TLabel", font=("Segoe UI", 9), foreground="#A0A0B8")
-    style.configure("Green.TLabel", foreground="#5AE68C")
-    style.configure("Yellow.TLabel", foreground="#FFC85A")
-    style.configure("Red.TLabel", foreground="#FF7878")
-    style.configure("TButton", font=("Segoe UI", 10), padding=6)
+    style.configure("TFrame", background=BG)
+    style.configure("TLabel", background=BG, foreground=FG, font=("Segoe UI", 10))
+    style.configure("Title.TLabel", font=("Segoe UI", 14, "bold"), foreground=ACCENT)
+    style.configure("Status.TLabel", font=("Segoe UI", 9), foreground=FG_MUTED)
+    style.configure("Green.TLabel", foreground=GREEN)
+    style.configure("Yellow.TLabel", foreground=YELLOW)
+    style.configure("Red.TLabel", foreground=RED)
+    style.configure("Sidebar.TFrame", background=BG2)
 
-    main_frame = ttk.Frame(root)
-    main_frame.pack(fill="both", expand=True, padx=20, pady=15)
+    # -- Layout: sidebar (left) + logs (center) --
+    outer = ttk.Frame(root)
+    outer.pack(fill="both", expand=True)
 
-    # Title
-    ttk.Label(main_frame, text="MIDI Macropad", style="Title.TLabel").pack(anchor="w")
-    ttk.Label(main_frame, text="Web UI Launcher", style="Status.TLabel").pack(anchor="w", pady=(0, 12))
+    # Sidebar
+    sidebar = tk.Frame(outer, bg=BG2, width=180)
+    sidebar.pack(side="left", fill="y")
+    sidebar.pack_propagate(False)
 
-    # Status indicators
-    status_frame = ttk.Frame(main_frame)
-    status_frame.pack(fill="x", pady=(0, 10))
+    # Sidebar header
+    tk.Label(sidebar, text="MIDI Macropad", font=("Segoe UI", 12, "bold"),
+             bg=BG2, fg=ACCENT, anchor="w").pack(fill="x", padx=12, pady=(14, 2))
+    tk.Label(sidebar, text="Web UI Launcher", font=("Segoe UI", 9),
+             bg=BG2, fg=FG_MUTED, anchor="w").pack(fill="x", padx=12, pady=(0, 10))
 
-    backend_status = ttk.Label(status_frame, text="Backend: ...", style="Status.TLabel")
-    backend_status.pack(anchor="w")
-    frontend_status = ttk.Label(status_frame, text="Frontend: ...", style="Status.TLabel")
-    frontend_status.pack(anchor="w")
-    port_status = ttk.Label(status_frame, text=f"Port: {PORT}", style="Status.TLabel")
-    port_status.pack(anchor="w")
+    # Separator
+    tk.Frame(sidebar, bg="#3A3A52", height=1).pack(fill="x", padx=8, pady=4)
+
+    # Status indicators in sidebar
+    backend_status = tk.Label(sidebar, text="Backend: ...", font=("Segoe UI", 9),
+                              bg=BG2, fg=FG_MUTED, anchor="w")
+    backend_status.pack(fill="x", padx=12, pady=(6, 0))
+    frontend_status = tk.Label(sidebar, text="Frontend: ...", font=("Segoe UI", 9),
+                               bg=BG2, fg=FG_MUTED, anchor="w")
+    frontend_status.pack(fill="x", padx=12, pady=(2, 0))
+    port_label = tk.Label(sidebar, text=f"Port: {PORT}", font=("Segoe UI", 9),
+                          bg=BG2, fg=FG_MUTED, anchor="w")
+    port_label.pack(fill="x", padx=12, pady=(2, 8))
+
+    # Separator
+    tk.Frame(sidebar, bg="#3A3A52", height=1).pack(fill="x", padx=8, pady=4)
+
+    # -- Sidebar buttons --
+    def make_btn(parent, text, fg_color, command, state="normal"):
+        btn = tk.Button(parent, text=text, command=command,
+                        bg=BG_BTN, fg=fg_color, activebackground="#3A3A52",
+                        activeforeground=fg_color, relief="flat",
+                        font=("Segoe UI", 10), anchor="w", padx=10, pady=5,
+                        state=state, cursor="hand2")
+        btn.pack(fill="x", padx=8, pady=2)
+        # Hover effect
+        btn.bind("<Enter>", lambda e: btn.configure(bg="#3A3A60") if btn["state"] != "disabled" else None)
+        btn.bind("<Leave>", lambda e: btn.configure(bg=BG_BTN))
+        return btn
+
+    btn_open = make_btn(sidebar, "Open in Browser", ACCENT,
+                        lambda: webbrowser.open(URL), state="disabled")
+
+    def copy_url():
+        root.clipboard_clear()
+        root.clipboard_append(URL)
+        root.update()
+        log(f"Copied: {URL}")
+
+    btn_copy = make_btn(sidebar, "Copy Link", FG, copy_url)
+
+    # Separator
+    tk.Frame(sidebar, bg="#3A3A52", height=1).pack(fill="x", padx=8, pady=6)
+
+    btn_rebuild = make_btn(sidebar, "Rebuild UI", GREEN,
+                           lambda: threading.Thread(target=rebuild_frontend, daemon=True).start())
+
+    btn_restart = make_btn(sidebar, "Restart Backend", YELLOW,
+                           lambda: threading.Thread(target=restart_backend, daemon=True).start(),
+                           state="disabled")
+
+    # Spacer
+    tk.Frame(sidebar, bg=BG2).pack(fill="both", expand=True)
+
+    btn_stop = make_btn(sidebar, "Stop & Exit", RED, lambda: stop_all())
+
+    # -- Main area: logs --
+    main_area = ttk.Frame(outer)
+    main_area.pack(side="left", fill="both", expand=True)
+
+    # Log header
+    log_header = tk.Frame(main_area, bg=BG)
+    log_header.pack(fill="x", padx=12, pady=(10, 4))
+    tk.Label(log_header, text="Logs", font=("Segoe UI", 10, "bold"),
+             bg=BG, fg=FG_MUTED).pack(side="left")
 
     # Log area
-    log_frame = ttk.Frame(main_frame)
-    log_frame.pack(fill="both", expand=True, pady=(5, 10))
+    log_frame = tk.Frame(main_area, bg=BG)
+    log_frame.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-    log_text = tk.Text(log_frame, height=8, bg="#282838", fg="#A0A0B8",
+    log_text = tk.Text(log_frame, bg=BG2, fg=FG_MUTED,
                        font=("Cascadia Code", 9), relief="flat", bd=0,
-                       insertbackground="#6EB4FF", selectbackground="#3A3A52",
-                       wrap="word", state="disabled")
+                       insertbackground=ACCENT, selectbackground="#3A3A52",
+                       wrap="word", state="disabled", padx=8, pady=6)
     log_text.pack(fill="both", expand=True)
 
-    # Buttons
-    btn_frame = ttk.Frame(main_frame)
-    btn_frame.pack(fill="x")
-
-    btn_open = tk.Button(btn_frame, text="Open in Browser", command=lambda: webbrowser.open(URL),
-                         bg="#323248", fg="#E8E8F0", activebackground="#3A3A52",
-                         activeforeground="#6EB4FF", relief="flat", font=("Segoe UI", 10),
-                         padx=12, pady=4, state="disabled")
-    btn_open.pack(side="left")
-
-    btn_rebuild = tk.Button(btn_frame, text="Rebuild UI",
-                            command=lambda: threading.Thread(target=rebuild_frontend, daemon=True).start(),
-                            bg="#323248", fg="#5AE68C", activebackground="#3A3A52",
-                            activeforeground="#5AE68C", relief="flat", font=("Segoe UI", 10),
-                            padx=12, pady=4)
-    btn_rebuild.pack(side="left", padx=(8, 0))
-
-    btn_restart = tk.Button(btn_frame, text="Restart",
-                            command=lambda: threading.Thread(target=restart_backend, daemon=True).start(),
-                            bg="#323248", fg="#FFC85A", activebackground="#3A3A52",
-                            activeforeground="#FFC85A", relief="flat", font=("Segoe UI", 10),
-                            padx=12, pady=4, state="disabled")
-    btn_restart.pack(side="left", padx=(8, 0))
-
-    btn_stop = tk.Button(btn_frame, text="Stop & Exit", command=lambda: stop_all(),
-                         bg="#323248", fg="#FF7878", activebackground="#3A3A52",
-                         activeforeground="#FF7878", relief="flat", font=("Segoe UI", 10),
-                         padx=12, pady=4)
-    btn_stop.pack(side="right")
+    # Tag colors for log highlighting
+    log_text.tag_configure("error", foreground=RED)
+    log_text.tag_configure("ok", foreground=GREEN)
+    log_text.tag_configure("warn", foreground=YELLOW)
 
     # --- Process management ---
     backend_proc: subprocess.Popen | None = None
@@ -211,47 +253,50 @@ def run_launcher():
     _restart_count = 0
     _MAX_RESTARTS = 3
 
-    def log(msg: str) -> None:
+    def log(msg: str, tag: str = "") -> None:
         ts = time.strftime("%H:%M:%S")
         log_text.configure(state="normal")
-        log_text.insert("end", f"[{ts}] {msg}\n")
+        if tag:
+            log_text.insert("end", f"[{ts}] {msg}\n", tag)
+        else:
+            log_text.insert("end", f"[{ts}] {msg}\n")
         log_text.see("end")
         log_text.configure(state="disabled")
 
-    def update_status(component: str, status: str, style_name: str) -> None:
+    def update_status(component: str, status: str, color: str) -> None:
         if component == "backend":
-            backend_status.configure(text=f"Backend: {status}", style=style_name)
+            backend_status.configure(text=f"Backend: {status}", fg=color)
         elif component == "frontend":
-            frontend_status.configure(text=f"Frontend: {status}", style=style_name)
+            frontend_status.configure(text=f"Frontend: {status}", fg=color)
 
     def check_and_build_frontend() -> bool:
         if _needs_npm_install():
-            log("Installing npm dependencies...")
-            update_status("frontend", "npm install...", "Yellow.TLabel")
+            log("Installing npm dependencies...", "warn")
+            update_status("frontend", "npm install...", YELLOW)
             result = subprocess.run(
                 ["npm", "install"], cwd=str(FRONTEND_DIR),
                 capture_output=True, text=True, shell=True,
             )
             if result.returncode != 0:
-                log(f"npm install failed: {result.stderr[-200:]}")
-                update_status("frontend", "npm install FAILED", "Red.TLabel")
+                log(f"npm install failed: {result.stderr[-200:]}", "error")
+                update_status("frontend", "npm install FAILED", RED)
                 return False
-            log("npm dependencies installed")
+            log("npm dependencies installed", "ok")
 
         if _needs_build():
             log("Building frontend...")
-            update_status("frontend", "Building...", "Yellow.TLabel")
+            update_status("frontend", "Building...", YELLOW)
             result = subprocess.run(
                 ["npm", "run", "build"], cwd=str(FRONTEND_DIR),
                 capture_output=True, text=True, shell=True,
             )
             if result.returncode != 0:
-                log(f"Build failed: {result.stderr[-200:]}")
-                update_status("frontend", "Build FAILED", "Red.TLabel")
+                log(f"Build failed: {result.stderr[-200:]}", "error")
+                update_status("frontend", "Build FAILED", RED)
                 return False
-            log("Frontend built successfully")
+            log("Frontend built successfully", "ok")
 
-        update_status("frontend", "Ready (dist/)", "Green.TLabel")
+        update_status("frontend", "Ready", GREEN)
         return True
 
     def start_backend() -> None:
@@ -260,32 +305,27 @@ def run_launcher():
             return
 
         log("Starting backend...")
-        update_status("backend", "Starting...", "Yellow.TLabel")
+        update_status("backend", "Starting...", YELLOW)
 
-        # Use python.exe (not pythonw) so we can capture stderr
         python = str(VENV_PYTHON)
         log_file = ROOT / "logs" / "web_backend.log"
         log_file.parent.mkdir(exist_ok=True)
         err_handle = open(str(log_file), "w", encoding="utf-8")
 
         backend_proc = subprocess.Popen(
-            [python, str(WEB_MAIN), "--browser", "--port", str(PORT)],
+            [python, str(WEB_MAIN), "--port", str(PORT)],
             cwd=str(ROOT),
             stdout=err_handle,
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
-        # Store handle so we can close it later
         backend_proc._log_handle = err_handle
 
-        # Poll until server is up
         def wait_for_ready():
-            for _ in range(50):  # 10 seconds
+            for _ in range(50):
                 if stopping:
                     return
-                # Check if process already died
                 if backend_proc.poll() is not None:
-                    # Read last lines from log file for error info
                     try:
                         err_text = log_file.read_text(encoding="utf-8")[-500:]
                     except Exception:
@@ -302,34 +342,32 @@ def run_launcher():
 
     def on_backend_ready() -> None:
         nonlocal _restart_count
-        _restart_count = 0  # Reset on successful start
-        log(f"Backend running on {URL}")
-        update_status("backend", f"Running (:{PORT})", "Green.TLabel")
+        _restart_count = 0
+        log(f"Backend running on {URL}", "ok")
+        update_status("backend", f"Running (:{PORT})", GREEN)
         btn_open.configure(state="normal")
         btn_restart.configure(state="normal")
 
     def on_backend_failed() -> None:
-        log("Backend failed to start (timeout)!")
-        update_status("backend", "FAILED (timeout)", "Red.TLabel")
+        log("Backend failed to start (timeout)!", "error")
+        update_status("backend", "FAILED (timeout)", RED)
         btn_restart.configure(state="normal")
 
     def on_backend_crashed(err_text: str) -> None:
-        log("Backend crashed on startup!")
+        log("Backend crashed on startup!", "error")
         if err_text:
-            # Show last few lines of error
             for line in err_text.strip().split("\n")[-5:]:
                 line = line.strip()
                 if line:
-                    log(f"  {line}")
+                    log(f"  {line}", "error")
         log("Check logs/web_backend.log for full trace")
-        update_status("backend", "CRASHED", "Red.TLabel")
+        update_status("backend", "CRASHED", RED)
         btn_restart.configure(state="normal")
 
     def stop_backend() -> None:
         nonlocal backend_proc
         if backend_proc and backend_proc.poll() is None:
             log("Stopping backend...")
-            # Close log handle
             if hasattr(backend_proc, '_log_handle'):
                 try:
                     backend_proc._log_handle.close()
@@ -342,7 +380,7 @@ def run_launcher():
                 backend_proc.kill()
             log("Backend stopped")
         backend_proc = None
-        update_status("backend", "Stopped", "Red.TLabel")
+        update_status("backend", "Stopped", RED)
         btn_open.configure(state="disabled")
         btn_restart.configure(state="disabled")
 
@@ -356,18 +394,18 @@ def run_launcher():
     def rebuild_frontend() -> None:
         btn_rebuild.configure(state="disabled")
         log("Rebuilding frontend...")
-        update_status("frontend", "Building...", "Yellow.TLabel")
+        update_status("frontend", "Building...", YELLOW)
         result = subprocess.run(
             ["npm", "run", "build"], cwd=str(FRONTEND_DIR),
             capture_output=True, text=True, shell=True,
         )
         if result.returncode == 0:
-            log("Frontend rebuilt. Refresh browser (F5).")
-            update_status("frontend", "Ready (rebuilt)", "Green.TLabel")
+            log("Frontend rebuilt. Refresh browser (F5).", "ok")
+            update_status("frontend", "Ready (rebuilt)", GREEN)
         else:
             err = result.stderr[-200:] if result.stderr else "unknown error"
-            log(f"Build failed: {err}")
-            update_status("frontend", "Build FAILED", "Red.TLabel")
+            log(f"Build failed: {err}", "error")
+            update_status("frontend", "Build FAILED", RED)
         btn_rebuild.configure(state="normal")
 
     def stop_all() -> None:
@@ -380,17 +418,14 @@ def run_launcher():
     def startup_sequence() -> None:
         log("MIDI Macropad Launcher starting...")
 
-        # Check venv
         if not VENV_PYTHON.exists():
-            log("ERROR: .venv not found. Run 'MIDI Macropad.bat' first.")
-            update_status("backend", "No .venv", "Red.TLabel")
+            log("ERROR: .venv not found. Run setup first.", "error")
+            update_status("backend", "No .venv", RED)
             return
 
-        # Build frontend if needed
         if not check_and_build_frontend():
             return
 
-        # Start backend
         start_backend()
 
     # Monitor backend process with auto-restart
@@ -406,22 +441,18 @@ def run_launcher():
                     _restart_count += 1
                     delay = 2.0 * _restart_count
                     log(f"Backend crashed (code {exit_code}), "
-                        f"restarting in {delay:.0f}s ({_restart_count}/{_MAX_RESTARTS})...")
-                    update_status("backend", f"Restarting {_restart_count}/{_MAX_RESTARTS}", "Yellow.TLabel")
+                        f"restarting in {delay:.0f}s ({_restart_count}/{_MAX_RESTARTS})...", "warn")
+                    update_status("backend", f"Restarting {_restart_count}/{_MAX_RESTARTS}", YELLOW)
                     root.after(int(delay * 1000),
                                lambda: threading.Thread(target=start_backend, daemon=True).start())
                 else:
-                    log(f"Backend crashed {_MAX_RESTARTS} times. Manual restart required.")
-                    update_status("backend", "CRASHED (max retries)", "Red.TLabel")
+                    log(f"Backend crashed {_MAX_RESTARTS} times. Manual restart required.", "error")
+                    update_status("backend", "CRASHED (max retries)", RED)
                     btn_restart.configure(state="normal")
         root.after(2000, monitor)
 
     root.after(2000, monitor)
-
-    # Handle window close
     root.protocol("WM_DELETE_WINDOW", stop_all)
-
-    # Run startup in background
     threading.Thread(target=startup_sequence, daemon=True).start()
 
     root.mainloop()

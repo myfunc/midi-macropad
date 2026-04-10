@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAppStore } from '../stores/useAppStore'
 import type { IDockviewPanelProps } from 'dockview-react'
 
@@ -40,9 +40,49 @@ const ACTION_GROUPS = [
   },
 ]
 
+function keyEventToHotkey(e: React.KeyboardEvent): string | null {
+  const key = e.key
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return null
+  const parts: string[] = []
+  if (e.ctrlKey) parts.push('ctrl')
+  if (e.altKey) parts.push('alt')
+  if (e.shiftKey) parts.push('shift')
+  const keyName = key.length === 1 ? key.toLowerCase() : key.toLowerCase()
+    .replace('arrowup', 'up').replace('arrowdown', 'down')
+    .replace('arrowleft', 'left').replace('arrowright', 'right')
+    .replace(' ', 'space').replace('escape', 'esc')
+  parts.push(keyName)
+  return parts.join('+')
+}
+
+const MOUSE_MAP: Record<number, string> = {
+  1: 'mouse3', 3: 'mouse4', 4: 'mouse5',
+}
+
+function patchPad(note: number, data: Record<string, unknown>): Promise<Response> {
+  return fetch(`/api/pads/${note}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
 export function PropertiesPanel(_props: IDockviewPanelProps) {
   const selectedNote = useAppStore(s => s.selectedNote)
   const pads = useAppStore(s => s.pads)
+  const showToast = useAppStore(s => s.showToast)
+  const [capturing, setCapturing] = useState(false)
+  const [hkSaving, setHkSaving] = useState(false)
+  const hotkeyRef = useRef<HTMLInputElement>(null)
+
+  // Reset capture mode when pad changes
+  useEffect(() => { setCapturing(false) }, [selectedNote])
+
+  const refreshPads = useCallback(() => {
+    fetch('/api/pads').then(r => r.json()).then(data => {
+      useAppStore.getState().updatePads(data)
+    }).catch(() => {})
+  }, [])
 
   if (selectedNote === null) {
     return (
@@ -64,18 +104,37 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
   const bank = selectedNote >= 24 ? 'B' : 'A'
 
   function saveLabel(value: string) {
-    // TODO: wire to PATCH /api/pads/{note}
-    console.log('Save label:', selectedNote, value)
+    patchPad(selectedNote!, { label: value.trim() }).then(() => refreshPads())
+  }
+
+  function commitHotkey(hotkey: string) {
+    setHkSaving(true)
+    patchPad(selectedNote!, { hotkey })
+      .then(async (r) => {
+        if (r.ok) {
+          showToast(hotkey ? `Hotkey: ${hotkey}` : 'Hotkey cleared')
+        } else {
+          const err = await r.json().catch(() => ({ error: r.statusText }))
+          showToast(`Error: ${err.error || r.status}`)
+        }
+        refreshPads()
+      })
+      .catch((e) => showToast(`Network error: ${e.message}`))
+      .finally(() => setHkSaving(false))
   }
 
   function assignAction(actionId: string) {
-    // TODO: wire to PATCH /api/pads/{note}
-    console.log('Assign action:', selectedNote, actionId)
+    patchPad(selectedNote!, { action: { type: actionId } }).then(() => {
+      showToast(`Action: ${actionId}`)
+      refreshPads()
+    })
   }
 
   function clearAction() {
-    // TODO: wire to DELETE /api/pads/{note}/action
-    console.log('Clear action:', selectedNote)
+    fetch(`/api/pads/${selectedNote}/action`, { method: 'DELETE' }).then(() => {
+      showToast('Assignment cleared')
+      refreshPads()
+    })
   }
 
   return (
@@ -88,32 +147,83 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
         Current: <strong>{entry.label || 'Not assigned'}</strong>
       </div>
 
+      {/* Label */}
       <div className="props-section">
         <label className="props-label">Label</label>
         <input
           className="props-input"
           type="text"
-          key={selectedNote}
+          key={`label-${selectedNote}`}
           defaultValue={entry.label}
           placeholder="Pad label..."
-          readOnly={entry.locked}
           onBlur={(e) => saveLabel(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         />
       </div>
 
+      {/* Hotkey */}
       <div className="props-section">
         <label className="props-label">Hotkey</label>
-        <input
-          className="props-input"
-          type="text"
-          key={`hk-${selectedNote}`}
-          defaultValue={entry.hotkey}
-          placeholder="Click to set hotkey..."
-          readOnly={entry.locked}
-        />
+        <div className="props-hotkey-row">
+          <input
+            ref={hotkeyRef}
+            className={`props-input ${capturing ? 'props-hotkey-input capturing' : ''}`}
+            type="text"
+            key={`hk-${selectedNote}`}
+            defaultValue={entry.hotkey || ''}
+            placeholder="mouse5, ctrl+shift+r..."
+            readOnly={capturing}
+            onKeyDown={(e) => {
+              if (capturing) {
+                e.preventDefault()
+                e.stopPropagation()
+                if (e.key === 'Escape') { setCapturing(false); return }
+                const hk = keyEventToHotkey(e)
+                if (hk) {
+                  setCapturing(false)
+                  if (hotkeyRef.current) hotkeyRef.current.value = hk
+                  commitHotkey(hk)
+                }
+              }
+            }}
+            onMouseDown={(e) => {
+              if (capturing && e.button >= 1) {
+                e.preventDefault()
+                const hk = MOUSE_MAP[e.button] || `mouse${e.button + 1}`
+                setCapturing(false)
+                if (hotkeyRef.current) hotkeyRef.current.value = hk
+                commitHotkey(hk)
+              }
+            }}
+            onContextMenu={(e) => { if (capturing) e.preventDefault() }}
+          />
+          <button
+            className="props-hotkey-save"
+            disabled={hkSaving}
+            onClick={() => {
+              const val = hotkeyRef.current?.value.trim() || ''
+              commitHotkey(val)
+            }}
+            title="Save hotkey"
+          >Save</button>
+          <button
+            className={`props-hotkey-mode-btn ${capturing ? 'active' : ''}`}
+            onClick={() => setCapturing(!capturing)}
+            title={capturing ? 'Cancel capture' : 'Capture key/mouse'}
+          >{capturing ? '\u2715' : '\uD83C\uDFA7'}</button>
+          {entry.hotkey && (
+            <button className="props-hotkey-clear" onClick={() => {
+              if (hotkeyRef.current) hotkeyRef.current.value = ''
+              commitHotkey('')
+            }} title="Clear hotkey">&times;</button>
+          )}
+        </div>
+        {capturing && (
+          <div className="props-hotkey-hint">Press any key/mouse button, Esc to cancel</div>
+        )}
       </div>
 
+      {/* Actions */}
       <div className="props-section">
         <div className="props-section-title">Assign Action</div>
         {ACTION_GROUPS.map(group => (
@@ -124,7 +234,7 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
                 <div
                   key={a.id}
                   className={`action-chip ${a.cls} ${entry.action_type === a.id ? 'active' : ''}`}
-                  onClick={() => !entry.locked && assignAction(a.id)}
+                  onClick={() => assignAction(a.id)}
                 >
                   {a.name}
                 </div>
@@ -132,9 +242,7 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
             </div>
           </div>
         ))}
-        {!entry.locked && (
-          <button className="btn-clear" onClick={clearAction}>Clear Assignment</button>
-        )}
+        <button className="btn-clear" onClick={clearAction}>Clear Assignment</button>
       </div>
 
       {entry.locked && (

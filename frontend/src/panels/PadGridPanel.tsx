@@ -10,8 +10,11 @@ const COLOR_MAP: Record<string, string> = {
   scroll: '#D0D0E0',
 }
 
-function getIndicatorColor(entry: PadEntry): string {
-  if (!entry.action_type) return 'transparent'
+function padAccentColor(entry: PadEntry | undefined): string {
+  if (!entry?.action_type) return 'transparent'
+  if (entry.color && (entry.color[0] !== 100 || entry.color[1] !== 100 || entry.color[2] !== 100)) {
+    return `rgb(${entry.color[0]},${entry.color[1]},${entry.color[2]})`
+  }
   return COLOR_MAP[entry.action_type] || '#888'
 }
 
@@ -26,10 +29,24 @@ function Pad({ note, entry, isSelected, isFlashed, onSelect, onTrigger }: {
   const label = entry?.label || '---'
   const isEmpty = !entry?.action_type
   const isLocked = entry?.locked
+  const accent = padAccentColor(entry)
+  const hasAccent = accent !== 'transparent'
+  const toggleState = entry?.toggle_state
+  const isToggle = toggleState !== undefined && toggleState !== null
+  const isOn = toggleState === true
+
+  const classes = [
+    'pad',
+    isSelected && 'selected',
+    isFlashed && 'flashed',
+    isEmpty && 'empty',
+    isToggle && (isOn ? 'toggle-on' : 'toggle-off'),
+  ].filter(Boolean).join(' ')
 
   return (
     <div
-      className={`pad ${isSelected ? 'selected' : ''} ${isFlashed ? 'flashed' : ''} ${isEmpty ? 'empty' : ''}`}
+      className={classes}
+      style={hasAccent ? { borderBottomColor: accent, borderBottomWidth: 3 } : {}}
       onClick={onSelect}
       onDoubleClick={(e) => { e.stopPropagation(); onTrigger() }}
       draggable
@@ -51,13 +68,14 @@ function Pad({ note, entry, isSelected, isFlashed, onSelect, onTrigger }: {
     >
       <span className="pad-number">{note}</span>
       {isLocked && <span className="lock-icon">&#128274;</span>}
+      {isToggle && <span className={`pad-state ${isOn ? 'on' : 'off'}`}>{isOn ? 'ON' : 'OFF'}</span>}
       <span className="pad-label">{label}</span>
-      <span className="pad-indicator" style={{ background: entry ? getIndicatorColor(entry) : 'transparent' }} />
+      {hasAccent && <span className="pad-indicator" style={{ background: accent }} />}
     </div>
   )
 }
 
-function Knob({ cc, label, value }: { cc: number; label: string; value: number }) {
+function Knob({ label, value }: { cc: number; label: string; value: number }) {
   const pct = Math.round((value / 127) * 100)
   const angle = (value / 127) * 270 - 135
 
@@ -72,61 +90,57 @@ function Knob({ cc, label, value }: { cc: number; label: string; value: number }
   )
 }
 
-export function PadGridPanel(_props: IDockviewPanelProps) {
+function triggerPad(note: number) {
+  fetch(`/api/pads/${note}/press`, { method: 'POST' })
+}
+
+function BankPanel({ notes }: { notes: number[] }) {
   const pads = useAppStore(s => s.pads)
-  const knobs = useAppStore(s => s.knobs)
   const selectedNote = useAppStore(s => s.selectedNote)
   const flashedPads = useAppStore(s => s.flashedPads)
   const selectPad = useAppStore(s => s.selectPad)
 
-  // MPK Mini Play layout: top row = 20-23, bottom row = 16-19
-  const bankA = [20, 21, 22, 23, 16, 17, 18, 19]
-  const bankB = [28, 29, 30, 31, 24, 25, 26, 27]
-
-  function triggerPad(note: number) {
-    fetch(`/api/pads/${note}/press`, { method: 'POST' })
-  }
-
   return (
     <div className="pad-area">
-      <div className="bank-row">
-        <div className="bank">
-          <div className="bank-header">Bank A (16-23)</div>
-          <div className="pad-grid">
-            {bankA.map(n => (
-              <Pad
-                key={n} note={n}
-                entry={pads[String(n)]}
-                isSelected={selectedNote === n}
-                isFlashed={flashedPads.has(n)}
-                onSelect={() => selectPad(n)}
-                onTrigger={() => triggerPad(n)}
-              />
-            ))}
-          </div>
+      <div className="bank">
+        <div className="pad-grid">
+          {notes.map(n => (
+            <Pad
+              key={n} note={n}
+              entry={pads[String(n)]}
+              isSelected={selectedNote === n}
+              isFlashed={flashedPads.has(n)}
+              onSelect={() => selectPad(n)}
+              onTrigger={() => triggerPad(n)}
+            />
+          ))}
         </div>
-        <div className="bank">
-          <div className="bank-header">Bank B (24-31)</div>
-          <div className="pad-grid">
-            {bankB.map(n => (
-              <Pad
-                key={n} note={n}
-                entry={pads[String(n)]}
-                isSelected={selectedNote === n}
-                isFlashed={flashedPads.has(n)}
-                onSelect={() => selectPad(n)}
-                onTrigger={() => triggerPad(n)}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="knobs-section">
-          <div className="bank-header">Knobs</div>
-          <div className="knob-grid">
-            {knobs.map(k => (
-              <Knob key={k.cc} cc={k.cc} label={k.label} value={k.value} />
-            ))}
-          </div>
+      </div>
+    </div>
+  )
+}
+
+// MPK Mini Play layout: top row = 20-23, bottom row = 16-19
+const BANK_A_NOTES = [20, 21, 22, 23, 16, 17, 18, 19]
+const BANK_B_NOTES = [28, 29, 30, 31, 24, 25, 26, 27]
+
+export function BankAPanel(_props: IDockviewPanelProps) {
+  return <BankPanel notes={BANK_A_NOTES} />
+}
+
+export function BankBPanel(_props: IDockviewPanelProps) {
+  return <BankPanel notes={BANK_B_NOTES} />
+}
+
+export function KnobsPanel(_props: IDockviewPanelProps) {
+  const knobs = useAppStore(s => s.knobs)
+  return (
+    <div className="pad-area">
+      <div className="knobs-section">
+        <div className="knob-grid">
+          {knobs.map(k => (
+            <Knob key={k.cc} cc={k.cc} label={k.label} value={k.value} />
+          ))}
         </div>
       </div>
     </div>

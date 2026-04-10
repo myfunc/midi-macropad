@@ -2,7 +2,7 @@
 
 Turn an **Akai MPK Mini Play** or any MIDI controller into a tactile Windows control surface for shortcuts, app-aware modes, audio control, and AI-assisted writing.
 
-Built with Python, [DearPyGui](https://github.com/hoffstadt/DearPyGui), and [mido](https://mido.readthedocs.io/).
+Python backend (FastAPI + mido) with a modern **React + dockview Web UI** that runs in your browser or a desktop launcher window.
 
 <p align="center">
   <img src="docs/screenshot.png" alt="MIDI Macropad UI" width="820">
@@ -17,14 +17,13 @@ The goal was simple: keep everyday actions on real pads and knobs, switch behavi
 ## What It Does
 
 - Turns 8 pads, 4 knobs, and the joystick into configurable actions.
-- Switches between modes defined in `config.toml` (for example OBS, Voice Scribe, Sound Pads, Voicemeeter, OBS Session, and Spotify).
-- Optional `Performance Template` plugin adds a separate Performance-style sketch mode when enabled in settings.
-- Detects the active window and can change mode automatically.
+- Switches between presets defined in `config.toml` (OBS, Voice Scribe, Sound Pads, Voicemeeter, OBS Session, Spotify, and more).
 - Controls Windows master volume, microphone volume, and Spotify app volume.
 - Talks to OBS Studio over WebSocket.
-- Connects to **Spotify** over the Web API with OAuth PKCE (Client ID only—[developer.spotify.com](https://developer.spotify.com/dashboard)); now-playing and transport in the UI, pad and knob mappings in **Spotify** mode, 3s polling, and auto token refresh. **Spotify Premium** required.
+- Connects to **Spotify** over the Web API with OAuth PKCE (Client ID only—[developer.spotify.com](https://developer.spotify.com/dashboard)); now-playing, transport, and knob-mapped volume. **Spotify Premium** required.
 - Plays short device-side MIDI feedback phrases on the controller for actions and voice states.
-- Loads plugins from `plugins/` for custom MIDI behavior and UI panels.
+- Loads plugins from `plugins/` for custom MIDI behavior and web UI panels.
+- **Web UI**: dockview-based draggable panels, live WebSocket events, fullscreen mode, accessible from any browser on your LAN.
 
 ## Voice Scribe
 
@@ -41,26 +40,27 @@ It is a voice-first writing workflow for bilingual work:
 - Choose a microphone, test input levels, and store the API key in the UI.
 - Hear dedicated MIDI cues on the device for record start/stop, session and segment boundaries, context capture, processing, done, cancel, and errors.
 
-Pipeline: **microphone -> Whisper transcription -> GPT rewrite/translation -> clipboard paste**
+Pipeline: **microphone → Whisper transcription → GPT rewrite/translation → clipboard paste**
 
-Feedback path: **shared runtime feedback service -> MIDI out -> controller's internal GM synth**
+Feedback path: **shared runtime feedback service → MIDI out → controller's internal GM synth**
 
 ## Plugins
 
 | Plugin | Summary |
 |--------|---------|
 | `Voice Scribe` | Voice-driven Russian-to-English writing assistant with prompt styles, context capture, chat memory, hard cancel, and MIDI feedback cues. |
-| `Sample Player` | Polyphonic WAV pad sampler with pack selection, velocity response, and plugin volume control in `Sound Pads` mode. |
-| `OBS Session` | Connects to OBS, sets up a composite scene (screen + PiP camera), segmented recording into a session folder, then optional ffmpeg stitch and Whisper subtitles. |
-| `Voicemeeter` | Routes pads and knobs to Voicemeeter macro / volume workflows when that mode is active. |
-| `Spotify` | OAuth PKCE Web API control (no client secret); sidebar for connection, Client ID, and now-playing; center tab for now-playing and transport; pads 1–6 for playback/like/shuffle/repeat; pads 7–8 for Search and Liked Songs shortcuts; knob 3 (CC50) for Spotify app volume via Windows audio session; 3s now-playing polling and auto token refresh. Requires Premium and a Client ID. |
-| `Performance Template` | Optional live sketch template for MPK Mini Play: pad beat toggles, key-triggered drums and guitar phrases, plus 9 switchable chord keys. |
+| `Sample Player` | Polyphonic WAV pad sampler with pack selection, velocity response, and plugin volume control. |
+| `OBS Session` | Connects to OBS, composite scene switching, segmented recording into a session folder, optional ffmpeg stitch and Whisper subtitles. |
+| `Voicemeeter` | Routes pads and knobs to Voicemeeter macro / volume workflows. |
+| `Spotify` | OAuth PKCE Web API control, now-playing, transport, pad and knob mappings. Requires Premium and a Client ID. |
+| `Performance Template` | Optional live sketch template: pad beat toggles, key-triggered drums and guitar phrases, 9 switchable chord keys. |
+| `REAPER Bridge` | Forwards Bank B MIDI to REAPER DAW. |
 
 More detail lives in [`docs/plugins.md`](docs/plugins.md).
 
 ## Quick Start
 
-**Requirements:** Windows 10/11, Python 3.11+
+**Requirements:** Windows 10/11, Python 3.11+, Node.js 18+ (for frontend build)
 
 ```bash
 git clone https://github.com/myfunc/midi-macropad.git
@@ -68,16 +68,35 @@ cd midi-macropad
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-python main.py
+cd frontend && npm install && npm run build && cd ..
 ```
 
-After the first setup, you can also launch it via `MIDI Macropad.bat`.
+Launch the app:
+
+```bash
+python launcher.pyw
+```
+
+Or double-click **`MIDI Macropad Web.bat`** / the launcher GUI. The launcher manages the backend, rebuilds the frontend when source changes, shows logs, and opens the Web UI in your browser.
+
+**URL:** `http://10.0.0.27:8741` (configurable via `HOST`/`PORT` in `web_main.py` and `launcher.pyw`).
+
+### Dev mode (frontend hot reload)
+
+Run backend and Vite dev server separately:
+
+```bash
+python web_main.py --dev            # backend with CORS
+cd frontend && npm run dev          # Vite HMR on :5173
+```
 
 ## Documentation
 
-- [`docs/overview.md`](docs/overview.md) — short project overview, features, and modes
-- [`docs/plugins.md`](docs/plugins.md) — plugin catalog with a stronger Voice Scribe breakdown
-- [`researches/2026-03-19_voice-feedback-cues.md`](researches/2026-03-19_voice-feedback-cues.md) — rationale for MIDI-only feedback cues and Voice Scribe hard cancel
+- [`docs/web-ui.md`](docs/web-ui.md) — Web UI architecture, launcher, panels
+- [`docs/overview.md`](docs/overview.md) — project overview, features, and presets
+- [`docs/plugins.md`](docs/plugins.md) — plugin catalog with a deeper Voice Scribe breakdown
+- [`docs/audio-cheatsheet.md`](docs/audio-cheatsheet.md) — Voicemeeter routing and audio setup
+- [`docs/obs-scene-setup.md`](docs/obs-scene-setup.md) — OBS scene configuration guide
 
 ## License
 

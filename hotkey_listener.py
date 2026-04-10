@@ -97,8 +97,10 @@ class HotkeyListener:
             self._mouse_bindings = new_mouse
             self._key_bindings = new_keys
         count = len(new_mouse) + len(new_keys)
-        if count:
-            _log.info("Hotkey bindings reloaded: %d binding(s)", count)
+        _log.info("Hotkey bindings reloaded: %d binding(s) mouse=%s keys=%s",
+                  count,
+                  {str(k): v for k, v in new_mouse.items()},
+                  {str(k): v for k, v in new_keys.items()})
 
     def start(self):
         """Start keyboard and mouse listeners in background threads."""
@@ -158,5 +160,8 @@ class HotkeyListener:
             return
         with self._lock:
             note = self._mouse_bindings.get(button)
+            bindings_snapshot = dict(self._mouse_bindings)
+        _log.debug("Mouse click: button=%s, matched_note=%s, bindings=%s",
+                   button, note, {str(k): v for k, v in bindings_snapshot.items()})
         if note is not None:
             self._inject_pad_press(note)

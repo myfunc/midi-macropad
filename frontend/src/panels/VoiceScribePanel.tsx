@@ -1,6 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '../stores/useAppStore'
 import type { IDockviewPanelProps } from 'dockview-react'
+
+interface PromptData {
+  pad: number
+  label: string
+  system: string
+}
 
 interface VsState {
   active: boolean
@@ -12,20 +18,21 @@ interface VsState {
   last_prompt_label: string
   chat_model: string
   transcription_model: string
-  input_language: string
-  output_language: string
-  prompts: { label: string; description: string }[]
+  prompts: PromptData[]
   chat_history_length: number
   mic_device: number | null
+  whisper_prompt: string
 }
 
 const DEFAULT: VsState = {
   active: false, recording: false, processing: false,
   status: 'Idle', last_original: '', last_result: '',
   last_prompt_label: '', chat_model: '', transcription_model: '',
-  input_language: '', output_language: '',
   prompts: [], chat_history_length: 0, mic_device: null,
+  whisper_prompt: '',
 }
+
+const SPECIAL_LABELS = ['New Chat', 'Context', 'Speak', 'Cancel']
 
 type Phase = 'idle' | 'recording' | 'processing'
 
@@ -43,20 +50,28 @@ const PHASE_STYLES: Record<Phase, { color: string; bg: string; label: string }> 
 
 export function VoiceScribePanel(_props: IDockviewPanelProps) {
   const [vs, setVs] = useState<VsState>(DEFAULT)
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const [editLabel, setEditLabel] = useState('')
+  const [editSystem, setEditSystem] = useState('')
+  const [addingNew, setAddingNew] = useState(false)
+  const [newLabel, setNewLabel] = useState('')
+  const [newSystem, setNewSystem] = useState('')
+  const [saving, setSaving] = useState(false)
   const showToast = useAppStore(s => s.showToast)
   const intervalRef = useRef<number | null>(null)
 
+  const fetchState = useCallback(() => {
+    fetch('/api/voice-scribe/state')
+      .then(r => r.ok ? r.json() : DEFAULT)
+      .then(setVs)
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
-    function fetchState() {
-      fetch('/api/voice-scribe/state')
-        .then(r => r.ok ? r.json() : DEFAULT)
-        .then(setVs)
-        .catch(() => {})
-    }
     fetchState()
     intervalRef.current = window.setInterval(fetchState, 1500)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [])
+  }, [fetchState])
 
   const phase = getPhase(vs)
   const ps = PHASE_STYLES[phase]
@@ -66,13 +81,78 @@ export function VoiceScribePanel(_props: IDockviewPanelProps) {
       .then(() => showToast('New chat started'))
   }
 
+  function startEdit(idx: number) {
+    const p = vs.prompts[idx]
+    setEditingIdx(idx)
+    setEditLabel(p.label)
+    setEditSystem(p.system || '')
+  }
+
+  function cancelEdit() {
+    setEditingIdx(null)
+    setEditLabel('')
+    setEditSystem('')
+  }
+
+  async function saveEdit() {
+    if (editingIdx === null) return
+    setSaving(true)
+    const updated = vs.prompts.map((p, i) =>
+      i === editingIdx ? { ...p, label: editLabel.trim(), system: editSystem.trim() } : p
+    )
+    try {
+      const res = await fetch('/api/voice-scribe/prompts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompts: updated, whisper_prompt: vs.whisper_prompt }),
+      })
+      if (res.ok) {
+        showToast('Prompt saved')
+        setEditingIdx(null)
+        fetchState()
+      } else {
+        const err = await res.json()
+        showToast(`Error: ${err.error}`)
+      }
+    } finally { setSaving(false) }
+  }
+
+  async function deletePrompt(pad: number, label: string) {
+    if (!confirm(`Delete "${label}"?`)) return
+    const res = await fetch(`/api/voice-scribe/prompts/${pad}`, { method: 'DELETE' })
+    if (res.ok) {
+      showToast(`"${label}" deleted`)
+      fetchState()
+    }
+  }
+
+  async function addPrompt() {
+    if (!newLabel.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/voice-scribe/prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: newLabel.trim(), system: newSystem.trim() }),
+      })
+      if (res.ok) {
+        showToast('Prompt added')
+        setAddingNew(false)
+        setNewLabel('')
+        setNewSystem('')
+        fetchState()
+      }
+    } finally { setSaving(false) }
+  }
+
+  const isSpecial = (label: string) => SPECIAL_LABELS.includes(label)
+
   return (
     <div className="vs-root">
       {/* ── Header ── */}
       <div className="vs-header">
         <div className="vs-header-left">
           <span className="vs-title">Voice Scribe</span>
-          <span className="vs-lang-badge">{vs.input_language} → {vs.output_language}</span>
         </div>
         <span className={`pp-status ${vs.active ? 'ok' : 'err'}`}>
           {vs.active ? 'Active' : 'Off'}
@@ -126,19 +206,91 @@ export function VoiceScribePanel(_props: IDockviewPanelProps) {
         <button className="vs-new-chat-btn" onClick={newChat}>New Chat</button>
       </div>
 
-      {/* ── Prompt pads ── */}
-      <div className="vs-section-title">Prompt Pads</div>
+      {/* ── Prompt Pads ── */}
+      <div className="vs-section-title">
+        Prompts
+        <button className="vs-add-btn" onClick={() => setAddingNew(true)} title="Add prompt">+</button>
+      </div>
+
+      {/* Add new prompt form */}
+      {addingNew && (
+        <div className="vs-prompt-edit-card">
+          <input
+            className="vs-edit-label"
+            value={newLabel}
+            onChange={e => setNewLabel(e.target.value)}
+            placeholder="Label (e.g. Professional)"
+            autoFocus
+          />
+          <textarea
+            className="vs-edit-system"
+            value={newSystem}
+            onChange={e => setNewSystem(e.target.value)}
+            placeholder="System prompt (leave empty for special labels like Cancel, Speak, etc.)"
+            rows={3}
+          />
+          <div className="vs-edit-actions">
+            <button className="vs-save-btn" onClick={addPrompt} disabled={saving || !newLabel.trim()}>
+              Add
+            </button>
+            <button className="vs-cancel-btn" onClick={() => { setAddingNew(false); setNewLabel(''); setNewSystem('') }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="vs-prompt-grid">
         {vs.prompts.map((p, i) => (
-          <div key={i} className="vs-prompt-card">
-            <span className="vs-prompt-card-name">{p.label}</span>
-            {p.description && (
-              <span className="vs-prompt-card-desc">{p.description}</span>
-            )}
-          </div>
+          editingIdx === i ? (
+            /* ── Edit mode ── */
+            <div key={p.pad} className="vs-prompt-edit-card">
+              <input
+                className="vs-edit-label"
+                value={editLabel}
+                onChange={e => setEditLabel(e.target.value)}
+                placeholder="Label"
+                autoFocus
+              />
+              {!isSpecial(editLabel) && (
+                <textarea
+                  className="vs-edit-system"
+                  value={editSystem}
+                  onChange={e => setEditSystem(e.target.value)}
+                  placeholder="System prompt"
+                  rows={4}
+                />
+              )}
+              {isSpecial(editLabel) && (
+                <div className="vs-special-hint">Special prompt — no system text needed</div>
+              )}
+              <div className="vs-edit-actions">
+                <button className="vs-save-btn" onClick={saveEdit} disabled={saving || !editLabel.trim()}>
+                  Save
+                </button>
+                <button className="vs-cancel-btn" onClick={cancelEdit}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            /* ── View mode ── */
+            <div key={p.pad} className={`vs-prompt-card ${isSpecial(p.label) ? 'vs-special' : ''}`}>
+              <div className="vs-prompt-card-header">
+                <span className="vs-prompt-card-pad">#{p.pad}</span>
+                <span className="vs-prompt-card-name">{p.label}</span>
+                {isSpecial(p.label) && <span className="vs-special-badge">special</span>}
+                <div className="vs-prompt-card-btns">
+                  <button className="vs-icon-btn" onClick={() => startEdit(i)} title="Edit">&#9998;</button>
+                  <button className="vs-icon-btn vs-del-btn" onClick={() => deletePrompt(p.pad, p.label)} title="Delete">&times;</button>
+                </div>
+              </div>
+              {p.system && (
+                <div className="vs-prompt-card-desc">{p.system}</div>
+              )}
+            </div>
+          )
         ))}
         {vs.prompts.length === 0 && (
-          <div className="vs-empty-hint">No prompts loaded — check prompts.toml</div>
+          <div className="vs-empty-hint">No prompts — click + to add one</div>
         )}
       </div>
 
