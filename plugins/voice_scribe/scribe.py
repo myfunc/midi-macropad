@@ -39,7 +39,20 @@ CHAT_SYSTEM = (
     "or to soften an inability to help (e.g. 🎉, 🙏, 🤔). Never force them."
 )
 _ENV_FILE = Path(__file__).parent.parent.parent / ".env"
-_KEY_FILE = Path(__file__).parent / ".api_key"
+_KEY_FILE = Path(__file__).parent / ".api_key"  # legacy; vault is primary
+_VAULT_NS = "voice_scribe"
+_VAULT_KEY = "openai_api_key"
+
+# Imported lazily at use time to avoid import cycles during module load
+_vault = None
+
+
+def _get_vault():
+    global _vault
+    if _vault is None:
+        from secrets_store import vault as _v
+        _vault = _v
+    return _vault
 
 
 class OperationCancelled(Exception):
@@ -47,15 +60,37 @@ class OperationCancelled(Exception):
 
 
 def _load_api_key_from_files() -> str:
+    """Resolve the OpenAI API key from the vault, with legacy fallbacks.
+
+    Order: vault → legacy .api_key file → .env (OPENAI_API_KEY) → os.environ.
+    If the key is found in a legacy location, it is written to the vault so
+    subsequent runs use the unified store.
+    """
+    vault = _get_vault()
+    key = vault.get(_VAULT_NS, _VAULT_KEY, default="") or ""
+    if key:
+        return key
+
+    # Legacy: per-plugin file
     if _KEY_FILE.exists():
-        key = _KEY_FILE.read_text(encoding="utf-8").strip()
-        if key:
-            return key
+        legacy = _KEY_FILE.read_text(encoding="utf-8").strip()
+        if legacy:
+            vault.set(_VAULT_NS, _VAULT_KEY, legacy)
+            log.info("Migrated OpenAI API key from %s to secrets vault", _KEY_FILE)
+            return legacy
+
+    # Legacy: .env file at project root
     if _ENV_FILE.exists():
         for line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line.startswith("OPENAI_API_KEY="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
+                env_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if env_key:
+                    # Keep .env intact — do not migrate automatically so other
+                    # tools relying on it keep working. Vault reads it as a
+                    # fallback on its own.
+                    return env_key
+
     return os.environ.get("OPENAI_API_KEY", "")
 
 
@@ -1009,8 +1044,8 @@ class VoiceScribePlugin(Plugin):
     def _save_api_key(self, key: str) -> None:
         self.api_key = key.strip()
         try:
-            _KEY_FILE.write_text(self.api_key, encoding="utf-8")
-            log.info("API key saved to %s", _KEY_FILE)
+            _get_vault().set(_VAULT_NS, _VAULT_KEY, self.api_key)
+            log.info("API key saved to secrets vault")
         except OSError as exc:
             log.error("Failed to save API key: %s", exc)
 

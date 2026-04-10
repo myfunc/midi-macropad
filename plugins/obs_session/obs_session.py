@@ -18,11 +18,13 @@ from pathlib import Path
 from base import Plugin
 from logger import get_logger
 import settings
+from secrets_store import vault, make_vault_ref
 
 log = get_logger("obs_session")
 
 MODE_NAME = "OBS"
 SETTINGS_KEY = "obs_session_plugin"
+VAULT_NS = "obs_session"
 
 PAD_ACTIONS = [
     {"id": "scene_screen", "label": "Screen", "color": (100, 180, 255), "desc": "Screen share + PiP webcam"},
@@ -227,7 +229,8 @@ class OBSSessionPlugin(Plugin):
 
         self.host = str(_m("host", self.host)).strip()
         self.port = int(_m("port", self.port))
-        self.password = str(_m("password", self.password))
+        # Password lives in the vault (secrets.json), never in the profile.
+        self.password = str(vault.get(VAULT_NS, "password", default="") or "")
         self.scene_screen = str(_m("scene_screen", self.scene_screen)).strip()
         self.scene_camera = str(_m("scene_camera", self.scene_camera)).strip()
         self.scene_pip = str(_m("scene_pip", self.scene_pip)).strip()
@@ -1633,12 +1636,15 @@ class OBSSessionPlugin(Plugin):
         self._refresh_ui()
 
     def _persist_settings(self) -> None:
+        # Secret (password) goes to the vault; the profile stores only a
+        # ${vault:...} reference so it is safe to share.
+        vault.set(VAULT_NS, "password", self.password)
         settings.put(
             SETTINGS_KEY,
             {
                 "host": self.host,
                 "port": self.port,
-                "password": self.password,
+                "password": make_vault_ref(VAULT_NS, "password"),
                 "scene_screen": self.scene_screen,
                 "scene_camera": self.scene_camera,
                 "scene_pip": self.scene_pip,

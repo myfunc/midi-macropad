@@ -1,0 +1,68 @@
+{
+  "_comment": "Profile template — committed to git. Copy to default.json on first run. Secrets reference the vault via ${vault:ns.key} placeholders.",
+  "spotify_plugin": {
+    "redirect_port": 8765,
+    "client_id": "${vault:spotify.client_id}",
+    "access_token": "${vault:spotify.access_token}",
+    "refresh_token": "${vault:spotify.refresh_token}",
+    "token_expires_at": "${vault:spotify.token_expires_at}"
+  },
+  "obs_session_plugin": {
+    "host": "127.0.0.1",
+    "port": 4455,
+    "password": "${vault:obs_session.password}",
+    "scene_screen": "",
+    "scene_camera": "",
+    "scene_pip": "",
+    "scene_cam_app": "",
+    "right_screen_source": "",
+    "camera_source": "",
+    "mic_source": "",
+    "desktop_audio_source": "",
+    "aux_audio_source": "",
+    "output_dir": "",
+    "replay_dir": "",
+    "postprocess_stitch": true,
+    "postprocess_transcript": false,
+    "postprocess_open_folder": true,
+    "pad_slots": {
+      "16": "scene_screen",
+      "17": "scene_camera",
+      "18": "scene_pip",
+      "19": "scene_cam_app",
+      "20": "mute_mic",
+      "21": "session",
+      "22": "record",
+      "23": "save_replay"
+    }
+  },
+  "enabled_plugins": [
+    "OBS",
+    "REAPER Bridge",
+    "Sample Player",
+    "Voice Scribe",
+    "Voicemeeter"
+  ],
+  "mode_index": 0,
+  "vm_plugin": {
+    "knob_mode": {
+      "48": "default",
+      "49": "default",
+      "50": "default"
+    },
+    "duck_enabled": false,
+    "duck_threshold": 0.015,
+    "duck_amount": -18.0,
+    "duck_hold": 0.6,
+    "duck_attack_time": 0.25
+  },
+  "melody_transpose": 0,
+  "active_profile": "default",
+  "preset_index": 0,
+  "knob_values": {
+    "48": 64,
+    "49": 64,
+    "50": 64,
+    "51": 64
+  }
+}

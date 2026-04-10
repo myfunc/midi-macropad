@@ -10,6 +10,7 @@ import time
 from base import Plugin
 from logger import get_logger
 import settings
+from secrets_store import vault, make_vault_ref
 
 _plugin_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -33,6 +34,7 @@ TokenExpiredError = _api_mod.TokenExpiredError
 log = get_logger("spotify")
 
 SETTINGS_KEY = "spotify_plugin"
+VAULT_NS = "spotify"
 MODE_NAME = "Spotify"
 
 SPOTIFY_GREEN = (30, 185, 84)
@@ -108,22 +110,24 @@ class SpotifyPlugin(Plugin):
     # -- lifecycle ---------------------------------------------------------
 
     def on_load(self, config: dict) -> None:
-        saved = settings.get(SETTINGS_KEY, {})
-        merged = {
-            "client_id": saved.get("client_id", config.get("client_id", self.client_id)),
-            "redirect_port": saved.get(
-                "redirect_port", config.get("redirect_port", self.redirect_port)
-            ),
-            "access_token": saved.get("access_token", self._access_token),
-            "refresh_token": saved.get("refresh_token", self._refresh_token),
-            "token_expires_at": saved.get("token_expires_at", self._token_expires_at),
-        }
-        self.client_id = str(merged["client_id"]).strip()
-        self.redirect_port = int(merged["redirect_port"])
-        self._access_token = str(merged.get("access_token") or "")
-        self._refresh_token = str(merged.get("refresh_token") or "")
+        # Non-secret settings live in the profile.
+        # settings.get() resolves any ${vault:...} placeholders before returning.
+        saved = settings.get(SETTINGS_KEY, {}) or {}
+        self.redirect_port = int(
+            saved.get("redirect_port", config.get("redirect_port", self.redirect_port))
+        )
+
+        # Secrets live in the vault (secrets.json, gitignored).
+        self.client_id = str(
+            vault.get(VAULT_NS, "client_id", default=config.get("client_id", self.client_id))
+            or ""
+        ).strip()
+        self._access_token = str(vault.get(VAULT_NS, "access_token", default="") or "")
+        self._refresh_token = str(vault.get(VAULT_NS, "refresh_token", default="") or "")
         try:
-            self._token_expires_at = float(merged.get("token_expires_at") or 0.0)
+            self._token_expires_at = float(
+                vault.get(VAULT_NS, "token_expires_at", default=0.0) or 0.0
+            )
         except (TypeError, ValueError):
             self._token_expires_at = 0.0
 
@@ -712,16 +716,26 @@ class SpotifyPlugin(Plugin):
     # -- persistence + UI refresh -------------------------------------------
 
     def _persist_settings(self) -> None:
+        # Non-secret profile fields + vault references for secrets.
+        # The references are stored verbatim so the profile remains safe
+        # to share (they resolve at read time via settings.get).
         settings.put(
             SETTINGS_KEY,
             {
-                "client_id": self.client_id,
                 "redirect_port": self.redirect_port,
-                "access_token": self._access_token,
-                "refresh_token": self._refresh_token,
-                "token_expires_at": self._token_expires_at,
+                "client_id": make_vault_ref(VAULT_NS, "client_id"),
+                "access_token": make_vault_ref(VAULT_NS, "access_token"),
+                "refresh_token": make_vault_ref(VAULT_NS, "refresh_token"),
+                "token_expires_at": make_vault_ref(VAULT_NS, "token_expires_at"),
             },
         )
+        # Actual secret values go to the vault.
+        vault.put(VAULT_NS, {
+            "client_id": self.client_id,
+            "access_token": self._access_token,
+            "refresh_token": self._refresh_token,
+            "token_expires_at": self._token_expires_at,
+        })
 
     def _shuffle_label(self) -> str:
         return "On" if self._shuffle_on else "Off"

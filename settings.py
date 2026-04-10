@@ -1,10 +1,17 @@
-"""Persistent JSON settings with named profile support — debounced save, atomic writes."""
+"""Persistent JSON settings with named profile support — debounced save, atomic writes.
+
+Values may contain ${vault:namespace.key} references which are resolved at read
+time against the secrets vault (see `secrets_store.py`). This lets profiles be
+shareable without leaking credentials.
+"""
 import json
 import logging
 import os
 import shutil
 import tempfile
 import threading
+
+from secrets_store import resolve_value
 
 _DIR = os.path.dirname(__file__)
 _PATH = os.path.join(_DIR, "settings.json")
@@ -68,6 +75,15 @@ def _write_settings_unlocked() -> None:
 
 def load():
     global _data
+    # Migrate plaintext secrets out of any existing profiles/settings before
+    # loading them into memory. Idempotent — safe to run every startup.
+    try:
+        from secrets_migrate import migrate_all_profiles, migrate_settings_file
+        migrate_all_profiles(_PROFILES_DIR)
+        migrate_settings_file(_PATH)
+    except Exception:
+        _log.exception("Secrets migration failed (continuing)")
+
     with _lock:
         try:
             with open(_PATH, "r", encoding="utf-8") as f:
@@ -98,6 +114,19 @@ def flush():
 
 def get(key: str, default=None):
     with _lock:
+        value = _data.get(key, default)
+    # Resolve ${vault:ns.key} references outside the lock to avoid deadlock
+    # if the vault also needs its own lock.
+    return resolve_value(value)
+
+
+def get_raw(key: str, default=None):
+    """Like get(), but does NOT resolve ${vault:...} references.
+
+    Use this when you need to inspect or rewrite placeholders (e.g., during
+    migration or when saving).
+    """
+    with _lock:
         return _data.get(key, default)
 
 
@@ -110,6 +139,13 @@ def put(key: str, value):
 
 
 def get_all() -> dict:
+    with _lock:
+        snapshot = dict(_data)
+    return resolve_value(snapshot)
+
+
+def get_all_raw() -> dict:
+    """Return the full settings dict with ${vault:...} placeholders intact."""
     with _lock:
         return dict(_data)
 

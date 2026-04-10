@@ -31,8 +31,14 @@ logs/
 settings.json
 .env
 
-# User profiles contain secrets (Spotify tokens, OBS passwords)
+# User profiles contain personal layout/state; template.json is shared
 profiles/*.json
+!profiles/template.json
+
+# Secrets vault (plugin credentials: tokens, passwords, API keys)
+/secrets.json
+/secrets.*.json
+!/secrets.example.json
 
 # Frontend build artifacts
 frontend/tsconfig.tsbuildinfo
