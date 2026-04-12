@@ -192,6 +192,48 @@ def create_app(core: AppCore) -> FastAPI:
             })
         return result
 
+    @app.get("/api/telemetry/current")
+    async def get_telemetry_current():
+        """Live in-memory session telemetry snapshot (no disk write)."""
+        return core.telemetry.snapshot()
+
+    @app.post("/api/telemetry/dump")
+    async def post_telemetry_dump():
+        """Force an immediate telemetry dump to disk and return the file path."""
+        try:
+            path = core.telemetry.dump()
+            return {"ok": True, "path": str(path)}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    @app.get("/api/knobs/catalog")
+    async def get_knob_catalog():
+        """Aggregated knob action catalog from all enabled plugins.
+
+        Returns ``{"core": [...], "plugins": {plugin_name: [...]}}``.
+        The ``core`` list describes built-in knob action types that don't
+        route through a plugin (e.g. volume targets).
+        """
+        core_actions = [
+            {"id": "volume:master", "type": "volume", "target": "master",
+             "label": "Master Volume", "description": "System master volume",
+             "params_schema": {}},
+            {"id": "volume:mic", "type": "volume", "target": "mic",
+             "label": "Mic Volume", "description": "System mic input volume",
+             "params_schema": {}},
+            {"id": "volume:spotify", "type": "volume", "target": "spotify",
+             "label": "Spotify Volume", "description": "Spotify app volume",
+             "params_schema": {}},
+            {"id": "volume:foreground", "type": "volume", "target": "foreground",
+             "label": "Foreground App Volume",
+             "description": "Currently focused app volume",
+             "params_schema": {}},
+        ]
+        return {
+            "core": core_actions,
+            "plugins": core.plugin_manager.get_all_knob_catalogs(),
+        }
+
     # ── Settings & Profiles ────────────────────────────────────────────
 
     @app.get("/api/settings")

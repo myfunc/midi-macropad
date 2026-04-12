@@ -28,6 +28,7 @@ from pad_registry import PadEntry, PAD_NOTES_ALL
 
 from backend.event_bus import EventBus
 from backend.operation_manager import OperationManager
+from backend.telemetry import TelemetryAggregator
 
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config.toml")
 
@@ -50,6 +51,10 @@ class AppCore:
         # Log buffer for WebSocket clients connecting later
         self.log_buffer: list[dict] = []
         self._LOG_BUFFER_MAX = 200
+
+        # Session telemetry — observer on event_bus, dumped on shutdown
+        self.telemetry = TelemetryAggregator(Path(_PROJECT_ROOT))
+        self.event_bus.subscribe_sync(self.telemetry.on_event)
 
     # ------------------------------------------------------------------
     # Bootstrap
@@ -126,6 +131,7 @@ class AppCore:
         except Exception as exc:
             self._runtime_log("ERR", f"Initial mode sync failed: {exc}", (255, 80, 80))
 
+        self.telemetry.set_plugins_enabled(list(self.plugin_manager.enabled))
         self._runtime_log("SYS", "AppCore bootstrapped", (100, 255, 150))
 
     # ------------------------------------------------------------------
@@ -143,6 +149,12 @@ class AppCore:
 
     def shutdown(self) -> None:
         self._running = False
+        try:
+            path = self.telemetry.dump()
+            self._runtime_log(
+                "SYS", f"Telemetry dumped to {path.name}", (100, 255, 150))
+        except Exception as exc:
+            self._runtime_log("ERR", f"Telemetry dump failed: {exc}", (255, 80, 80))
         try:
             self.op_manager.shutdown()
         except Exception:
@@ -275,19 +287,28 @@ class AppCore:
 
     def _handle_knob(self, knob, value: int) -> None:
         action = knob.action
-        if action.type == "volume":
-            level = value / 127.0
-            if action.target == "master":
-                self.audio.set_master_volume(level)
-            elif action.target == "mic":
-                self.audio.set_mic_volume(level)
-            elif action.target == "spotify":
-                self.audio.set_app_volume("spotify", level)
-            elif action.target == "foreground":
-                self.audio.set_foreground_volume(level)
-            self.event_bus.publish("audio.level", {
-                "target": action.target, "level": level,
-            })
+        try:
+            if action.type == "volume":
+                self._knob_volume(action, value)
+            elif action.type == "plugin":
+                self.plugin_manager.dispatch_knob_action(
+                    action.target, value, action.params or {})
+        except Exception as exc:
+            self._runtime_log("ERR", f"Knob action failed: {exc}", (255, 80, 80))
+
+    def _knob_volume(self, action, value: int) -> None:
+        level = value / 127.0
+        if action.target == "master":
+            self.audio.set_master_volume(level)
+        elif action.target == "mic":
+            self.audio.set_mic_volume(level)
+        elif action.target == "spotify":
+            self.audio.set_app_volume("spotify", level)
+        elif action.target == "foreground":
+            self.audio.set_foreground_volume(level)
+        self.event_bus.publish("audio.level", {
+            "target": action.target, "level": level,
+        })
 
     # ------------------------------------------------------------------
     # Logging

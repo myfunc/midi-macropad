@@ -18,6 +18,7 @@ class ActionDef:
     target: str = ""
     command: str = ""
     process: str = ""
+    params: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -55,6 +56,7 @@ def _parse_action(act: dict) -> ActionDef:
         target=act.get("target", ""),
         command=act.get("command", ""),
         process=act.get("process", ""),
+        params=dict(act.get("params", {}) or {}),
     )
 
 

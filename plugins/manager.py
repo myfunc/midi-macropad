@@ -251,6 +251,41 @@ class PluginManager:
                           color=(255, 80, 80))
         return catalogs
 
+    def get_all_knob_catalogs(self) -> dict[str, list[dict]]:
+        """Return ``{plugin_name: [knob_action_dicts]}`` for all loaded plugins."""
+        catalogs: dict[str, list[dict]] = {}
+        for name in list(self.enabled):
+            plugin = self.plugins.get(name)
+            if plugin is None:
+                continue
+            try:
+                cat = plugin.get_knob_catalog()
+                if cat:
+                    catalogs[name] = cat
+            except Exception:
+                self._log("PLUGIN",
+                          f"{name}.get_knob_catalog error: {traceback.format_exc()}",
+                          color=(255, 80, 80))
+        return catalogs
+
+    def dispatch_knob_action(
+        self, target: str, value: int, params: dict
+    ) -> bool:
+        """Route a knob action to a specific plugin by ``target`` = "Plugin:action_id"."""
+        if not target:
+            return False
+        plugin_name, _, action_id = target.partition(":")
+        plugin = self.plugins.get(plugin_name)
+        if plugin is None or plugin_name not in self.enabled:
+            return False
+        try:
+            return bool(plugin.execute_plugin_knob(action_id, value, params))
+        except Exception:
+            self._log("PLUGIN",
+                      f"{plugin_name}.execute_plugin_knob error: {traceback.format_exc()}",
+                      color=(255, 80, 80))
+            return False
+
     # -- UI helpers -----------------------------------------------------------
 
     def get_all_pad_labels(self) -> dict[int, str]:

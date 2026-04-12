@@ -401,42 +401,118 @@ class VoicemeeterPlugin(Plugin):
     # ── MIDI knobs ─────────────────────────────────────────────────────────────
 
     def on_knob(self, cc: int, value: int) -> bool:
-        if not self._active or not self._vm.connected:
-            return False
+        # All knob handling is now config-driven via execute_plugin_knob.
+        # Broadcast path stays no-op so core.handle_knob can dispatch by target.
+        return False
 
-        if cc in self._knob_mode and self._knob_mode[cc] == "default":
-            return False
+    def get_knob_catalog(self) -> list[dict]:
+        return [
+            {
+                "id": "mic_gain",
+                "label": "Mic Gain",
+                "description": "Strip[0].Gain, -60..+12 dB",
+                "params_schema": {},
+            },
+            {
+                "id": "b1_gain",
+                "label": "B1 Output Gain",
+                "description": "Bus[3].Gain (virtual mic out), -60..+12 dB",
+                "params_schema": {},
+            },
+            {
+                "id": "eq_band_gain",
+                "label": "EQ Band Gain (B1)",
+                "description": "Bus[3].EQ cell gain, -18..+18 dB. "
+                               "Init freq/q/type once via params.",
+                "params_schema": {
+                    "band": {"type": "int", "default": 0, "min": 0, "max": 5,
+                             "description": "EQ cell index (0..5)"},
+                    "freq": {"type": "float", "default": 1000.0,
+                             "min": 20.0, "max": 20000.0,
+                             "description": "Center frequency in Hz"},
+                    "q": {"type": "float", "default": 1.0, "min": 0.3, "max": 100.0,
+                          "description": "Q factor"},
+                    "filter_type": {"type": "int", "default": 2, "min": 0, "max": 6,
+                                    "description": "Filter type (2=peak)"},
+                },
+            },
+            {
+                "id": "gate",
+                "label": "Noise Gate",
+                "description": "Strip[0].Gate, 0..10",
+                "params_schema": {},
+            },
+            {
+                "id": "comp",
+                "label": "Compressor",
+                "description": "Strip[0].Comp, 0..10",
+                "params_schema": {},
+            },
+            {
+                "id": "audibility",
+                "label": "Audibility",
+                "description": "Strip[0].Audibility, 0..10",
+                "params_schema": {},
+            },
+        ]
 
-        if cc == KNOB_MIC_GAIN:
-            self._mic_gain = -60.0 + (value / 127.0) * 72.0
+    def execute_plugin_knob(
+        self, action_id: str, value: int, params: dict
+    ) -> bool:
+        if not self._vm.connected:
+            return False
+        norm = value / 127.0
+        if action_id == "mic_gain":
+            self._mic_gain = -60.0 + norm * 72.0
             self._vm.set("Strip[0].Gain", self._mic_gain)
             self._ui_dirty = True
             return True
-
-        if cc == KNOB_GATE:
-            v = (value / 127.0) * 10.0
+        if action_id == "b1_gain":
+            self._vm.set("Bus[3].Gain", -60.0 + norm * 72.0)
+            self._ui_dirty = True
+            return True
+        if action_id == "eq_band_gain":
+            band = int(params.get("band", 0))
+            if not 0 <= band <= 5:
+                return False
+            gain_db = max(-18.0, min(18.0, (value - 64) * (18.0 / 64.0)))
+            init_flag = f"_eq_band_{band}_init"
+            if not getattr(self, init_flag, False):
+                freq = float(params.get("freq", 1000.0))
+                q = float(params.get("q", 1.0))
+                ftype = int(params.get("filter_type", 2))
+                base = f"Bus[3].EQ.channel[0].cell[{band}]"
+                self._vm.set(f"{base}.on", 1.0)
+                self._vm.set(f"{base}.type", float(ftype))
+                self._vm.set(f"{base}.f", freq)
+                self._vm.set(f"{base}.q", q)
+                self._vm.set("Bus[3].EQ.on", 1.0)
+                setattr(self, init_flag, True)
+            self._vm.set(
+                f"Bus[3].EQ.channel[0].cell[{band}].gain", gain_db)
+            self._ui_dirty = True
+            return True
+        if action_id == "gate":
+            v = norm * 10.0
             self._vm.set("Strip[0].Gate", v)
             self._gate_on = v > 0.1
             if v > 0.1:
                 self._gate_val = v
             self._ui_dirty = True
             return True
-
-        if cc == KNOB_COMP:
-            v = (value / 127.0) * 10.0
+        if action_id == "comp":
+            v = norm * 10.0
             self._vm.set("Strip[0].Comp", v)
             self._comp_on = v > 0.1
             if v > 0.1:
                 self._comp_val = v
             self._ui_dirty = True
             return True
-
-        if cc == KNOB_JOY_X:
-            self._audibility = (value / 127.0) * 10.0
+        if action_id == "audibility":
+            self._audibility = norm * 10.0
             self._vm.set("Strip[0].Audibility", self._audibility)
             self._ui_dirty = True
             return True
-
         return False
 
     # ── helpers ─────────────────────────────────────────────────────────────────

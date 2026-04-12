@@ -1,31 +1,38 @@
 [[knobs]]
 cc = 48
-label = "Volume"
+label = "EQ Low"
 
 [knobs.action]
-type = "volume"
-target = "master"
+type = "plugin"
+target = "Voicemeeter:eq_band_gain"
+params = { band = 0, freq = 100.0, q = 1.0, filter_type = 2 }
+
 [[knobs]]
 cc = 49
-label = "Mic"
+label = "EQ LowMid"
 
 [knobs.action]
-type = "volume"
-target = "mic"
+type = "plugin"
+target = "Voicemeeter:eq_band_gain"
+params = { band = 1, freq = 400.0, q = 1.0, filter_type = 2 }
+
 [[knobs]]
 cc = 50
-label = "Spotify"
+label = "EQ HighMid"
 
 [knobs.action]
-type = "volume"
-target = "spotify"
+type = "plugin"
+target = "Voicemeeter:eq_band_gain"
+params = { band = 2, freq = 3000.0, q = 1.0, filter_type = 2 }
+
 [[knobs]]
 cc = 51
-label = "App"
+label = "EQ Presence"
 
 [knobs.action]
-type = "volume"
-target = "foreground"
+type = "plugin"
+target = "Voicemeeter:eq_band_gain"
+params = { band = 3, freq = 8000.0, q = 1.0, filter_type = 2 }
 [[pad_presets]]
 name = "Spotify"
 [[pad_presets.pads]]

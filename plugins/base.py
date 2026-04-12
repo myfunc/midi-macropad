@@ -81,6 +81,22 @@ class Plugin(ABC):
     def execute_plugin_action(self, action_id: str, note: int, velocity: int) -> bool:
         return False
 
+    def get_knob_catalog(self) -> list[dict]:
+        """Return knob actions this plugin exposes.
+
+        Each dict: ``{"id": str, "label": str, "description": str,
+        "params_schema": {param_name: {"type": "int"|"float"|"string",
+        "default": ..., "min": ..., "max": ...}}}``. Empty params_schema
+        means the action takes only the raw knob value.
+        """
+        return []
+
+    def execute_plugin_knob(
+        self, action_id: str, value: int, params: dict
+    ) -> bool:
+        """Handle a knob-routed action. *value* is 0..127. Return True on success."""
+        return False
+
     def get_dynamic_label(self, action_id: str, note: int) -> str | None:
         return None
 
