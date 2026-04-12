@@ -306,9 +306,9 @@ function SortableKnob({ knob, onClick, isSelected }: { knob: KnobEntry; onClick:
 /* ── Exports ── */
 
 // MPK Mini Play layout: top row = 20-23, bottom row = 16-19
-// MPK Mini Play: top row = lower notes, bottom row = higher notes
-const BANK_A_NOTES = [16, 17, 18, 19, 20, 21, 22, 23]
-const BANK_B_NOTES = [24, 25, 26, 27, 28, 29, 30, 31]
+// MPK Mini Play: top row = 20-23, bottom row = 16-19
+const BANK_A_NOTES = [20, 21, 22, 23, 16, 17, 18, 19]
+const BANK_B_NOTES = [28, 29, 30, 31, 24, 25, 26, 27]
 
 export function BankAPanel(_props: IDockviewPanelProps) {
   return <BankPanel notes={BANK_A_NOTES} panelId="bankA" />
