@@ -180,3 +180,53 @@ def test_get_plugin_notes():
     m = Mapper(cfg)
     assert m.get_plugin_notes("Foo") == {16, 17}
     assert m.get_plugin_notes("Bar") == set()
+
+
+def test_update_knob_action_writes_toml(tmp_path):
+    """update_knob_action should update config.toml and reload knobs."""
+    p = tmp_path / "c.toml"
+    p.write_text(MINIMAL_TOML, encoding="utf-8")
+    cfg = load_config(p)
+    m = Mapper(cfg)
+
+    # Knob CC=10 exists in MINIMAL_TOML
+    assert m.lookup_knob(10) is not None
+    assert m.lookup_knob(10).label == "Vol"
+
+    ok = m.update_knob_action(
+        cc=10,
+        action_type="plugin",
+        target="Voicemeeter:headphones_gain",
+        label="Headphones",
+        params={},
+        config_path=p,
+    )
+    assert ok is True
+    # In-memory config should be updated
+    k = m.lookup_knob(10)
+    assert k is not None
+    assert k.label == "Headphones"
+    assert k.action.type == "plugin"
+    assert k.action.target == "Voicemeeter:headphones_gain"
+
+    # File should be updated (re-parse)
+    import toml
+    data = toml.load(str(p))
+    knob = data["knobs"][0]
+    assert knob["label"] == "Headphones"
+    assert knob["action"]["type"] == "plugin"
+    assert knob["action"]["target"] == "Voicemeeter:headphones_gain"
+
+
+def test_update_knob_action_not_found(tmp_path):
+    """update_knob_action returns False for unknown CC."""
+    p = tmp_path / "c.toml"
+    p.write_text(MINIMAL_TOML, encoding="utf-8")
+    cfg = load_config(p)
+    m = Mapper(cfg)
+
+    ok = m.update_knob_action(
+        cc=999, action_type="volume", target="master",
+        label="X", params={}, config_path=p,
+    )
+    assert ok is False

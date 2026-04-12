@@ -454,6 +454,12 @@ class VoicemeeterPlugin(Plugin):
                 "description": "Strip[0].Audibility, 0..10",
                 "params_schema": {},
             },
+            {
+                "id": "headphones_gain",
+                "label": "Headphones Volume",
+                "description": "Bus[0].Gain (A1 headphones output), -60..+12 dB",
+                "params_schema": {},
+            },
         ]
 
     def execute_plugin_knob(
@@ -511,6 +517,10 @@ class VoicemeeterPlugin(Plugin):
         if action_id == "audibility":
             self._audibility = norm * 10.0
             self._vm.set("Strip[0].Audibility", self._audibility)
+            self._ui_dirty = True
+            return True
+        if action_id == "headphones_gain":
+            self._vm.set("Bus[0].Gain", -60.0 + norm * 72.0)
             self._ui_dirty = True
             return True
         return False

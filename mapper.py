@@ -97,6 +97,65 @@ def load_config(path: str | Path) -> AppConfig:
     return cfg
 
 
+def _action_to_dict(action: ActionDef) -> dict:
+    """Convert an ActionDef to a TOML-serializable dict."""
+    d: dict = {"type": action.type}
+    if action.keys:
+        d["keys"] = action.keys
+    if action.target:
+        d["target"] = action.target
+    if action.command:
+        d["command"] = action.command
+    if action.process:
+        d["process"] = action.process
+    if action.params:
+        d["params"] = dict(action.params)
+    return d
+
+
+def save_config(config: AppConfig, path: str | Path) -> None:
+    """Write the full AppConfig back to a TOML file."""
+    p = Path(path)
+    data: dict = {}
+
+    # Device section
+    data["device"] = {"name": config.device_name}
+
+    # Knobs
+    knobs_list = []
+    for k in config.knobs:
+        knobs_list.append({
+            "cc": k.cc,
+            "label": k.label,
+            "action": _action_to_dict(k.action),
+        })
+    if knobs_list:
+        data["knobs"] = knobs_list
+
+    # Pad presets
+    presets_list = []
+    for preset in config.pad_presets:
+        preset_dict: dict = {"name": preset.name}
+        pads_list = []
+        for pad in preset.pads:
+            pad_dict: dict = {
+                "note": pad.note,
+                "label": pad.label,
+                "action": _action_to_dict(pad.action),
+            }
+            if pad.hotkey:
+                pad_dict["hotkey"] = pad.hotkey
+            pads_list.append(pad_dict)
+        if pads_list:
+            preset_dict["pads"] = pads_list
+        presets_list.append(preset_dict)
+    if presets_list:
+        data["pad_presets"] = presets_list
+
+    with open(str(p), "w", encoding="utf-8") as f:
+        toml.dump(data, f)
+
+
 class Mapper:
     """Maps MIDI events to actions based on current pad preset."""
 
@@ -219,6 +278,104 @@ class Mapper:
         if not found_b:
             preset.pads.append(new_b)
         self._sync_registry()
+
+    def get_preset_by_name(self, name: str) -> PadPreset | None:
+        """Find a preset by name (case-insensitive). Returns None if not found."""
+        for preset in self.config.pad_presets:
+            if preset.name.lower() == name.lower():
+                return preset
+        return None
+
+    def get_preset_index_by_name(self, name: str) -> int | None:
+        """Find a preset index by name (case-insensitive)."""
+        for i, preset in enumerate(self.config.pad_presets):
+            if preset.name.lower() == name.lower():
+                return i
+        return None
+
+    def rebuild_maps(self) -> None:
+        """Public wrapper for _rebuild_pad_maps."""
+        self._rebuild_pad_maps()
+
+    def get_current_preset_index(self) -> int:
+        """Return the current preset index."""
+        return self.current_preset_index
+
+    def set_current_preset_index(self, value: int) -> None:
+        """Set the current preset index (clamped to valid range)."""
+        if self.config.pad_presets:
+            self.current_preset_index = max(0, min(value, len(self.config.pad_presets) - 1))
+        else:
+            self.current_preset_index = 0
+
+    def apply_partial_preset(self, preset_name: str, note_filter: list[int]) -> bool:
+        """Apply pads from a named preset, but only for notes in note_filter.
+
+        This allows switching a single bank (e.g. bankA = notes 16-23) to a
+        different preset without touching the other bank.
+        Returns True on success, False if preset not found.
+        """
+        preset = self.get_preset_by_name(preset_name)
+        if not preset:
+            return False
+        # Build a map of note -> PadMapping for the target preset
+        target_pads = {p.note: p for p in preset.pads if p.note in note_filter}
+        # Update the current preset's pad map for filtered notes
+        idx = min(self.current_preset_index, len(self._pad_maps) - 1)
+        pad_map = self._pad_maps[idx]
+        for note in note_filter:
+            if note in target_pads:
+                pad_map[note] = target_pads[note]
+            else:
+                # Clear pad if target preset has no mapping for this note
+                pad_map[note] = PadMapping(
+                    note=note,
+                    label=f"Pad {note - 15}",
+                    action=ActionDef(type=""),
+                )
+        # Sync filtered pads to registry
+        filter_set = set(note_filter)
+        filtered_mappings = [pad_map[n] for n in note_filter if n in pad_map]
+        self.registry.load_from_preset(filtered_mappings)
+        return True
+
+    def update_knob_action(
+        self,
+        cc: int,
+        action_type: str,
+        target: str,
+        label: str,
+        params: dict,
+        config_path: str | Path = "config.toml",
+    ) -> bool:
+        """Update a knob action in config.toml and reload the mapper config.
+
+        Finds the [[knobs]] entry with matching cc, updates its action and label,
+        writes back to config.toml, and reloads the in-memory config.
+        Returns True on success, False if cc not found.
+        """
+        path = Path(config_path)
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parent / path
+        data = toml.load(str(path))
+        knobs_list = data.get("knobs", [])
+        found = False
+        for knob_data in knobs_list:
+            if knob_data.get("cc") == cc:
+                knob_data["label"] = label
+                knob_data["action"] = {"type": action_type, "target": target}
+                if params:
+                    knob_data["action"]["params"] = params
+                found = True
+                break
+        if not found:
+            return False
+        with open(str(path), "w", encoding="utf-8") as f:
+            toml.dump(data, f)
+        # Reload in-memory config
+        new_cfg = load_config(path)
+        self.config.knobs = new_cfg.knobs
+        return True
 
     def get_plugin_notes(self, plugin_name: str) -> set[int]:
         """Return notes assigned to a specific plugin in the current preset."""

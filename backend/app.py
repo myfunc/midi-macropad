@@ -180,6 +180,82 @@ def create_app(core: AppCore) -> FastAPI:
             log.error("activate_preset failed: %s", exc, exc_info=True)
             return JSONResponse({"error": str(exc)}, 500)
 
+    # ── Panel presets ─────────────────────────────────────────────────
+
+    @app.get("/api/panels/{panel_id}/preset")
+    async def get_panel_preset(panel_id: str):
+        info = core.get_panel_preset(panel_id)
+        if info is None:
+            return JSONResponse({"error": f"Panel '{panel_id}' not found"}, 404)
+        return info
+
+    @app.post("/api/panels/{panel_id}/preset")
+    async def set_panel_preset(panel_id: str, body: dict):
+        preset_name = body.get("preset")
+        if not preset_name:
+            return JSONResponse({"error": "preset name required"}, 400)
+        ok = core.set_panel_preset(panel_id, preset_name)
+        if not ok:
+            return JSONResponse({"error": f"Preset '{preset_name}' not found or invalid panel"}, 404)
+        return {"ok": True, "panel": panel_id, "preset": preset_name}
+
+    @app.put("/api/panels/{panel_id}/order")
+    async def set_panel_order(panel_id: str, body: dict):
+        order = body.get("order")
+        if not isinstance(order, list):
+            return JSONResponse({"error": "order must be a list"}, 400)
+        ok = core.set_panel_order(panel_id, order)
+        if not ok:
+            return JSONResponse({"error": f"Invalid panel '{panel_id}'"}, 400)
+        return {"ok": True}
+
+    @app.post("/api/presets")
+    async def create_preset(body: dict):
+        name = body.get("name")
+        if not name:
+            return JSONResponse({"error": "name required"}, 400)
+        ok, err = core.create_preset(name)
+        if not ok:
+            return JSONResponse({"error": err}, 409)
+        core.event_bus.publish("presets.changed", {
+            "presets": [
+                {"index": i, "name": p.name}
+                for i, p in enumerate(core.config.pad_presets)
+            ],
+        })
+        return {"ok": True, "name": name}
+
+    @app.delete("/api/presets/{name}")
+    async def delete_preset(name: str):
+        ok, err = core.delete_preset(name)
+        if not ok:
+            status = 404 if "not found" in err.lower() else 409
+            return JSONResponse({"error": err}, status)
+        core.event_bus.publish("presets.changed", {
+            "presets": [
+                {"index": i, "name": p.name}
+                for i, p in enumerate(core.config.pad_presets)
+            ],
+        })
+        return {"ok": True}
+
+    @app.patch("/api/presets/{name}")
+    async def rename_preset(name: str, body: dict):
+        new_name = body.get("name")
+        if not new_name:
+            return JSONResponse({"error": "new name required"}, 400)
+        ok, err = core.rename_preset(name, new_name)
+        if not ok:
+            status = 409 if "already exists" in err.lower() else 404
+            return JSONResponse({"error": err}, status)
+        core.event_bus.publish("presets.changed", {
+            "presets": [
+                {"index": i, "name": p.name}
+                for i, p in enumerate(core.config.pad_presets)
+            ],
+        })
+        return {"ok": True, "old_name": name, "new_name": new_name}
+
     @app.get("/api/plugins")
     async def get_plugins():
         result = []
@@ -229,10 +305,35 @@ def create_app(core: AppCore) -> FastAPI:
              "description": "Currently focused app volume",
              "params_schema": {}},
         ]
+        raw_plugins = core.plugin_manager.get_all_knob_catalogs()
+        plugins: dict[str, list] = {}
+        for plugin_name, actions in raw_plugins.items():
+            enriched = []
+            for a in actions:
+                enriched.append({
+                    **a,
+                    "type": "plugin",
+                    "target": f"{plugin_name}:{a['id']}",
+                })
+            plugins[plugin_name] = enriched
         return {
             "core": core_actions,
-            "plugins": core.plugin_manager.get_all_knob_catalogs(),
+            "plugins": plugins,
         }
+
+    @app.put("/api/knobs/{cc}/action")
+    async def update_knob_action(cc: int, body: dict):
+        """Update knob action in config.toml."""
+        action_type = body.get("type")
+        target = body.get("target")
+        label = body.get("label", f"CC{cc}")
+        params = body.get("params", {})
+        if not action_type or not target:
+            return JSONResponse({"error": "type and target required"}, 400)
+        ok = core.update_knob_config(cc, action_type, target, label, params)
+        if not ok:
+            return JSONResponse({"error": f"Knob CC{cc} not found in config"}, 404)
+        return {"ok": True, "cc": cc, "label": label}
 
     # ── Settings & Profiles ────────────────────────────────────────────
 

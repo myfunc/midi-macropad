@@ -111,6 +111,29 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             }
           } as any)
           break
+        case 'presets.changed':
+          s.fetchPresets()
+          break
+        case 'panel_preset.changed': {
+          const panel = evt.payload.panel as string
+          const preset = evt.payload.preset as string
+          if (panel && preset) {
+            s.setPanelPreset(panel, preset)
+          }
+          if (evt.payload.pads) {
+            s.updatePads(evt.payload.pads as Record<string, any>)
+          }
+          break
+        }
+        case 'knobs.updated': {
+          const cc = evt.payload.cc as number
+          const label = evt.payload.label as string
+          if (cc !== undefined && label) {
+            s.updateKnobLabel(cc, label)
+          }
+          s.fetchKnobCatalog()
+          break
+        }
         case 'ops.update':
           console.log('[WS] Op update:', evt.payload)
           break

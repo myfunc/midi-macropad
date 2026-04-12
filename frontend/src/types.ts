@@ -45,6 +45,25 @@ export interface ObsState {
   scenes: string[]
 }
 
+export interface CatalogAction {
+  id: string
+  type: string
+  target: string
+  label: string
+  description: string
+  params_schema: Record<string, unknown>
+}
+
+export interface KnobCatalog {
+  core: CatalogAction[]
+  plugins: Record<string, CatalogAction[]>
+}
+
+export interface PanelPresetState {
+  preset: string
+  order: number[]
+}
+
 export interface AppState {
   midi: { connected: boolean; port_name: string | null; device_name: string }
   presets: { current_index: number; list: PresetInfo[] }
@@ -53,6 +72,7 @@ export interface AppState {
   plugins: { discovered: PluginInfo[] }
   obs: ObsState
   logs: LogEntry[]
+  panel_presets?: Record<string, PanelPresetState>
 }
 
 export interface WsEvent {

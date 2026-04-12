@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAppStore } from '../stores/useAppStore'
+import { KnobPropertiesView } from '../components/KnobEditorDialog'
 import type { IDockviewPanelProps } from 'dockview-react'
 
 const ACTION_GROUPS = [
@@ -69,6 +70,7 @@ function patchPad(note: number, data: Record<string, unknown>): Promise<Response
 
 export function PropertiesPanel(_props: IDockviewPanelProps) {
   const selectedNote = useAppStore(s => s.selectedNote)
+  const selectedKnobCC = useAppStore(s => s.selectedKnobCC)
   const pads = useAppStore(s => s.pads)
   const showToast = useAppStore(s => s.showToast)
   const [capturing, setCapturing] = useState(false)
@@ -84,12 +86,17 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
     }).catch(() => {})
   }, [])
 
+  // Show knob properties when a knob is selected
+  if (selectedKnobCC !== null) {
+    return <KnobPropertiesView cc={selectedKnobCC} />
+  }
+
   if (selectedNote === null) {
     return (
       <div className="props-empty">
         <div className="props-empty-icon">&#127899;</div>
         <div className="props-empty-hint">
-          Select a pad to view<br />and edit its properties
+          Select a pad or knob to view<br />and edit its properties
         </div>
       </div>
     )

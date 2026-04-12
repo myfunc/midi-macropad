@@ -17,7 +17,7 @@ if _PROJECT_ROOT not in sys.path:
 
 import settings
 from midi_listener import MidiListener, MidiEvent
-from mapper import Mapper, load_config
+from mapper import Mapper, load_config, save_config, PAD_NOTES_BANK_A, PAD_NOTES_BANK_B
 from executor import execute_keystroke, execute_shell, execute_launch, execute_scroll
 from audio import AudioController
 from feedback import FeedbackService, set_transpose, get_transpose
@@ -31,6 +31,41 @@ from backend.operation_manager import OperationManager
 from backend.telemetry import TelemetryAggregator
 
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config.toml")
+
+import re
+
+_PRESET_NAME_RE = re.compile(r'^[\w\s\-.,!?()&#+]{1,50}$', re.UNICODE)
+_VALID_PANEL_IDS = frozenset({"bankA", "bankB", "knobs"})
+
+
+def _validate_preset_name(name: str) -> str | None:
+    """Validate preset name. Returns error message or None if valid."""
+    if not isinstance(name, str) or not name.strip():
+        return "Имя пресета не может быть пустым"
+    name = name.strip()
+    if len(name) > 50:
+        return "Имя пресета не может быть длиннее 50 символов"
+    if any(ord(ch) < 32 for ch in name):
+        return "Имя пресета содержит управляющие символы"
+    if not _PRESET_NAME_RE.match(name):
+        return "Имя пресета содержит недопустимые символы"
+    return None
+
+
+def _validate_params(params: dict) -> str | None:
+    """Validate knob action params. Returns error message or None if valid."""
+    if not isinstance(params, dict):
+        return "params должен быть словарём"
+    if len(params) > 20:
+        return "params не может содержать более 20 ключей"
+    for key, value in params.items():
+        if not isinstance(key, str):
+            return f"Ключ params должен быть строкой, получен {type(key).__name__}"
+        if isinstance(value, (dict, list, tuple, set)):
+            return f"Значение params['{key}'] не может быть вложенным объектом"
+        if not isinstance(value, (str, int, float, bool)):
+            return f"Значение params['{key}'] должно быть str/int/float, получен {type(value).__name__}"
+    return None
 
 
 class AppCore:
@@ -100,6 +135,9 @@ class AppCore:
         idx = settings.get("preset_index", 0)
         if 0 <= idx < len(self.config.pad_presets):
             self.mapper.set_preset(idx)
+
+        # Migrate: create panel_presets if missing
+        self._migrate_panel_presets()
 
         # Mark headless mode so plugins skip DearPyGui calls
         os.environ["MACROPAD_HEADLESS"] = "1"
@@ -395,9 +433,10 @@ class AppCore:
                 "device_name": self.config.device_name,
             },
             "presets": {
-                "current_index": self.mapper.current_preset_index,
+                "current_index": self.mapper.get_current_preset_index(),
                 "list": presets,
             },
+            "panel_presets": settings.get("panel_presets") or {},
             "pads": pads,
             "knobs": knobs,
             "plugins": {"discovered": discovered},
@@ -412,6 +451,218 @@ class AppCore:
             "voicemeeter": self._get_vm_state(),
             "logs": self.log_buffer[-50:],
         }
+
+    # ------------------------------------------------------------------
+    # Panel presets
+    # ------------------------------------------------------------------
+
+    KNOB_CCS = [48, 49, 50, 51]
+
+    def _migrate_panel_presets(self) -> None:
+        """Create panel_presets in settings if it doesn't exist yet."""
+        if settings.get("panel_presets") is not None:
+            return
+        # Determine current preset name
+        preset = self.mapper.current_preset
+        preset_name = preset.name if preset else "Default"
+        panel_presets = {
+            "bankA": {
+                "preset": preset_name,
+                "order": list(PAD_NOTES_BANK_A),
+            },
+            "bankB": {
+                "preset": preset_name,
+                "order": list(PAD_NOTES_BANK_B),
+            },
+            "knobs": {
+                "preset": preset_name,
+                "order": list(self.KNOB_CCS),
+            },
+        }
+        settings.put("panel_presets", panel_presets)
+        self._runtime_log("SYS",
+            f"Migrated panel_presets (preset={preset_name})", (100, 255, 150))
+
+    def get_panel_preset(self, panel_id: str) -> dict | None:
+        """Get panel preset info for a panel (bankA, bankB, knobs)."""
+        if panel_id not in _VALID_PANEL_IDS:
+            return None
+        panel_presets = settings.get("panel_presets")
+        if not panel_presets:
+            return None
+        return panel_presets.get(panel_id)
+
+    def set_panel_preset(self, panel_id: str, preset_name: str) -> bool:
+        """Switch a single panel to a different preset.
+
+        For bankA/bankB: applies pads from the named preset filtered by bank notes.
+        For knobs: stores the name but doesn't change knob mappings (knobs are global).
+        """
+        # Validate preset exists
+        preset = self.mapper.get_preset_by_name(preset_name)
+        if not preset:
+            return False
+
+        panel_presets = settings.get("panel_presets") or {}
+
+        if panel_id not in _VALID_PANEL_IDS:
+            return False
+
+        if panel_id == "bankA":
+            note_filter = list(panel_presets.get("bankA", {}).get(
+                "order", PAD_NOTES_BANK_A))
+            with self._lock:
+                self.mapper.apply_partial_preset(preset_name, note_filter)
+            panel_presets.setdefault("bankA", {})["preset"] = preset_name
+        elif panel_id == "bankB":
+            note_filter = list(panel_presets.get("bankB", {}).get(
+                "order", PAD_NOTES_BANK_B))
+            with self._lock:
+                self.mapper.apply_partial_preset(preset_name, note_filter)
+            panel_presets.setdefault("bankB", {})["preset"] = preset_name
+        elif panel_id == "knobs":
+            panel_presets.setdefault("knobs", {})["preset"] = preset_name
+
+        settings.put("panel_presets", panel_presets)
+
+        # Notify plugins
+        try:
+            self.plugin_manager.on_mode_changed(preset_name)
+        except Exception:
+            pass
+        try:
+            self.plugin_manager.notify_preset_changed(self.mapper)
+        except Exception:
+            pass
+
+        self.event_bus.publish("panel_preset.changed", {
+            "panel": panel_id,
+            "preset": preset_name,
+            "pads": self.get_state_snapshot()["pads"],
+        })
+        return True
+
+    def set_panel_order(self, panel_id: str, order: list[int]) -> bool:
+        """Save drag-and-drop order for a panel."""
+        panel_presets = settings.get("panel_presets") or {}
+        if panel_id not in ("bankA", "bankB", "knobs"):
+            return False
+
+        panel_presets.setdefault(panel_id, {})
+        panel_presets[panel_id]["order"] = order
+        settings.put("panel_presets", panel_presets)
+        return True
+
+    def create_preset(self, name: str) -> tuple[bool, str]:
+        """Create a new empty preset in config.
+
+        Returns (success, error_message).
+        """
+        from mapper import PadPreset
+        err = _validate_preset_name(name)
+        if err:
+            return False, err
+        name = name.strip()
+        if self.mapper.get_preset_by_name(name) is not None:
+            return False, f"Пресет '{name}' уже существует"
+        preset = PadPreset(name=name)
+        with self._lock:
+            self.config.pad_presets.append(preset)
+            self.mapper.rebuild_maps()
+        save_config(self.config, CONFIG_PATH)
+        return True, ""
+
+    def delete_preset(self, name: str) -> tuple[bool, str]:
+        """Delete a preset by name. Refuse if it's the last one.
+
+        Returns (success, error_message).
+        """
+        if len(self.config.pad_presets) <= 1:
+            return False, "Cannot delete the last preset"
+        idx = self.mapper.get_preset_index_by_name(name)
+        if idx is None:
+            return False, f"Preset '{name}' not found"
+
+        # Check if any panel uses this preset — switch them to first available
+        panel_presets = settings.get("panel_presets") or {}
+        remaining_name = None
+        for i, p in enumerate(self.config.pad_presets):
+            if i != idx:
+                remaining_name = p.name
+                break
+
+        with self._lock:
+            self.config.pad_presets.pop(idx)
+            self.mapper.rebuild_maps()
+
+            # Adjust current_preset_index if needed
+            if self.mapper.get_current_preset_index() >= len(self.config.pad_presets):
+                self.mapper.set_current_preset_index(
+                    max(0, len(self.config.pad_presets) - 1))
+
+        save_config(self.config, CONFIG_PATH)
+
+        # Update panel_presets references
+        for panel_id, panel_data in panel_presets.items():
+            if isinstance(panel_data, dict) and panel_data.get("preset", "").lower() == name.lower():
+                panel_data["preset"] = remaining_name or "Default"
+        settings.put("panel_presets", panel_presets)
+
+        return True, ""
+
+    def rename_preset(self, old_name: str, new_name: str) -> tuple[bool, str]:
+        """Rename a preset. Returns (success, error_message)."""
+        err = _validate_preset_name(new_name)
+        if err:
+            return False, err
+        new_name = new_name.strip()
+        if self.mapper.get_preset_by_name(new_name) is not None:
+            return False, f"Preset '{new_name}' already exists"
+        preset = self.mapper.get_preset_by_name(old_name)
+        if not preset:
+            return False, f"Preset '{old_name}' not found"
+
+        with self._lock:
+            preset.name = new_name
+
+        save_config(self.config, CONFIG_PATH)
+
+        # Update panel_presets references
+        panel_presets = settings.get("panel_presets") or {}
+        for panel_id, panel_data in panel_presets.items():
+            if isinstance(panel_data, dict) and panel_data.get("preset", "").lower() == old_name.lower():
+                panel_data["preset"] = new_name
+        settings.put("panel_presets", panel_presets)
+
+        return True, ""
+
+    def update_knob_config(
+        self,
+        cc: int,
+        action_type: str,
+        target: str,
+        label: str,
+        params: dict,
+    ) -> bool:
+        """Update knob action in config.toml via mapper, publish event."""
+        if params:
+            err = _validate_params(params)
+            if err:
+                self._runtime_log("ERR", f"Knob params invalid: {err}", (255, 80, 80))
+                return False
+        with self._lock:
+            ok = self.mapper.update_knob_action(
+                cc, action_type, target, label, params,
+                config_path=CONFIG_PATH,
+            )
+        if ok:
+            self.event_bus.publish("knobs.updated", {
+                "cc": cc, "label": label,
+                "action": {"type": action_type, "target": target, "params": params},
+            })
+            self._runtime_log("KNOB",
+                f"Knob CC{cc} updated: {label} ({target})", (100, 255, 150))
+        return ok
 
     def _get_vm_state(self) -> dict:
         """Extract Voicemeeter plugin state for API."""
