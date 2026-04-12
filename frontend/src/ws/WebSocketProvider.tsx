@@ -134,6 +134,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           s.fetchKnobCatalog()
           break
         }
+        case 'knob_preset.changed': {
+          if (evt.payload.knobs && Array.isArray(evt.payload.knobs)) {
+            store.setState({ knobs: evt.payload.knobs })
+          }
+          const kPreset = evt.payload.preset as string
+          if (kPreset) {
+            s.setPanelPreset('knobs', kPreset)
+          }
+          break
+        }
         case 'ops.update':
           console.log('[WS] Op update:', evt.payload)
           break

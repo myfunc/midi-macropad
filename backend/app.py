@@ -282,6 +282,20 @@ def create_app(core: AppCore) -> FastAPI:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    @app.get("/api/knob-presets")
+    async def get_knob_presets():
+        return core.get_knob_presets()
+
+    @app.post("/api/knob-presets/activate")
+    async def activate_knob_preset(body: dict):
+        name = body.get("name")
+        if not name:
+            return JSONResponse({"error": "name required"}, 400)
+        ok = core.switch_knob_preset(name)
+        if not ok:
+            return JSONResponse({"error": f"Knob preset '{name}' not found"}, 404)
+        return {"ok": True, "preset": name}
+
     @app.get("/api/knobs/catalog")
     async def get_knob_catalog():
         """Aggregated knob action catalog from all enabled plugins.

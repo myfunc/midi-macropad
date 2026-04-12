@@ -5,10 +5,11 @@ interface PanelPresetSwitcherProps {
   panelId: string
 }
 
-const MAX_VISIBLE = 4
+const MAX_VISIBLE = 6
 
 export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
-  const presets = useAppStore(s => s.presets)
+  const padPresets = useAppStore(s => s.presets)
+  const knobPresets = useAppStore(s => s.knobPresets ?? [])
   const panelPreset = useAppStore(s => s.panelPresets[panelId])
   const setPanelPreset = useAppStore(s => s.setPanelPreset)
   const updatePanelPresetName = useAppStore(s => s.updatePanelPresetName)
@@ -24,8 +25,11 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
 
-  const activePreset = panelPreset?.preset ?? presets[0]?.name ?? ''
-  const presetNames = presets.map(p => p.name)
+  // Knobs panel uses knob presets, pad panels use pad presets
+  const isKnobs = panelId === 'knobs'
+  const sourcePresets = isKnobs ? knobPresets : padPresets
+  const activePreset = panelPreset?.preset ?? sourcePresets[0]?.name ?? ''
+  const presetNames = sourcePresets.map(p => p.name)
 
   const needsOverflow = presetNames.length > MAX_VISIBLE
   const visiblePresets = needsOverflow ? presetNames.slice(0, MAX_VISIBLE) : presetNames
@@ -50,17 +54,20 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
   const switchPreset = useCallback((name: string) => {
     const previousPreset = activePreset
     setPanelPreset(panelId, name)
-    fetch(`/api/panels/${panelId}/preset`, {
+    const url = isKnobs
+      ? '/api/knob-presets/activate'
+      : `/api/panels/${panelId}/preset`
+    fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preset: name }),
+      body: JSON.stringify({ name, preset: name }),
     }).then(r => {
       if (!r.ok) throw new Error(r.statusText)
     }).catch((e) => {
       console.error(`[PresetSwitcher] Failed to switch preset for ${panelId}:`, e)
       setPanelPreset(panelId, previousPreset)
     })
-  }, [panelId, activePreset, setPanelPreset])
+  }, [panelId, activePreset, setPanelPreset, isKnobs])
 
   function handleContextMenu(e: React.MouseEvent, preset: string) {
     e.preventDefault()

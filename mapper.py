@@ -43,9 +43,16 @@ class PadPreset:
 
 
 @dataclass
+class KnobPreset:
+    name: str
+    knobs: list[KnobMapping] = field(default_factory=list)
+
+
+@dataclass
 class AppConfig:
     device_name: str = "MPK mini play"
     pad_presets: list[PadPreset] = field(default_factory=list)
+    knob_presets: list[KnobPreset] = field(default_factory=list)
     knobs: list[KnobMapping] = field(default_factory=list)
 
 
@@ -83,6 +90,16 @@ def load_config(path: str | Path) -> AppConfig:
             label=knob_data.get("label", f"CC{knob_data['cc']}"),
             action=_parse_action(knob_data.get("action", {"type": "volume"})),
         ))
+
+    for kp_data in data.get("knob_presets", []):
+        kp = KnobPreset(name=kp_data["name"])
+        for knob_data in kp_data.get("knobs", []):
+            kp.knobs.append(KnobMapping(
+                cc=knob_data["cc"],
+                label=knob_data.get("label", f"CC{knob_data['cc']}"),
+                action=_parse_action(knob_data.get("action", {"type": "volume"})),
+            ))
+        cfg.knob_presets.append(kp)
 
     if "pad_presets" in data:
         for preset_data in data["pad_presets"]:
@@ -131,6 +148,23 @@ def save_config(config: AppConfig, path: str | Path) -> None:
         })
     if knobs_list:
         data["knobs"] = knobs_list
+
+    # Knob presets
+    kp_list = []
+    for kp in config.knob_presets:
+        kp_dict: dict = {"name": kp.name}
+        kp_knobs = []
+        for k in kp.knobs:
+            kp_knobs.append({
+                "cc": k.cc,
+                "label": k.label,
+                "action": _action_to_dict(k.action),
+            })
+        if kp_knobs:
+            kp_dict["knobs"] = kp_knobs
+        kp_list.append(kp_dict)
+    if kp_list:
+        data["knob_presets"] = kp_list
 
     # Pad presets
     presets_list = []
@@ -376,6 +410,17 @@ class Mapper:
         new_cfg = load_config(path)
         self.config.knobs = new_cfg.knobs
         return True
+
+    def apply_knob_preset(self, preset_name: str) -> bool:
+        """Replace self.config.knobs with knobs from the named knob preset.
+
+        Returns True on success, False if preset not found.
+        """
+        for kp in self.config.knob_presets:
+            if kp.name.lower() == preset_name.lower():
+                self.config.knobs = list(kp.knobs)
+                return True
+        return False
 
     def get_plugin_notes(self, plugin_name: str) -> set[int]:
         """Return notes assigned to a specific plugin in the current preset."""

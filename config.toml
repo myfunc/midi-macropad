@@ -1,46 +1,113 @@
 [[knobs]]
 cc = 48
-label = "Vol"
+label = "Volume"
 
 [knobs.action]
 type = "volume"
 target = "master"
 [[knobs]]
 cc = 49
-label = "EQ LowMid"
+label = "Mic"
 
 [knobs.action]
+type = "volume"
+target = "mic"
+[[knobs]]
+cc = 50
+label = "Spotify"
+
+[knobs.action]
+type = "volume"
+target = "spotify"
+[[knobs]]
+cc = 51
+label = "App"
+
+[knobs.action]
+type = "volume"
+target = "foreground"
+[[knob_presets]]
+name = "Master"
+[[knob_presets.knobs]]
+cc = 48
+label = "Volume"
+
+[knob_presets.knobs.action]
+type = "volume"
+target = "master"
+[[knob_presets.knobs]]
+cc = 49
+label = "Mic"
+
+[knob_presets.knobs.action]
+type = "volume"
+target = "mic"
+[[knob_presets.knobs]]
+cc = 50
+label = "Spotify"
+
+[knob_presets.knobs.action]
+type = "volume"
+target = "spotify"
+[[knob_presets.knobs]]
+cc = 51
+label = "App"
+
+[knob_presets.knobs.action]
+type = "volume"
+target = "foreground"
+
+[[knob_presets]]
+name = "Voicemeeter"
+[[knob_presets.knobs]]
+cc = 48
+label = "EQ Low"
+
+[knob_presets.knobs.action]
 type = "plugin"
 target = "Voicemeeter:eq_band_gain"
-[knobs.action.params]
+[knob_presets.knobs.action.params]
+band = 0
+freq = 100.0
+q = 1.0
+filter_type = 2
+[[knob_presets.knobs]]
+cc = 49
+label = "EQ LowMid"
+
+[knob_presets.knobs.action]
+type = "plugin"
+target = "Voicemeeter:eq_band_gain"
+[knob_presets.knobs.action.params]
 band = 1
 freq = 400.0
 q = 1.0
 filter_type = 2
-[[knobs]]
+[[knob_presets.knobs]]
 cc = 50
 label = "EQ HighMid"
 
-[knobs.action]
+[knob_presets.knobs.action]
 type = "plugin"
 target = "Voicemeeter:eq_band_gain"
-[knobs.action.params]
+[knob_presets.knobs.action.params]
 band = 2
 freq = 3000.0
 q = 1.0
 filter_type = 2
-[[knobs]]
+[[knob_presets.knobs]]
 cc = 51
 label = "EQ Presence"
 
-[knobs.action]
+[knob_presets.knobs.action]
 type = "plugin"
 target = "Voicemeeter:eq_band_gain"
-[knobs.action.params]
+[knob_presets.knobs.action.params]
 band = 3
 freq = 8000.0
 q = 1.0
 filter_type = 2
+
 [[pad_presets]]
 name = "Spotify"
 [[pad_presets.pads]]
@@ -352,7 +419,3 @@ target = "Sample Player"
 
 [device]
 name = "MPK mini play"
-
-[settings]
-double_tap_ms = 300
-long_press_ms = 2000

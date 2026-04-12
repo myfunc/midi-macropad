@@ -9,6 +9,7 @@ interface AppStore {
 
   // Presets
   presets: PresetInfo[]
+  knobPresets: PresetInfo[]
   currentPresetIndex: number
 
   // Pads
@@ -72,6 +73,7 @@ export const useAppStore = create<AppStore>((set) => ({
   midiPortName: null,
   midiDeviceName: '',
   presets: [],
+  knobPresets: [],
   currentPresetIndex: 0,
   pads: {},
   selectedNote: null,
@@ -100,6 +102,7 @@ export const useAppStore = create<AppStore>((set) => ({
       midiPortName: s.midi?.port_name ?? null,
       midiDeviceName: s.midi?.device_name ?? '',
       presets: s.presets?.list ?? [],
+      knobPresets: s.knob_presets ?? [],
       currentPresetIndex: s.presets?.current_index ?? 0,
       pads: s.pads ?? {},
       knobs: s.knobs ?? [],

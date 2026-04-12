@@ -448,6 +448,7 @@ class AppCore:
                 "is_replay_buffer_active": self.obs.is_replay_buffer_active,
                 "scenes": self.obs.scene_names,
             },
+            "knob_presets": self.get_knob_presets(),
             "voicemeeter": self._get_vm_state(),
             "logs": self.log_buffer[-50:],
         }
@@ -635,6 +636,41 @@ class AppCore:
         settings.put("panel_presets", panel_presets)
 
         return True, ""
+
+    def get_knob_presets(self) -> list[dict]:
+        """Return list of knob presets with name and knob count."""
+        return [
+            {"name": kp.name, "knob_count": len(kp.knobs)}
+            for kp in self.config.knob_presets
+        ]
+
+    def switch_knob_preset(self, name: str) -> bool:
+        """Apply a knob preset by name, persist to settings and config, publish event."""
+        with self._lock:
+            ok = self.mapper.apply_knob_preset(name)
+        if not ok:
+            return False
+        # Persist active knobs to config.toml
+        save_config(self.config, CONFIG_PATH)
+        # Update panel_presets.knobs.preset in settings
+        panel_presets = settings.get("panel_presets") or {}
+        panel_presets.setdefault("knobs", {})["preset"] = name
+        settings.put("panel_presets", panel_presets)
+        # Build updated knobs for event
+        knobs = []
+        for k in self.config.knobs:
+            knobs.append({
+                "cc": k.cc, "label": k.label,
+                "action": {"type": k.action.type, "target": k.action.target},
+                "value": settings.get("knob_values", {}).get(str(k.cc), 64),
+            })
+        self.event_bus.publish("knob_preset.changed", {
+            "preset": name,
+            "knobs": knobs,
+        })
+        self._runtime_log("KNOB",
+            f"Knob preset switched: {name}", (100, 255, 150))
+        return True
 
     def update_knob_config(
         self,

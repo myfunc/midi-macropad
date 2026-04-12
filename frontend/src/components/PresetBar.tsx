@@ -28,15 +28,6 @@ export function PresetBar({ onOpenSettings, onTogglePanel, onResetLayout, panels
 
   return (
     <div className="preset-bar">
-      {presets.map(p => (
-        <button
-          key={p.index}
-          className={`preset-chip ${p.index === currentIndex ? 'active' : ''}`}
-          onClick={() => switchPreset(p.index)}
-        >
-          {p.name}
-        </button>
-      ))}
       <div className="preset-spacer" />
 
       {/* View menu */}

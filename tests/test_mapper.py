@@ -5,10 +5,12 @@ from mapper import (
     ActionDef,
     AppConfig,
     KnobMapping,
+    KnobPreset,
     Mapper,
     PadMapping,
     PadPreset,
     load_config,
+    save_config,
 )
 
 
@@ -230,3 +232,126 @@ def test_update_knob_action_not_found(tmp_path):
         label="X", params={}, config_path=p,
     )
     assert ok is False
+
+
+# ── Knob presets ────────────────────────────────────────────────────
+
+KNOB_PRESETS_TOML = """
+[device]
+name = "Test Device"
+
+[[knobs]]
+cc = 48
+label = "Vol"
+[knobs.action]
+type = "volume"
+target = "master"
+
+[[knob_presets]]
+name = "Master"
+[[knob_presets.knobs]]
+cc = 48
+label = "Volume"
+[knob_presets.knobs.action]
+type = "volume"
+target = "master"
+
+[[knob_presets.knobs]]
+cc = 49
+label = "Mic"
+[knob_presets.knobs.action]
+type = "volume"
+target = "mic"
+
+[[knob_presets]]
+name = "EQ"
+[[knob_presets.knobs]]
+cc = 48
+label = "Low"
+[knob_presets.knobs.action]
+type = "plugin"
+target = "Voicemeeter:eq_band_gain"
+[knob_presets.knobs.action.params]
+band = 0
+freq = 100.0
+
+[[pad_presets]]
+name = "Default"
+"""
+
+
+def test_load_config_parses_knob_presets(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text(KNOB_PRESETS_TOML, encoding="utf-8")
+    cfg = load_config(p)
+    assert len(cfg.knob_presets) == 2
+    assert cfg.knob_presets[0].name == "Master"
+    assert len(cfg.knob_presets[0].knobs) == 2
+    assert cfg.knob_presets[0].knobs[0].label == "Volume"
+    assert cfg.knob_presets[1].name == "EQ"
+    assert cfg.knob_presets[1].knobs[0].action.params["band"] == 0
+
+
+def test_apply_knob_preset():
+    cfg = AppConfig()
+    cfg.knobs = [
+        KnobMapping(cc=48, label="Vol", action=ActionDef(type="volume", target="master")),
+    ]
+    cfg.knob_presets = [
+        KnobPreset(name="EQ", knobs=[
+            KnobMapping(cc=48, label="Low", action=ActionDef(type="plugin", target="VM:eq")),
+            KnobMapping(cc=49, label="Mid", action=ActionDef(type="plugin", target="VM:eq")),
+        ]),
+    ]
+    m = Mapper(cfg)
+    assert len(m.config.knobs) == 1
+    ok = m.apply_knob_preset("EQ")
+    assert ok is True
+    assert len(m.config.knobs) == 2
+    assert m.config.knobs[0].label == "Low"
+    assert m.lookup_knob(49) is not None
+
+
+def test_apply_knob_preset_not_found():
+    cfg = AppConfig()
+    cfg.knob_presets = []
+    m = Mapper(cfg)
+    assert m.apply_knob_preset("Missing") is False
+
+
+def test_apply_knob_preset_case_insensitive():
+    cfg = AppConfig()
+    cfg.knob_presets = [
+        KnobPreset(name="Master", knobs=[
+            KnobMapping(cc=48, label="Vol", action=ActionDef(type="volume", target="master")),
+        ]),
+    ]
+    m = Mapper(cfg)
+    assert m.apply_knob_preset("master") is True
+    assert len(m.config.knobs) == 1
+
+
+def test_save_config_preserves_knob_presets(tmp_path):
+    cfg = AppConfig()
+    cfg.knobs = [
+        KnobMapping(cc=48, label="Vol", action=ActionDef(type="volume", target="master")),
+    ]
+    cfg.knob_presets = [
+        KnobPreset(name="Master", knobs=[
+            KnobMapping(cc=48, label="Volume", action=ActionDef(type="volume", target="master")),
+        ]),
+        KnobPreset(name="EQ", knobs=[
+            KnobMapping(cc=48, label="Low", action=ActionDef(
+                type="plugin", target="VM:eq", params={"band": 0, "freq": 100.0},
+            )),
+        ]),
+    ]
+    cfg.pad_presets = [PadPreset(name="Default")]
+    p = tmp_path / "out.toml"
+    save_config(cfg, p)
+    # Re-load and verify
+    cfg2 = load_config(p)
+    assert len(cfg2.knob_presets) == 2
+    assert cfg2.knob_presets[0].name == "Master"
+    assert cfg2.knob_presets[1].name == "EQ"
+    assert cfg2.knob_presets[1].knobs[0].action.params["band"] == 0
