@@ -1,0 +1,49 @@
+// electric-piano — generated instrument
+
+<group>
+lovel=0 hivel=127
+
+<region>
+sample=samples/note_36.wav
+lokey=0 hikey=39
+pitch_keycenter=36
+
+<region>
+sample=samples/note_42.wav
+lokey=40 hikey=45
+pitch_keycenter=42
+
+<region>
+sample=samples/note_48.wav
+lokey=46 hikey=51
+pitch_keycenter=48
+
+<region>
+sample=samples/note_54.wav
+lokey=52 hikey=57
+pitch_keycenter=54
+
+<region>
+sample=samples/note_60.wav
+lokey=58 hikey=63
+pitch_keycenter=60
+
+<region>
+sample=samples/note_66.wav
+lokey=64 hikey=69
+pitch_keycenter=66
+
+<region>
+sample=samples/note_72.wav
+lokey=70 hikey=75
+pitch_keycenter=72
+
+<region>
+sample=samples/note_78.wav
+lokey=76 hikey=81
+pitch_keycenter=78
+
+<region>
+sample=samples/note_84.wav
+lokey=82 hikey=127
+pitch_keycenter=84

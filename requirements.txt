@@ -12,3 +12,4 @@ numpy
 openai
 requests
 pytest
+sf2utils
