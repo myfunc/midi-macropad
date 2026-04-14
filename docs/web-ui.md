@@ -44,17 +44,54 @@ GUI менеджер с кнопками:
 
 Все панели можно свободно перемещать, группировать в табы, разделять, делать floating.
 
+### Freeform pad / knob панели
+
+Pad/Knob panels — **freeform**: можно открыть сколько угодно через `Controls → Add Pad Panel / Add Knob Panel`. Каждая панель хранит свой `{type, bank, preset, title}` и engineering-кнопку активации.
+
+**Эксклюзивность:** на пару `(type, bank)` активна только одна панель. Нажатие activate на новой панели автоматически деактивирует предыдущую. `pad:A` + `pad:B` могут быть активны одновременно — общий MIDI один, банк определяется по hardware-ноте (16–23 = A, 24–31 = B). Аналогично для knob.
+
+**Неактивная панель** полностью редактируема (label, action, preset, bank), просто не получает MIDI events. Активная подсвечена зелёным LED `● ACTIVE`, неактивная — пустым кругом `○ INACTIVE`.
+
+API: `GET/POST /api/panels`, `PATCH /api/panels/{id}`, `DELETE /api/panels/{id}`, `POST /api/panels/{id}/activate`.
+
+### Каталог панелей
+
 | Панель | Что показывает |
 |--------|---------------|
-| Pad Grid | 2 банка × 4 пада + knobs, drag & drop swap |
+| Pad Panel | Generic freeform pad bank: bank-selector A/B, preset-dropdown, активация, drag & drop swap |
+| Knob Panel | Generic freeform knob bank: bank-selector, preset, активация |
+| Piano | SFZ/SF2 instrument selector, 2 октавы клавиатуры, FX-параметры (volume / filter / pitch / chorus / delay / reverb / pan) |
 | Properties | Action Picker, label, hotkey, lock indicator |
-| Log | Real-time лог MIDI/OBS/Plugin событий |
+| Log | Real-time лог MIDI/OBS/Plugin/Knob событий |
 | OBS | Scene, recording, streaming, replay buffer |
 | Voicemeeter | Strips, buses, processing, audience, ducking |
 | Voice Scribe | Status, last output, prompt cards, chat history |
-| Settings | Profiles, MIDI device, general, plugins, OBS connection |
+| Settings | Profiles, MIDI device, audio engine (sample rate / block / polyphony / device), plugins, OBS connection |
 
-Доступ: **☰** меню в preset bar или **⚙** для Settings.
+Меню: **☰** в правом верхнем углу. Структура с саб-меню:
+- **Controls** → Add Pad Panel / Add Knob Panel
+- **Plugins** → Piano / Voice Scribe / OBS / Voicemeeter
+- **Settings** → Settings / Properties
+- **Logs** → Log
+- **Reset Layout**
+
+## Audio engine (Piano)
+
+`plugins/piano/audio_engine.py` — producer/consumer архитектура:
+
+- **Producer thread** владеет голосами и FX chain, читает команды из `queue.Queue` (`note_on/note_off/reconfigure/set_fx_param/stop_all`).
+- **Lock-free ring buffer** (`ring_buffer.py`) — SPSC numpy `(N, 2)` float32, индексы атомарны через GIL.
+- **Audio callback** копирует готовый блок: `ring.read_into(outdata)` + underrun counter. **Ноль аллокаций** в audio-потоке.
+- **Stereo FX chain** работает in-place на `(N, 2)` буфере. Pan реально панорамирует, reverb/chorus/delay держат independent per-channel state.
+- **WASAPI shared low-latency** с fallback на дефолтный host API.
+- **Pre-computed fade-out window** (~5 ms) применяется через умножение view.
+- **Voice stealing** до добавления (приоритет releasing voices).
+- **Reconfigure** через queue + `threading.Event` — безопасен от race с MIDI events.
+
+Метрики (по умолчанию sr=44100, blocksize=1024):
+- Latency на блок: ~23 ms.
+- Voice stealing: 8 голосов default (настраивается в Settings → Audio (Piano)).
+- FX chain: `volume → filter → pitch → chorus → delay → reverb → pan`.
 
 ## Разработка
 
@@ -103,14 +140,17 @@ Web UI запускает плагины в headless mode (`MACROPAD_HEADLESS=1`
 
 ## TODO / Планы
 
-- [ ] Полноценный Action Picker с save на бэкенд (PATCH /api/pads/{note})
+- [x] Полноценный Action Picker с save на бэкенд (PATCH /api/pads/{note})
+- [x] Hotkey capture (keyboard listener на фронте)
+- [x] Piano panel + audio engine (Wave D — producer/consumer + stereo FX)
+- [x] Freeform pad/knob panels с эксклюзивностью (Wave D)
+- [x] Audio settings panel (sample rate / block size / polyphony / device)
 - [ ] Voicemeeter live levels через DLL polling в отдельном процессе
 - [ ] OBS session panel (start/stop session, segments, diary)
-- [ ] Drag & drop между банками (cross-bank swap)
 - [ ] REAPER Bridge панель
 - [ ] Sample Player панель с waveform
-- [ ] Hotkey capture (keyboard listener на фронте)
 - [ ] Тёмная/светлая тема
 - [ ] WebSocket bidirectional (client → server commands)
 - [ ] pywebview native window menu
 - [ ] Installer / portable build
+- [ ] FX-цепь: убрать producer-thread аллокации в Pan/Pitch/Filter (GC-джиттер на малых блоках)

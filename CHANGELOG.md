@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-04-13 — Freeform panels, Piano audio engine
+
+### Added — Wave C/D
+
+- **Piano plugin** (`plugins/piano/`): SFZ/SF2 polyphonic synth with 7-effect stereo FX chain (volume / filter / pitch / chorus / delay / reverb / pan). 3 built-in instruments (sine-piano / electric-piano / organ).
+- **Lock-free audio engine** (`plugins/piano/audio_engine.py`, `ring_buffer.py`):
+  - Producer/consumer architecture — audio callback is **zero-allocation** (just `ring.read_into(outdata)` + underrun counter).
+  - SPSC numpy ring buffer, GIL-atomic indices.
+  - WASAPI shared low-latency with fallback to default host API.
+  - Pre-computed fade windows, voice stealing before append, reconfigure via command queue (race-free).
+  - Stereo FX chain `(N, 2)` in-place — Pan now actually pans, reverb/chorus/delay keep independent per-channel state.
+- **Freeform Pad/Knob panels**: Pad and Knob panels are no longer fixed slots. Open as many as you like, each with its own bank+preset+title+activate state.
+  - Exclusivity: only one panel can be active per `(type, bank)`. Activating another auto-deactivates the previous. `pad:A` + `pad:B` can both be active simultaneously.
+  - Engineering-style activate button: monospace LED indicator (`● ACTIVE` solid green / `○ INACTIVE` outline).
+  - Inactive panels remain fully editable; they just don't receive MIDI events.
+  - REST API: `GET/POST/PATCH/DELETE /api/panels`, `POST /api/panels/{id}/activate`.
+- **Hierarchical submenu** in the toolbar: Controls (Add Pad / Add Knob), Plugins, Settings, Logs. Submenus fly out to the left; menu auto-closes with 150ms debounce so you can navigate diagonally.
+- **Audio settings panel** in Settings: sample rate, block size, max polyphony, latency mode, output device, master volume — applied via `piano_plugin.reconfigure()` without restart.
+- **Composite preset keys** (`preset:note`) in `pad_registry`/`mapper`/API/frontend (Wave C foundation for freeform model).
+
+### Changed
+
+- **Backend dispatch**: `mapper.lookup_pad_for_active(note)` / `lookup_knob_for_active_bank(cc)` resolve through the active panel's preset rather than a global preset.
+- **Migration**: legacy `panel_presets.padBank-A/B` and `knobBank-A/B` keys are converted on first boot to 4 starter freeform panels (pad A active, pad B inactive, knob A active, knob B inactive). `ui_layout` is reset to let the new default layout build cleanly.
+- **WS events**: `panel.created`, `panel.updated`, `panel.deleted`, `panel.activated` replace the old per-panel-preset events.
+
+### Removed
+
+- Hard-coded `padBank-A/B` / `knobBank-A/B` panel IDs and the corresponding K A / K B chip indicator.
+- Module-level `MAX_VOICES` global in piano plugin (now `self._max_voices` in engine).
+
+### Tests
+
+- 103/103 pytest passing (88 → 103, +7 ring_buffer, +8 audio_engine, +14 panel-model regression tests).
+
+---
+
 ## [2.1.0] - 2026-04-09 — Legacy cleanup
 
 ### Removed — старый Python UI (DearPyGui)

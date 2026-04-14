@@ -5,7 +5,7 @@ Turn an **Akai MPK Mini Play** or any MIDI controller into a tactile Windows con
 Python backend (FastAPI + mido) with a modern **React + dockview Web UI** that runs in your browser or a desktop launcher window.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="MIDI Macropad UI" width="820">
+  <img src="docs/screenshots/01-default-layout.png" alt="MIDI Macropad Web UI" width="900">
 </p>
 
 ## Why I Built This
@@ -17,13 +17,14 @@ The goal was simple: keep everyday actions on real pads and knobs, switch behavi
 ## What It Does
 
 - Turns 8 pads, 4 knobs, and the joystick into configurable actions.
-- Switches between presets defined in `config.toml` (OBS, Voice Scribe, Sound Pads, Voicemeeter, OBS Session, Spotify, and more).
+- Switches between presets defined in `config.toml` (OBS, Voice Scribe, Sound Pads, Voicemeeter, OBS Session, Spotify, Piano, and more).
 - Controls Windows master volume, microphone volume, and Spotify app volume.
 - Talks to OBS Studio over WebSocket.
 - Connects to **Spotify** over the Web API with OAuth PKCE (Client ID only—[developer.spotify.com](https://developer.spotify.com/dashboard)); now-playing, transport, and knob-mapped volume. **Spotify Premium** required.
 - Plays short device-side MIDI feedback phrases on the controller for actions and voice states.
 - Loads plugins from `plugins/` for custom MIDI behavior and web UI panels.
-- **Web UI**: dockview-based draggable panels, live WebSocket events, fullscreen mode, accessible from any browser on your LAN.
+- **Web UI**: dockview-based draggable panels, freeform pad/knob panels with per-panel bank+preset, live WebSocket events, fullscreen mode, accessible from any browser on your LAN.
+- **Piano plugin**: SFZ/SF2 polyphonic playback with a 7-effect stereo FX chain (volume / filter / pitch / chorus / delay / reverb / pan), lock-free producer/consumer audio engine, and WASAPI low-latency output.
 
 ## Voice Scribe
 
@@ -55,6 +56,7 @@ Feedback path: **shared runtime feedback service → MIDI out → controller's i
 | `Spotify` | OAuth PKCE Web API control, now-playing, transport, pad and knob mappings. Requires Premium and a Client ID. |
 | `Performance Template` | Optional live sketch template: pad beat toggles, key-triggered drums and guitar phrases, 9 switchable chord keys. |
 | `REAPER Bridge` | Forwards Bank B MIDI to REAPER DAW. |
+| `Piano` | SFZ/SF2 polyphonic synth with stereo FX chain, lock-free audio engine, knob-mapped FX parameters. |
 
 More detail lives in [`docs/plugins.md`](docs/plugins.md).
 
@@ -89,6 +91,26 @@ Run backend and Vite dev server separately:
 python web_main.py --dev            # backend with CORS
 cd frontend && npm run dev          # Vite HMR on :5173
 ```
+
+## Web UI Tour
+
+The frontend is built around dockview — every panel is draggable, dockable, floatable, and can be opened multiple times.
+
+### Freeform pad / knob panels
+
+Pad and knob panels are no longer fixed slots. Open as many as you like, give each one a bank (A or B) and a preset, and toggle exclusivity through an engineering-style activate button. Only one panel can be active per `(type, bank)`; activating another auto-deactivates the previous. Inactive panels stay fully editable, they just don't receive MIDI events.
+
+<p align="center">
+  <img src="docs/screenshots/04-multiple-panels.png" alt="Multiple pad panels with active/inactive LED" width="900">
+</p>
+
+### Submenu navigation
+
+A single hamburger menu groups everything: **Controls** to add new pad/knob panels, **Plugins** for the plugin panels (Piano, Voice Scribe, OBS, Voicemeeter…), **Settings** and **Logs**. Submenus fly out to the left.
+
+<p align="center">
+  <img src="docs/screenshots/03-plugins-menu.png" alt="Plugins submenu" width="900">
+</p>
 
 ## Documentation
 

@@ -96,3 +96,32 @@ Each pack is a folder with a `pack.toml` manifest and referenced WAV files. This
 ### Why it matters
 
 This gives the project a first playable music-performance template without requiring external WAV packs. The host sends notes back into the MPK Mini Play's internal synth, so the template is immediately editable and musically useful even before building custom sample libraries.
+
+## Piano
+
+`Piano` is a polyphonic SFZ/SF2 synth plugin that runs on the host's audio hardware (not routed through the controller's internal GM synth). It's designed to be played from the MPK Mini Play piano keys or from the on-screen keyboard in the Web UI.
+
+### What it does
+
+- loads SFZ or SF2 instruments; ships with `sine-piano`, `electric-piano`, `organ` as built-ins
+- polyphonic playback (default 8 voices, configurable 1–32) with voice stealing
+- stereo FX chain: `volume → filter → pitch → chorus → delay → reverb → pan`
+- every FX parameter is exposed as a knob action (`fx_volume`, `fx_filter_cutoff`, `fx_reverb_mix`, …) so the MPK's knobs drive it directly via a `Piano FX` knob preset
+- PianoPanel in the Web UI: 2-octave on-screen keyboard, instrument dropdown, live FX parameter chips, velocity indicator
+
+### Audio engine architecture
+
+Piano uses a **lock-free producer/consumer** engine (`plugins/piano/audio_engine.py`):
+
+- dedicated producer thread owns the voices and FX chain; external callers submit commands through a `queue.Queue`
+- SPSC lock-free ring buffer (`ring_buffer.py`) decouples the audio callback from all synthesis work
+- audio callback is zero-allocation — it simply copies a pre-mixed block from the ring and increments an underrun counter on starvation
+- WASAPI shared low-latency output with fallback to the default host API
+- stereo FX chain works in place on `(N, 2)` float32 buffers — pan genuinely pans, chorus/delay/reverb maintain independent per-channel state
+- reconfigure (sample rate, block size, device, polyphony, master volume) is delivered through the command queue and applied between blocks, so there is no race with MIDI input
+
+Configurable from **Settings → Audio (Piano)**: sample rate, block size, max polyphony, latency mode, output device, master volume.
+
+### Why it matters
+
+Gives the project real-time local instrument playback with a full effects chain, without pulling in a DAW or a separate sampler. The lock-free engine is robust enough to play chords under GC pressure without audible stutters, and the FX chain is mapped to physical knobs so you can sculpt the sound live.
