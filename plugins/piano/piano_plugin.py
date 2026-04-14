@@ -6,6 +6,7 @@ plugin interface. Real-time audio mixing is delegated to
 and feeds a lock-free ring buffer consumed by the sounddevice callback.
 """
 
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -79,8 +80,11 @@ class PianoPlugin(Plugin):
         self._max_voices: int = _DEFAULT_MAX_VOICES
         self._master_volume: float = 1.0
 
-        # Кэш pitch-shifted сэмплов: (sample_id, semitones) → resampled data
+        # Кэш pitch-shifted сэмплов: (sample_id, semitones) → resampled data.
+        # Guarded by ``_pitch_cache_lock`` — mutated from MIDI thread and
+        # cleared from reconfigure/load paths on other threads.
         self._pitch_cache: dict[tuple[int, int], np.ndarray] = {}
+        self._pitch_cache_lock = threading.Lock()
 
         self._engine: AudioEngine | None = None
         self._active: bool = True
@@ -122,7 +126,8 @@ class PianoPlugin(Plugin):
             self._log("PIANO", f"Failed to load piano_audio settings: {exc}",
                       color=(255, 160, 60), level="warning")
 
-        self._pitch_cache.clear()
+        with self._pitch_cache_lock:
+            self._pitch_cache.clear()
         self._engine = AudioEngine(
             sample_rate=self._sample_rate,
             block_size=self._block_size,
@@ -175,7 +180,8 @@ class PianoPlugin(Plugin):
                 if new_sr != self._sample_rate:
                     self._sample_rate = new_sr
                     # Sample data was loaded at old SR — reload at new SR.
-                    self._pitch_cache.clear()
+                    with self._pitch_cache_lock:
+                        self._pitch_cache.clear()
                     if self._current_instrument:
                         self.load_instrument(self._current_instrument)
             if "block_size" in cfg:
@@ -272,7 +278,8 @@ class PianoPlugin(Plugin):
         self._sfz_instrument = None
         self._sf2_instrument = None
         self._current_instrument = ""
-        self._pitch_cache.clear()
+        with self._pitch_cache_lock:
+            self._pitch_cache.clear()
 
         sfz_dir = self._instruments_dir / name
         if sfz_dir.is_dir():
@@ -338,7 +345,8 @@ class PianoPlugin(Plugin):
             if note != root_key:
                 semitones = note - root_key
                 cache_key = (origin_id, semitones)
-                cached = self._pitch_cache.get(cache_key)
+                with self._pitch_cache_lock:
+                    cached = self._pitch_cache.get(cache_key)
                 if cached is not None:
                     data = cached
                 else:
@@ -346,8 +354,9 @@ class PianoPlugin(Plugin):
                     if resampled is None:
                         continue
                     data = resampled
-                    if len(self._pitch_cache) < _PITCH_CACHE_MAX:
-                        self._pitch_cache[cache_key] = data
+                    with self._pitch_cache_lock:
+                        if len(self._pitch_cache) < _PITCH_CACHE_MAX:
+                            self._pitch_cache[cache_key] = data
             prepared.append((data, origin_id))
 
         if prepared:

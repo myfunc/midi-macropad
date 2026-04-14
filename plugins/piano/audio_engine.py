@@ -403,6 +403,17 @@ class AudioEngine:
                 cmd.done.set()
         elif isinstance(cmd, _CmdShutdown):
             self._stop_event.set()
+            # Drain any remaining reconfigure commands so HTTP callers
+            # blocked on ``done.wait()`` do not time out after shutdown.
+            while True:
+                try:
+                    pending = self._cmd_queue.get_nowait()
+                except queue.Empty:
+                    break
+                if isinstance(pending, _CmdReconfigure):
+                    pending.result["ok"] = False
+                    pending.result["error"] = "engine shutting down"
+                    pending.done.set()
 
     # -- command handlers ---------------------------------------------------
 
@@ -471,6 +482,9 @@ class AudioEngine:
         if not stream_changed:
             return True, None
 
+        # Snapshot FX state so user-tuned params survive the rebuild.
+        fx_state = self._fx_chain.get_state()
+
         # Stream rebuild: close, update config, rebuild FX/scratch, reopen.
         self._close_stream()
         self._stream_cfg = _StreamConfig(
@@ -479,8 +493,10 @@ class AudioEngine:
             latency=new_latency,
             output_device=new_device,
         )
-        # FX chain keeps sample-rate-dependent delay line sizes — rebuild.
+        # FX chain keeps sample-rate-dependent delay line sizes — rebuild,
+        # then restore params from the snapshot.
         self._fx_chain = FXChain(sample_rate=new_sr)
+        self._fx_chain.apply_state(fx_state)
         self._mix_buf = np.zeros((new_bs, 2), dtype=np.float32)
         self._fade_out_window = self._make_fade_window(int(new_sr * 0.005))
         # Reset ring buffer — old stale audio must not play at new rate.
@@ -493,9 +509,10 @@ class AudioEngine:
         ok = self._open_stream()
         if not ok:
             err = self._stream_error or "stream open failed"
-            # Rollback stream config.
+            # Rollback stream config — also restore the pre-rebuild FX state.
             self._stream_cfg = old
             self._fx_chain = FXChain(sample_rate=old.sample_rate)
+            self._fx_chain.apply_state(fx_state)
             self._mix_buf = np.zeros((old.block_size, 2), dtype=np.float32)
             self._fade_out_window = self._make_fade_window(int(old.sample_rate * 0.005))
             self._ring = RingBuffer(
@@ -503,7 +520,8 @@ class AudioEngine:
                 channels=2,
             )
             self._state = old_state
-            self._open_stream()
+            if self._open_stream():
+                self._stream_error = None
             return False, err
 
         return True, None

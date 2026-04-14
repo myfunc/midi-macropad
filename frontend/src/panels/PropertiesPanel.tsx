@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAppStore } from '../stores/useAppStore'
 import { KnobPropertiesView } from '../components/KnobEditorDialog'
 import type { IDockviewPanelProps } from 'dockview-react'
+import type { PadAction } from '../types'
 
 const ACTION_GROUPS = [
   {
@@ -79,6 +80,7 @@ function patchPad(presetName: string, note: number, data: Record<string, unknown
 export function PropertiesPanel(_props: IDockviewPanelProps) {
   const selectedPadKey = useAppStore(s => s.selectedPadKey)
   const selectedKnobCC = useAppStore(s => s.selectedKnobCC)
+  const selectedPianoNote = useAppStore(s => s.selectedPianoNote)
   const pads = useAppStore(s => s.pads)
   const showToast = useAppStore(s => s.showToast)
   const [capturing, setCapturing] = useState(false)
@@ -99,12 +101,17 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
     return <KnobPropertiesView cc={selectedKnobCC} />
   }
 
+  // Show piano key mapping editor when a piano note is selected in map mode.
+  if (selectedPianoNote !== null) {
+    return <PianoKeyPropertiesView note={selectedPianoNote} />
+  }
+
   if (selectedPadKey === null) {
     return (
       <div className="props-empty">
         <div className="props-empty-icon">&#127899;</div>
         <div className="props-empty-hint">
-          Select a pad or knob to view<br />and edit its properties
+          Select a pad, knob, or piano key<br />to view and edit its properties
         </div>
       </div>
     )
@@ -267,6 +274,208 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
           &#128274; Managed by plugin — some fields read-only
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── Piano key properties (map bank) ── */
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+function midiNoteName(note: number): string {
+  const octave = Math.floor(note / 12) - 1
+  return `${NOTE_NAMES[note % 12]}${octave}`
+}
+
+/** Which action fields are relevant to a given action type. */
+function fieldsForActionType(type: string): Array<keyof PadAction> {
+  switch (type) {
+    case 'keystroke':
+    case 'app_keystroke':
+      return ['keys']
+    case 'shell':
+      return ['command']
+    case 'launch':
+      return ['process']
+    case 'volume':
+    case 'scroll':
+      return ['target']
+    case 'plugin':
+    case 'plugin_action':
+      return ['target', 'command']
+    default:
+      // OBS / Voicemeeter actions don't need extra fields — they're pure
+      // type-selected triggers resolved server-side.
+      return []
+  }
+}
+
+const FIELD_PLACEHOLDERS: Record<string, string> = {
+  keys: 'ctrl+shift+r',
+  target: 'e.g. mic / desktop / plugin:command',
+  command: 'e.g. pipeline:start',
+  process: 'C:/path/to/app.exe',
+}
+
+function PianoKeyPropertiesView({ note }: { note: number }) {
+  const panels = useAppStore(s => s.panels)
+  const activePanels = useAppStore(s => s.activePanels)
+  const pianoPresets = useAppStore(s => s.pianoPresets)
+  const updatePianoKey = useAppStore(s => s.updatePianoKey)
+  const showToast = useAppStore(s => s.showToast)
+
+  // Resolve the active 'piano:map' panel to determine target preset.
+  const mapPanelId = activePanels['piano:map'] ?? null
+  const mapPanel = mapPanelId ? panels[mapPanelId] : null
+  const presetName = mapPanel?.preset ?? ''
+  const preset = pianoPresets.find(p => p.name === presetName) ?? null
+  const mapping = preset?.keys.find(k => k.note === note) ?? null
+
+  const [labelDraft, setLabelDraft] = useState(mapping?.label ?? '')
+  // Draft action mirrors mapping.action so users can tweak per-type fields
+  // (keys, target, command, process) before persisting. Persisted on blur.
+  const [actionDraft, setActionDraft] = useState<PadAction | null>(
+    mapping?.action ? { ...mapping.action } : null,
+  )
+
+  useEffect(() => {
+    setLabelDraft(mapping?.label ?? '')
+    setActionDraft(mapping?.action ? { ...mapping.action } : null)
+  }, [note, mapping?.label, mapping?.action])
+
+  if (!mapPanel) {
+    return (
+      <div className="props-empty">
+        <div className="props-empty-hint">
+          No active Piano (Map) panel.<br />
+          Activate a Piano map panel to edit key mappings.
+        </div>
+      </div>
+    )
+  }
+
+  function commitLabel(value: string) {
+    if (!presetName) return
+    updatePianoKey(presetName, note, { label: value.trim() || undefined })
+  }
+
+  function assignActionType(actionId: string) {
+    if (!presetName) return
+    // Preserve relevant fields from the existing draft where the new type
+    // still uses them (e.g. switching keystroke -> app_keystroke keeps keys).
+    const next: PadAction = { type: actionId }
+    const allowedFields = new Set(fieldsForActionType(actionId))
+    if (actionDraft) {
+      for (const f of allowedFields) {
+        const v = (actionDraft as any)[f]
+        if (typeof v === 'string' && v) (next as any)[f] = v
+      }
+    }
+    setActionDraft(next)
+    updatePianoKey(presetName, note, { action: next })
+      .then(() => showToast(`Action: ${actionId}`))
+  }
+
+  function commitActionField(field: keyof PadAction, value: string) {
+    if (!presetName || !actionDraft) return
+    const trimmed = value.trim()
+    const next: PadAction = { ...actionDraft }
+    if (trimmed) {
+      ;(next as any)[field] = trimmed
+    } else {
+      delete (next as any)[field]
+    }
+    setActionDraft(next)
+    updatePianoKey(presetName, note, { action: next })
+  }
+
+  function clearAction() {
+    if (!presetName) return
+    setActionDraft(null)
+    updatePianoKey(presetName, note, { action: null })
+      .then(() => showToast('Action cleared'))
+  }
+
+  const currentActionType = actionDraft?.type ?? ''
+  const activeFields = currentActionType
+    ? fieldsForActionType(currentActionType)
+    : []
+
+  return (
+    <div className="properties-content">
+      <div className="props-header">
+        <span className="pad-badge">Piano {midiNoteName(note)}</span>
+        <span className="props-note">note {note}</span>
+        {presetName && (
+          <span style={{ fontSize: 11, color: '#8899aa', marginLeft: 'auto' }}>
+            {presetName}
+          </span>
+        )}
+      </div>
+      <div className="props-current">
+        Current: <strong>{mapping?.label || 'Not assigned'}</strong>
+      </div>
+
+      <div className="props-section">
+        <label className="props-label">Label</label>
+        <input
+          className="props-input"
+          type="text"
+          key={`pk-label-${note}`}
+          value={labelDraft}
+          placeholder="Key label..."
+          onChange={e => setLabelDraft(e.target.value)}
+          onBlur={e => commitLabel(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          }}
+        />
+      </div>
+
+      <div className="props-section">
+        <div className="props-section-title">Assign Action</div>
+        {ACTION_GROUPS.map(group => (
+          <div key={group.label} className="action-group">
+            <div className="action-group-label">{group.label}</div>
+            <div className="action-grid">
+              {group.actions.map(a => (
+                <div
+                  key={a.id}
+                  className={`action-chip ${a.cls} ${currentActionType === a.id ? 'active' : ''}`}
+                  onClick={() => assignActionType(a.id)}
+                >
+                  {a.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {activeFields.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            {activeFields.map(field => (
+              <div key={field} className="props-section" style={{ marginTop: 6 }}>
+                <label className="props-label">
+                  {field.charAt(0).toUpperCase() + field.slice(1)}
+                </label>
+                <input
+                  className="props-input"
+                  type="text"
+                  key={`pk-${note}-${currentActionType}-${field}`}
+                  defaultValue={(actionDraft as any)?.[field] ?? ''}
+                  placeholder={FIELD_PLACEHOLDERS[field as string] ?? ''}
+                  onBlur={e => commitActionField(field, e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button className="btn-clear" onClick={clearAction}>Clear Assignment</button>
+      </div>
     </div>
   )
 }

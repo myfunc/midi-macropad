@@ -322,3 +322,74 @@ def test_pad_press_dispatch_uses_active_panel(monkeypatch, tmp_path):
     # lookup via active
     assert core.mapper.lookup_pad_for_active(16).label == "AltA16"
     assert core.mapper.lookup_pad_for_active(24).label == "MainB24"
+
+
+def test_update_panel_holds_lock_for_full_critical_section(monkeypatch, tmp_path):
+    """update_panel must perform its settings+mapper mutations under _lock.
+
+    We detect a missed wrap by counting ``RLock`` acquisitions: the whole
+    settings/mapper critical section should happen inside a single
+    ``with self._lock:`` block. Previously parts of it ran outside the
+    lock, which allowed concurrent PATCHes to interleave and drop writes.
+    """
+    core = _fresh_core(monkeypatch, tmp_path)
+    p = core.create_panel("pad", bank="A", preset="Main", activate=True)
+
+    # Wrap _lock to count acquisitions while update_panel runs.
+    real_lock = core._lock
+    acquires = {"n": 0}
+    releases = {"n": 0}
+    locked = {"held": False}
+    settings_writes_while_unlocked = {"n": 0}
+
+    import settings as _settings
+    real_put = _settings.put
+
+    def counting_put(key, value):
+        if not locked["held"]:
+            settings_writes_while_unlocked["n"] += 1
+        return real_put(key, value)
+
+    class _WrapLock:
+        def __enter__(self):
+            acquires["n"] += 1
+            locked["held"] = True
+            return real_lock.__enter__()
+
+        def __exit__(self, *args):
+            releases["n"] += 1
+            locked["held"] = False
+            return real_lock.__exit__(*args)
+
+    core._lock = _WrapLock()
+    monkeypatch.setattr(_settings, "put", counting_put)
+
+    # Trigger a bank change + preset change — exercises the fullest path
+    # (old-slot clear + auto-activate on empty new slot).
+    core.update_panel(p["instanceId"], bank="B", preset="Alt")
+
+    # Restore real lock so the rest of the test uses it normally.
+    core._lock = real_lock
+
+    # The critical section must be wrapped. All settings writes inside
+    # update_panel must have happened under the lock.
+    assert acquires["n"] >= 1
+    assert settings_writes_while_unlocked["n"] == 0, (
+        "update_panel wrote settings outside of _lock "
+        f"({settings_writes_while_unlocked['n']} times)"
+    )
+    # Bank moved, preset applied.
+    panel = core.get_panel(p["instanceId"])
+    assert panel["bank"] == "B"
+    assert panel["preset"] == "Alt"
+
+
+def test_mapper_iter_active_panels_is_copy(monkeypatch, tmp_path):
+    """iter_active_panels must return a defensive copy."""
+    core = _fresh_core(monkeypatch, tmp_path)
+    p = core.create_panel("pad", bank="A", preset="Main", activate=True)
+    snap = core.mapper.iter_active_panels()
+    assert snap.get(("pad", "A")) == p["instanceId"]
+    snap.clear()
+    # Live state must be untouched.
+    assert core.mapper.get_active_panel("pad", "A") == p["instanceId"]

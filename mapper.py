@@ -1,4 +1,6 @@
 """Config-driven event mapper with pad preset management."""
+import os
+import tempfile
 import toml
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -48,12 +50,34 @@ class KnobPreset:
     knobs: list[KnobMapping] = field(default_factory=list)
 
 
+# --- Piano presets (Map bank for piano panel) -----------------------
+# Piano key range accepted by the map dispatch; anything outside this range
+# falls through to the regular pad dispatch or is ignored.
+PIANO_MAP_NOTE_MIN = 36
+PIANO_MAP_NOTE_MAX = 72
+
+
+@dataclass
+class PianoKeyMapping:
+    """Mapping for a single piano key in a preset."""
+    note: int
+    label: str | None = None
+    action: dict | None = None  # same shape as pad action_dict
+
+
+@dataclass
+class PianoPreset:
+    name: str
+    keys: list[PianoKeyMapping] = field(default_factory=list)
+
+
 @dataclass
 class AppConfig:
     device_name: str = "MPK mini play"
     pad_presets: list[PadPreset] = field(default_factory=list)
     knob_presets: list[KnobPreset] = field(default_factory=list)
     knobs: list[KnobMapping] = field(default_factory=list)
+    piano_presets: list[PianoPreset] = field(default_factory=list)
 
 
 def _parse_action(act: dict) -> ActionDef:
@@ -110,6 +134,24 @@ def load_config(path: str | Path) -> AppConfig:
 
     if not cfg.pad_presets:
         cfg.pad_presets.append(PadPreset(name="Default"))
+
+    # Piano presets (optional)
+    for pp_data in data.get("piano_presets", []) or []:
+        pp = PianoPreset(name=pp_data.get("name", "Preset"))
+        for key_data in pp_data.get("keys", []) or []:
+            note_v = key_data.get("note")
+            if not isinstance(note_v, int):
+                continue
+            label = key_data.get("label")
+            action = key_data.get("action")
+            if action is not None and not isinstance(action, dict):
+                action = None
+            pp.keys.append(PianoKeyMapping(
+                note=int(note_v),
+                label=label if isinstance(label, str) else None,
+                action=dict(action) if isinstance(action, dict) else None,
+            ))
+        cfg.piano_presets.append(pp)
 
     return cfg
 
@@ -186,8 +228,50 @@ def save_config(config: AppConfig, path: str | Path) -> None:
     if presets_list:
         data["pad_presets"] = presets_list
 
-    with open(str(p), "w", encoding="utf-8") as f:
-        toml.dump(data, f)
+    # Piano presets
+    pp_list: list[dict] = []
+    for pp in config.piano_presets:
+        pp_dict: dict = {"name": pp.name}
+        keys_list: list[dict] = []
+        for k in pp.keys:
+            key_dict: dict = {"note": k.note}
+            if k.label:
+                key_dict["label"] = k.label
+            if k.action:
+                key_dict["action"] = dict(k.action)
+            keys_list.append(key_dict)
+        if keys_list:
+            pp_dict["keys"] = keys_list
+        pp_list.append(pp_dict)
+    if pp_list:
+        data["piano_presets"] = pp_list
+
+    # Atomic write: serialize to a sibling temp file, fsync, then os.replace.
+    # Prevents torn writes (and loss of all presets) if two writers race or
+    # if the process is killed mid-write.
+    p_parent = p.parent if p.parent.as_posix() else Path(".")
+    p_parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=p.name + ".", suffix=".tmp", dir=str(p_parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            toml.dump(data, f)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                # fsync may fail on some filesystems (e.g. network mounts);
+                # the os.replace below is still the atomic commit point.
+                pass
+        os.replace(tmp_path, str(p))
+    except Exception:
+        # Clean up the temp file on failure so we don't leak debris.
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 class Mapper:
@@ -401,6 +485,14 @@ class Mapper:
         """Return {"pad:A": instanceId, ...} for JSON serialization."""
         return {f"{t}:{b}": pid for (t, b), pid in self._active_panels.items()}
 
+    def iter_active_panels(self) -> dict[tuple[str, str], str]:
+        """Return a *copy* of the ``(type, bank) -> instanceId`` map.
+
+        Public accessor for callers that need to iterate over active slot
+        assignments without reaching into the private attribute.
+        """
+        return dict(self._active_panels)
+
     def lookup_pad_for_active(self, note: int) -> PadMapping | None:
         """Resolve pad via the active pad-panel for the note's bank."""
         if note in PAD_NOTES_BANK_A:
@@ -567,8 +659,28 @@ class Mapper:
                 break
         if not found:
             return False
-        with open(str(path), "w", encoding="utf-8") as f:
-            toml.dump(data, f)
+        # Atomic write (same pattern as save_config) to avoid corrupting
+        # config.toml on concurrent writers.
+        p_parent = path.parent if path.parent.as_posix() else Path(".")
+        p_parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=path.name + ".", suffix=".tmp", dir=str(p_parent),
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                toml.dump(data, f)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass
+            os.replace(tmp_path, str(path))
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
         # Reload in-memory config
         new_cfg = load_config(path)
         self.config.knobs = new_cfg.knobs
@@ -600,6 +712,27 @@ class Mapper:
                 self.config.knobs = list(kp.knobs)
                 return True
         return False
+
+    # -- Piano presets ------------------------------------------------
+
+    def get_piano_preset(self, name: str) -> PianoPreset | None:
+        """Find a piano preset by name (case-insensitive)."""
+        for pp in self.config.piano_presets:
+            if pp.name.lower() == name.lower():
+                return pp
+        return None
+
+    def lookup_piano_key(
+        self, preset_name: str, note: int,
+    ) -> PianoKeyMapping | None:
+        """Return the PianoKeyMapping for a note in a preset, if any."""
+        pp = self.get_piano_preset(preset_name)
+        if pp is None:
+            return None
+        for k in pp.keys:
+            if k.note == note:
+                return k
+        return None
 
     def get_plugin_notes(self, plugin_name: str) -> set[int]:
         """Return notes assigned to a specific plugin in the current preset."""
