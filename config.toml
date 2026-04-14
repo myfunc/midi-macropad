@@ -108,6 +108,37 @@ freq = 8000.0
 q = 1.0
 filter_type = 2
 
+[[knob_presets]]
+name = "Piano FX"
+[[knob_presets.knobs]]
+cc = 48
+label = "Volume"
+
+[knob_presets.knobs.action]
+type = "plugin"
+target = "Piano:fx_volume"
+[[knob_presets.knobs]]
+cc = 49
+label = "Reverb"
+
+[knob_presets.knobs.action]
+type = "plugin"
+target = "Piano:fx_reverb.mix"
+[[knob_presets.knobs]]
+cc = 50
+label = "Filter"
+
+[knob_presets.knobs.action]
+type = "plugin"
+target = "Piano:fx_filter.cutoff"
+[[knob_presets.knobs]]
+cc = 51
+label = "Delay"
+
+[knob_presets.knobs.action]
+type = "plugin"
+target = "Piano:fx_delay.mix"
+
 [[pad_presets]]
 name = "Spotify"
 [[pad_presets.pads]]
@@ -191,14 +222,14 @@ type = "plugin"
 target = "Voicemeeter"
 [[pad_presets.pads]]
 note = 18
-label = "Pad 3"
+label = "Pad 4"
 
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
 [[pad_presets.pads]]
 note = 19
-label = "Pad 4"
+label = "Pad 7"
 
 [pad_presets.pads.action]
 type = "plugin"
@@ -212,14 +243,14 @@ type = "plugin"
 target = "Voicemeeter"
 [[pad_presets.pads]]
 note = 21
-label = "Pad 6"
+label = "Pad 3"
 
 [pad_presets.pads.action]
 type = "plugin"
 target = "Voicemeeter"
 [[pad_presets.pads]]
 note = 22
-label = "Pad 7"
+label = "Pad 6"
 
 [pad_presets.pads.action]
 type = "plugin"

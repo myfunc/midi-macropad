@@ -17,14 +17,14 @@ if _PROJECT_ROOT not in sys.path:
 
 import settings
 from midi_listener import MidiListener, MidiEvent
-from mapper import Mapper, load_config, save_config, PAD_NOTES_BANK_A, PAD_NOTES_BANK_B
+from mapper import Mapper, load_config, save_config, PAD_NOTES_BANK_A, PAD_NOTES_BANK_B, PAD_NOTES_ALL
 from executor import execute_keystroke, execute_shell, execute_launch, execute_scroll
 from audio import AudioController
 from feedback import FeedbackService, set_transpose, get_transpose
 from obs_controller import OBSController
 from hotkey_listener import HotkeyListener
 from plugins.manager import PluginManager
-from pad_registry import PadEntry, PAD_NOTES_ALL
+from pad_registry import PadEntry, pad_key
 
 from backend.event_bus import EventBus
 from backend.operation_manager import OperationManager
@@ -35,7 +35,8 @@ CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config.toml")
 import re
 
 _PRESET_NAME_RE = re.compile(r'^[\w\s\-.,!?()&#+]{1,50}$', re.UNICODE)
-_VALID_PANEL_IDS = frozenset({"bankA", "bankB", "knobs"})
+# Legacy fixed IDs kept for backward compatibility; dynamic IDs also accepted
+_LEGACY_PANEL_IDS = frozenset({"bankA", "bankB", "knobs"})
 
 
 def _validate_preset_name(name: str) -> str | None:
@@ -87,6 +88,12 @@ class AppCore:
         self.log_buffer: list[dict] = []
         self._LOG_BUFFER_MAX = 200
 
+        # In-memory marker for the last physically-pressed pad bank.
+        # Takes priority over settings["panel_presets"]["_active_pad_bank"]
+        # when resolving the active knob panel — avoids writing settings on
+        # every pad press.
+        self._active_pad_bank_mem: str | None = None
+
         # Session telemetry — observer on event_bus, dumped on shutdown
         self.telemetry = TelemetryAggregator(Path(_PROJECT_ROOT))
         self.event_bus.subscribe_sync(self.telemetry.on_event)
@@ -122,7 +129,11 @@ class AppCore:
             self.config.device_name, self.event_queue,
             log_fn=self._midi_log,
         )
-        self.hotkeys = HotkeyListener(self.event_queue, log_fn=self._runtime_log)
+        self.hotkeys = HotkeyListener(
+            self.event_queue,
+            log_fn=self._runtime_log,
+            action_callback=self._execute_hotkey_action,
+        )
 
         obs_cfg = settings.get("obs_session_plugin", {})
         self.obs = OBSController(
@@ -138,6 +149,9 @@ class AppCore:
 
         # Migrate: create panel_presets if missing
         self._migrate_panel_presets()
+
+        # Restore MIDI routing from settings
+        self._restore_midi_routing()
 
         # Mark headless mode so plugins skip DearPyGui calls
         os.environ["MACROPAD_HEADLESS"] = "1"
@@ -171,6 +185,44 @@ class AppCore:
 
         self.telemetry.set_plugins_enabled(list(self.plugin_manager.enabled))
         self._runtime_log("SYS", "AppCore bootstrapped", (100, 255, 150))
+
+    def _restore_midi_routing(self) -> None:
+        """Restore mapper state from saved freeform ``panels`` + ``active_panels``.
+
+        Also keeps the legacy routing tables populated for backward compat
+        with any callers that still read them.
+        """
+        panels = settings.get("panels") or {}
+        active = settings.get("active_panels") or {}
+
+        # Freeform registration
+        for instance_id, panel in panels.items():
+            if not isinstance(panel, dict):
+                continue
+            preset_name = panel.get("preset")
+            if preset_name:
+                self.mapper.register_panel_preset(instance_id, preset_name)
+
+        for key, instance_id in active.items():
+            if not instance_id:
+                continue
+            try:
+                panel_type, bank = key.split(":", 1)
+            except ValueError:
+                continue
+            self.mapper.set_active_panel(panel_type, bank, instance_id)
+
+        # Legacy mirror so existing fallbacks keep working
+        for (panel_type, bank), instance_id in self.mapper._active_panels.items():
+            preset_name = self.mapper._panel_presets.get(instance_id)
+            if not preset_name:
+                continue
+            if panel_type == "pad":
+                routing_key = "bankA" if bank == "A" else "bankB"
+                self.mapper.set_midi_routing(routing_key, preset_name)
+            elif panel_type == "knob":
+                legacy = "knobBank-A" if bank == "A" else "knobBank-B"
+                self.mapper.set_knob_routing(legacy, preset_name)
 
     # ------------------------------------------------------------------
     # Start / Stop
@@ -254,44 +306,37 @@ class AppCore:
     def _handle_event_locked(self, event: MidiEvent) -> None:
         try:
             if event.type == "pad_press":
-                self.event_bus.publish("midi.pad_press", {
-                    "note": event.note, "velocity": event.velocity,
-                })
-                # Plugins first
-                if self.plugin_manager.on_pad_press(event.note, event.velocity):
-                    labels = self.plugin_manager.get_all_pad_labels()
-                    label = labels.get(event.note, f"note {event.note}")
-                    self._runtime_log("PAD",
-                        f"{label} (note {event.note}, vel {event.velocity}) [plugin]",
-                        (200, 150, 255))
-                    # Push updated pad states (toggle may have changed)
-                    self.event_bus.publish("pads.updated", {
-                        "pads": self.get_state_snapshot()["pads"],
-                    })
+                note = event.note
+                # Split: pad notes -> pad dispatch, other notes -> piano plugin
+                if note in PAD_NOTES_ALL:
+                    self._handle_pad_press(note, event.velocity)
                 else:
-                    mapping = self.mapper.lookup_pad(event.note)
-                    if mapping:
-                        self._runtime_log("PAD",
-                            f"{mapping.label} (note {event.note}, vel {event.velocity})",
-                            (100, 200, 255))
-                        self._execute_action(mapping.action)
-                    else:
-                        self._runtime_log("PAD",
-                            f"note {event.note} (unmapped)", (150, 150, 160))
+                    # Piano / non-pad note — forward to plugins
+                    self.event_bus.publish("midi.key_press", {
+                        "note": note, "velocity": event.velocity,
+                    })
+                    self.plugin_manager.on_pad_press(note, event.velocity)
 
             elif event.type == "pad_release":
-                self.event_bus.publish("midi.pad_release", {"note": event.note})
-                self.plugin_manager.on_pad_release(event.note)
+                note = event.note
+                if note in PAD_NOTES_ALL:
+                    self.event_bus.publish("midi.pad_release", {"note": note})
+                    self.plugin_manager.on_pad_release(note)
+                else:
+                    self.event_bus.publish("midi.key_release", {"note": note})
+                    self.plugin_manager.on_pad_release(note)
 
             elif event.type == "knob":
                 self.event_bus.publish("midi.knob", {
                     "cc": event.cc, "value": event.value,
                 })
                 if not self.plugin_manager.on_knob(event.cc, event.value):
-                    knob = self.mapper.lookup_knob(event.cc)
+                    # Freeform model: active knob-panel per bank.
+                    bank = self._active_pad_bank_mem or "A"
+                    knob = self.mapper.lookup_knob_for_active_bank(bank, event.cc)
                     if knob:
                         self._runtime_log("KNOB",
-                            f"{knob.label} CC{event.cc}={event.value}",
+                            f"[knob:{bank}] {knob.label} CC{event.cc}={event.value}",
                             (255, 200, 80))
                         self._handle_knob(knob, event.value)
 
@@ -301,6 +346,58 @@ class AppCore:
 
         except Exception as exc:
             self._runtime_log("ERR", f"Event error: {exc}", (255, 80, 80))
+
+    def _handle_pad_press(self, note: int, velocity: int) -> None:
+        """Handle a pad press for notes in PAD_NOTES_ALL."""
+        # Update in-memory active pad bank marker so knob routing follows the
+        # last physically-pressed bank without writing to settings on every press.
+        if note in PAD_NOTES_BANK_A:
+            self._active_pad_bank_mem = "A"
+        elif note in PAD_NOTES_BANK_B:
+            self._active_pad_bank_mem = "B"
+
+        self.event_bus.publish("midi.pad_press", {
+            "note": note, "velocity": velocity,
+        })
+        # Plugins first
+        if self.plugin_manager.on_pad_press(note, velocity):
+            labels = self.plugin_manager.get_all_pad_labels()
+            label = labels.get(note, f"note {note}")
+            self._runtime_log("PAD",
+                f"{label} (note {note}, vel {velocity}) [plugin]",
+                (200, 150, 255))
+            # Push updated pad states (toggle may have changed)
+            self.event_bus.publish("pads.updated", {
+                "pads": self.get_state_snapshot()["pads"],
+            })
+        else:
+            mapping = self.mapper.lookup_pad_for_active(note)
+            if mapping:
+                self._runtime_log("PAD",
+                    f"{mapping.label} (note {note}, vel {velocity})",
+                    (100, 200, 255))
+                self._execute_action(mapping.action)
+            else:
+                self._runtime_log("PAD",
+                    f"note {note} (unmapped)", (150, 150, 160))
+
+    # ------------------------------------------------------------------
+    # Hotkey action dispatch
+    # ------------------------------------------------------------------
+
+    def _execute_hotkey_action(self, preset_name: str, note: int) -> None:
+        """Execute the action bound to a specific preset + note (from hotkey)."""
+        with self._lock:
+            mapping = self.mapper.get_pad_from_preset(preset_name, note)
+            if mapping:
+                self._runtime_log("HOTKEY",
+                    f"{mapping.label} ({preset_name}:note {note})",
+                    (180, 220, 255))
+                self._execute_action(mapping.action)
+            else:
+                self._runtime_log("HOTKEY",
+                    f"note {note} in preset '{preset_name}' (unmapped)",
+                    (150, 150, 160))
 
     # ------------------------------------------------------------------
     # Action execution
@@ -380,11 +477,12 @@ class AppCore:
             for i, p in enumerate(self.config.pad_presets)
         ]
 
-        # Pads from registry
+        # Pads from registry — composite keys "Preset:note"
         pads = {}
-        for note, entry in self.mapper.registry.get_all().items():
-            pads[str(note)] = {
+        for key, entry in self.mapper.registry.get_all().items():
+            pads[key] = {
                 "note": entry.note,
+                "preset": entry.preset,
                 "label": entry.label,
                 "source": entry.source,
                 "action_type": entry.action_type,
@@ -394,18 +492,22 @@ class AppCore:
                 "color": list(entry.color),
             }
 
-        # Plugin pad labels overlay
-        plugin_labels = self.plugin_manager.get_all_pad_labels()
-        for note_str, label in {str(k): v for k, v in plugin_labels.items()}.items():
-            if note_str in pads:
-                pads[note_str]["label"] = label
+        # Plugin pad labels overlay — scoped to each plugin's own preset only.
+        # Plugin name matches preset name (e.g. "Voicemeeter" plugin -> "Voicemeeter" preset).
+        labels_by_plugin = self.plugin_manager.get_pad_labels_by_plugin()
+        for plugin_name, plugin_labels in labels_by_plugin.items():
+            for note_int, label in plugin_labels.items():
+                pkey = f"{plugin_name}:{note_int}"
+                if pkey in pads:
+                    pads[pkey]["label"] = label
 
-        # Plugin toggle states overlay
-        plugin_states = self.plugin_manager.get_all_pad_states()
-        for note_int, state in plugin_states.items():
-            note_str = str(note_int)
-            if note_str in pads:
-                pads[note_str]["toggle_state"] = state
+        # Plugin toggle states overlay — scoped to each plugin's own preset only.
+        states_by_plugin = self.plugin_manager.get_pad_states_by_plugin()
+        for plugin_name, plugin_states in states_by_plugin.items():
+            for note_int, state in plugin_states.items():
+                pkey = f"{plugin_name}:{note_int}"
+                if pkey in pads:
+                    pads[pkey]["toggle_state"] = state
 
         # Knobs
         knobs = []
@@ -437,6 +539,10 @@ class AppCore:
                 "list": presets,
             },
             "panel_presets": settings.get("panel_presets") or {},
+            "panels": settings.get("panels") or {},
+            "active_panels": settings.get("active_panels") or {},
+            "active_midi_presets": self.mapper.get_midi_routing(),
+            "active_knob_presets": self.mapper.get_knob_routing(),
             "pads": pads,
             "knobs": knobs,
             "plugins": {"discovered": discovered},
@@ -459,45 +565,350 @@ class AppCore:
 
     KNOB_CCS = [48, 49, 50, 51]
 
+    def _default_knob_preset_name(self) -> str | None:
+        """Return first available knob preset name, or None."""
+        if self.config.knob_presets:
+            return self.config.knob_presets[0].name
+        return None
+
+    def _active_knob_panel(self) -> str:
+        """Resolve the active knob panel based on the active pad bank.
+
+        bankA -> knobBank-A, bankB -> knobBank-B. Defaults to knobBank-A.
+        Prefers the in-memory marker (updated on physical pad press); falls
+        back to settings["panel_presets"]["_active_pad_bank"] (updated when
+        user switches panel preset in UI).
+        """
+        active_bank = self._active_pad_bank_mem
+        if active_bank is None:
+            panel_presets = settings.get("panel_presets") or {}
+            active_bank = panel_presets.get("_active_pad_bank")
+        if active_bank == "B":
+            return "knobBank-B"
+        return "knobBank-A"
+
     def _migrate_panel_presets(self) -> None:
-        """Create panel_presets in settings if it doesn't exist yet."""
-        if settings.get("panel_presets") is not None:
+        """Ensure freeform ``panels`` + ``active_panels`` structures exist.
+
+        Migrates legacy ``panel_presets.bankA/bankB/knobBank-A/B`` (and any
+        dynamic ``padBank-*`` / ``knobBank-*`` entries) into 4 starter freeform
+        panels (pad A active + pad B inactive + knob A active + knob B inactive),
+        and resets ``ui_layout`` so the default layout is rebuilt.
+        """
+        if settings.get("panels") is not None and settings.get("active_panels") is not None:
             return
-        # Determine current preset name
+
         preset = self.mapper.current_preset
-        preset_name = preset.name if preset else "Default"
-        panel_presets = {
-            "bankA": {
-                "preset": preset_name,
-                "order": list(PAD_NOTES_BANK_A),
+        default_pad_preset = preset.name if preset else "Default"
+        default_knob_preset = self._default_knob_preset_name() or default_pad_preset
+
+        legacy = settings.get("panel_presets") or {}
+        def _pick(*keys: str, fallback: str) -> str:
+            for k in keys:
+                p = legacy.get(k) or {}
+                name = p.get("preset")
+                if name:
+                    return name
+            return fallback
+
+        pad_a_preset = _pick("bankA", fallback=default_pad_preset)
+        pad_b_preset = _pick("bankB", fallback=default_pad_preset)
+        knob_a_preset = _pick("knobBank-A", "knobs", fallback=default_knob_preset)
+        knob_b_preset = _pick("knobBank-B", "knobs", fallback=default_knob_preset)
+
+        import time as _time
+        base = int(_time.time() * 1000)
+        pad_a_id = f"padPanel-{base + 1}"
+        pad_b_id = f"padPanel-{base + 2}"
+        knob_a_id = f"knobPanel-{base + 3}"
+        knob_b_id = f"knobPanel-{base + 4}"
+
+        panels = {
+            pad_a_id: {
+                "instanceId": pad_a_id, "type": "pad", "bank": "A",
+                "preset": pad_a_preset, "title": "Pad Panel A",
             },
-            "bankB": {
-                "preset": preset_name,
-                "order": list(PAD_NOTES_BANK_B),
+            pad_b_id: {
+                "instanceId": pad_b_id, "type": "pad", "bank": "B",
+                "preset": pad_b_preset, "title": "Pad Panel B",
             },
-            "knobs": {
-                "preset": preset_name,
-                "order": list(self.KNOB_CCS),
+            knob_a_id: {
+                "instanceId": knob_a_id, "type": "knob", "bank": "A",
+                "preset": knob_a_preset, "title": "Knob Panel A",
+            },
+            knob_b_id: {
+                "instanceId": knob_b_id, "type": "knob", "bank": "B",
+                "preset": knob_b_preset, "title": "Knob Panel B",
             },
         }
-        settings.put("panel_presets", panel_presets)
+        active_panels = {
+            "pad:A": pad_a_id,
+            "pad:B": pad_b_id,
+            "knob:A": knob_a_id,
+            "knob:B": knob_b_id,
+        }
+        settings.put("panels", panels)
+        settings.put("active_panels", active_panels)
+        # Reset layout — simpler than migrating instance IDs in dockview JSON
+        settings.put("ui_layout", None)
+        # Drop legacy panel_presets to avoid confusion
+        if legacy:
+            settings.put("panel_presets", {})
         self._runtime_log("SYS",
-            f"Migrated panel_presets (preset={preset_name})", (100, 255, 150))
+            "Migrated to freeform panels (4 starter panels)", (100, 255, 150))
+
+    # -- Freeform panel CRUD -----------------------------------------
+
+    def _legacy_mirror_routing(self, panel_type: str, bank: str, preset_name: str | None) -> None:
+        """Mirror active-panel binding into legacy routing tables."""
+        if not preset_name:
+            return
+        if panel_type == "pad":
+            routing_key = "bankA" if bank == "A" else "bankB"
+            self.mapper.set_midi_routing(routing_key, preset_name)
+        elif panel_type == "knob":
+            legacy = "knobBank-A" if bank == "A" else "knobBank-B"
+            self.mapper.set_knob_routing(legacy, preset_name)
+
+    def list_panels(self) -> dict:
+        return dict(settings.get("panels") or {})
+
+    def get_panel(self, instance_id: str) -> dict | None:
+        panels = settings.get("panels") or {}
+        return panels.get(instance_id)
+
+    def create_panel(
+        self,
+        panel_type: str,
+        bank: str = "A",
+        preset: str | None = None,
+        title: str | None = None,
+        activate: bool = False,
+    ) -> dict:
+        """Create a new freeform panel. Returns the persisted panel dict."""
+        if panel_type not in ("pad", "knob"):
+            raise ValueError(f"invalid panel type: {panel_type}")
+        if bank not in ("A", "B"):
+            raise ValueError(f"invalid bank: {bank}")
+
+        if preset is None:
+            if panel_type == "pad":
+                p = self.mapper.current_preset
+                preset = p.name if p else "Default"
+            else:
+                preset = self._default_knob_preset_name() or "Default"
+
+        if title is None:
+            title = "Pad Panel" if panel_type == "pad" else "Knob Panel"
+
+        import time as _time, uuid
+        instance_id = f"{panel_type}Panel-{int(_time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
+        panel = {
+            "instanceId": instance_id,
+            "type": panel_type,
+            "bank": bank,
+            "preset": preset,
+            "title": title,
+        }
+        panels = dict(settings.get("panels") or {})
+        panels[instance_id] = panel
+        settings.put("panels", panels)
+
+        with self._lock:
+            self.mapper.register_panel_preset(instance_id, preset)
+
+        self.event_bus.publish("panel.created", {"panel": panel})
+
+        if activate:
+            self.activate_panel(instance_id)
+        return panel
+
+    def update_panel(
+        self, instance_id: str,
+        bank: str | None = None,
+        preset: str | None = None,
+        title: str | None = None,
+    ) -> dict | None:
+        panels = dict(settings.get("panels") or {})
+        panel = panels.get(instance_id)
+        if not panel:
+            return None
+
+        panel_type = panel.get("type")
+        old_bank = panel.get("bank")
+
+        # Detect whether this panel currently occupies the active slot
+        # on its *old* bank — we need to clear/reassign that slot if the
+        # bank changes.
+        active_map = dict(settings.get("active_panels") or {})
+        old_slot_key = f"{panel_type}:{old_bank}"
+        was_active_on_old = active_map.get(old_slot_key) == instance_id
+
+        changed = False
+        bank_changed = False
+        if bank is not None and bank in ("A", "B") and old_bank != bank:
+            panel["bank"] = bank
+            changed = True
+            bank_changed = True
+        if preset is not None and panel.get("preset") != preset:
+            panel["preset"] = preset
+            with self._lock:
+                self.mapper.register_panel_preset(instance_id, preset)
+            changed = True
+        if title is not None and panel.get("title") != title:
+            panel["title"] = title
+            changed = True
+        if not changed:
+            return panel
+
+        panels[instance_id] = panel
+        settings.put("panels", panels)
+
+        auto_activated = False
+        if bank_changed and was_active_on_old:
+            # Clear the old slot (both settings + mapper routing)
+            active_map[old_slot_key] = None
+            with self._lock:
+                self.mapper.set_active_panel(panel_type, old_bank, None)
+
+            # Auto-activate on the new bank iff that slot is empty.
+            new_slot_key = f"{panel_type}:{panel['bank']}"
+            if not active_map.get(new_slot_key):
+                active_map[new_slot_key] = instance_id
+                with self._lock:
+                    self.mapper.set_active_panel(
+                        panel_type, panel["bank"], instance_id)
+                    self._legacy_mirror_routing(
+                        panel_type, panel["bank"], panel.get("preset"))
+                auto_activated = True
+
+            settings.put("active_panels", active_map)
+
+        # If this panel is currently active (on its current bank), re-mirror
+        # legacy routing so preset/title edits take effect.
+        current_key = f"{panel_type}:{panel['bank']}"
+        currently_active = active_map.get(current_key) == instance_id
+        if currently_active and not auto_activated:
+            self._legacy_mirror_routing(
+                panel_type, panel["bank"], panel.get("preset"))
+        if currently_active:
+            try:
+                self.plugin_manager.on_mode_changed(panel["preset"])
+                self.plugin_manager.notify_preset_changed(self.mapper)
+            except Exception:
+                pass
+
+        payload = {
+            "panel": panel,
+            "pads": self.get_state_snapshot()["pads"],
+            "active_midi_presets": self.mapper.get_midi_routing(),
+            "active_knob_presets": self.mapper.get_knob_routing(),
+        }
+        if bank_changed and was_active_on_old:
+            payload["active_panels"] = active_map
+        self.event_bus.publish("panel.updated", payload)
+
+        if bank_changed and was_active_on_old:
+            # Also emit an active_panels-style event so clients update slots.
+            self.event_bus.publish("panel.activated", {
+                "instanceId": instance_id if auto_activated else None,
+                "previousId": instance_id,
+                "type": panel_type,
+                "bank": panel["bank"] if auto_activated else old_bank,
+                "active_panels": active_map,
+                "pads": payload["pads"],
+                "active_midi_presets": payload["active_midi_presets"],
+                "active_knob_presets": payload["active_knob_presets"],
+            })
+        return panel
+
+    def delete_panel(self, instance_id: str) -> bool:
+        panels = dict(settings.get("panels") or {})
+        panel = panels.pop(instance_id, None)
+        if not panel:
+            return False
+        settings.put("panels", panels)
+
+        active = dict(settings.get("active_panels") or {})
+        changed_active = False
+        for key, pid in list(active.items()):
+            if pid == instance_id:
+                active[key] = None
+                changed_active = True
+        if changed_active:
+            settings.put("active_panels", active)
+
+        with self._lock:
+            self.mapper.unregister_panel(instance_id)
+
+        self.event_bus.publish("panel.deleted", {
+            "instanceId": instance_id,
+            "active_panels": active,
+        })
+        return True
+
+    def activate_panel(self, instance_id: str) -> bool:
+        panels = settings.get("panels") or {}
+        panel = panels.get(instance_id)
+        if not panel:
+            return False
+        panel_type = panel.get("type")
+        bank = panel.get("bank")
+        if panel_type not in ("pad", "knob") or bank not in ("A", "B"):
+            return False
+
+        # All settings + mapper mutation + snapshot happen under the same
+        # lock so concurrent activations/reads observe a consistent state.
+        with self._lock:
+            active = dict(settings.get("active_panels") or {})
+            key = f"{panel_type}:{bank}"
+            prev = active.get(key)
+            active[key] = instance_id
+            settings.put("active_panels", active)
+
+            self.mapper.set_active_panel(panel_type, bank, instance_id)
+            self._legacy_mirror_routing(panel_type, bank, panel.get("preset"))
+
+            snapshot_pads = self.get_state_snapshot()["pads"]
+            midi_routing = self.mapper.get_midi_routing()
+            knob_routing = self.mapper.get_knob_routing()
+
+        try:
+            if panel.get("preset"):
+                self.plugin_manager.on_mode_changed(panel["preset"])
+                self.plugin_manager.notify_preset_changed(self.mapper)
+        except Exception:
+            pass
+
+        self.event_bus.publish("panel.activated", {
+            "instanceId": instance_id,
+            "previousId": prev,
+            "type": panel_type,
+            "bank": bank,
+            "active_panels": active,
+            "pads": snapshot_pads,
+            "active_midi_presets": midi_routing,
+            "active_knob_presets": knob_routing,
+        })
+        return True
 
     def get_panel_preset(self, panel_id: str) -> dict | None:
-        """Get panel preset info for a panel (bankA, bankB, knobs)."""
-        if panel_id not in _VALID_PANEL_IDS:
-            return None
+        """Get panel preset info for any panel."""
         panel_presets = settings.get("panel_presets")
         if not panel_presets:
             return None
         return panel_presets.get(panel_id)
 
-    def set_panel_preset(self, panel_id: str, preset_name: str) -> bool:
+    def set_panel_preset(self, panel_id: str, preset_name: str, bank: str | None = None) -> bool:
         """Switch a single panel to a different preset.
 
-        For bankA/bankB: applies pads from the named preset filtered by bank notes.
-        For knobs: stores the name but doesn't change knob mappings (knobs are global).
+        Updates the routing table (no pad_maps mutation), persists to settings,
+        and notifies plugins + clients.
+
+        Args:
+            panel_id: Panel identifier (e.g. "bankA", "padBank-1", "knobBank-1")
+            preset_name: Target preset name
+            bank: Optional bank override ("A" or "B"). For legacy IDs inferred automatically.
         """
         # Validate preset exists
         preset = self.mapper.get_preset_by_name(preset_name)
@@ -506,23 +917,30 @@ class AppCore:
 
         panel_presets = settings.get("panel_presets") or {}
 
-        if panel_id not in _VALID_PANEL_IDS:
-            return False
+        # Determine bank for MIDI routing
+        is_knob = panel_id == "knobs" or panel_id.startswith("knob")
+        if is_knob:
+            panel_presets.setdefault(panel_id, {})["preset"] = preset_name
+            # Attempt knob routing if this maps to a knob preset
+            with self._lock:
+                self.mapper.set_knob_routing(panel_id, preset_name)
+        else:
+            # Resolve bank: explicit > saved > legacy ID > default A
+            if not bank:
+                if panel_id == "bankA":
+                    bank = "A"
+                elif panel_id == "bankB":
+                    bank = "B"
+                else:
+                    bank = panel_presets.get(panel_id, {}).get("bank", "A")
 
-        if panel_id == "bankA":
-            note_filter = list(panel_presets.get("bankA", {}).get(
-                "order", PAD_NOTES_BANK_A))
+            routing_key = "bankA" if bank == "A" else "bankB"
             with self._lock:
-                self.mapper.apply_partial_preset(preset_name, note_filter)
-            panel_presets.setdefault("bankA", {})["preset"] = preset_name
-        elif panel_id == "bankB":
-            note_filter = list(panel_presets.get("bankB", {}).get(
-                "order", PAD_NOTES_BANK_B))
-            with self._lock:
-                self.mapper.apply_partial_preset(preset_name, note_filter)
-            panel_presets.setdefault("bankB", {})["preset"] = preset_name
-        elif panel_id == "knobs":
-            panel_presets.setdefault("knobs", {})["preset"] = preset_name
+                self.mapper.set_midi_routing(routing_key, preset_name)
+            panel_presets.setdefault(panel_id, {})["preset"] = preset_name
+            panel_presets[panel_id]["bank"] = bank
+            # Track the most recently activated pad bank for knob routing
+            panel_presets["_active_pad_bank"] = bank
 
         settings.put("panel_presets", panel_presets)
 
@@ -540,15 +958,13 @@ class AppCore:
             "panel": panel_id,
             "preset": preset_name,
             "pads": self.get_state_snapshot()["pads"],
+            "active_midi_presets": self.mapper.get_midi_routing(),
         })
         return True
 
     def set_panel_order(self, panel_id: str, order: list[int]) -> bool:
         """Save drag-and-drop order for a panel."""
         panel_presets = settings.get("panel_presets") or {}
-        if panel_id not in ("bankA", "bankB", "knobs"):
-            return False
-
         panel_presets.setdefault(panel_id, {})
         panel_presets[panel_id]["order"] = order
         settings.put("panel_presets", panel_presets)
@@ -609,6 +1025,9 @@ class AppCore:
                 panel_data["preset"] = remaining_name or "Default"
         settings.put("panel_presets", panel_presets)
 
+        # Update routing table
+        self._restore_midi_routing()
+
         return True, ""
 
     def rename_preset(self, old_name: str, new_name: str) -> tuple[bool, str]:
@@ -625,6 +1044,8 @@ class AppCore:
 
         with self._lock:
             preset.name = new_name
+            # Rebuild so registry picks up the new name
+            self.mapper.rebuild_maps()
 
         save_config(self.config, CONFIG_PATH)
 
@@ -635,26 +1056,57 @@ class AppCore:
                 panel_data["preset"] = new_name
         settings.put("panel_presets", panel_presets)
 
+        # Update routing table
+        self._restore_midi_routing()
+
         return True, ""
 
     def get_knob_presets(self) -> list[dict]:
-        """Return list of knob presets with name and knob count."""
-        return [
-            {"name": kp.name, "knob_count": len(kp.knobs)}
-            for kp in self.config.knob_presets
-        ]
+        """Return list of knob presets with name, knob count, and full knob definitions.
 
-    def switch_knob_preset(self, name: str) -> bool:
-        """Apply a knob preset by name, persist to settings and config, publish event."""
+        The ``knobs`` field is an additive extension so inactive knob panels
+        can render their preset's knob layout without relying on the live
+        ``knobs`` store (which tracks only the active preset).
+        """
+        result = []
+        for kp in self.config.knob_presets:
+            knobs = []
+            for k in kp.knobs:
+                knobs.append({
+                    "cc": k.cc,
+                    "label": k.label,
+                    "action": {
+                        "type": k.action.type,
+                        "target": k.action.target,
+                    },
+                    "value": 0,
+                })
+            result.append({
+                "name": kp.name,
+                "knob_count": len(kp.knobs),
+                "knobs": knobs,
+            })
+        return result
+
+    def switch_knob_preset(self, name: str, panel_id: str = "knobBank-A") -> bool:
+        """Apply a knob preset for a specific knob panel.
+
+        Updates per-panel routing (mapper._active_knob_presets) and persists
+        the active preset to ``settings["panel_presets"][panel_id].preset``.
+        Does NOT write ``config.toml`` — that file is the source of truth
+        for preset *definitions*, not active routing state.
+        """
         with self._lock:
-            ok = self.mapper.apply_knob_preset(name)
+            ok = self.mapper.set_knob_routing(panel_id, name)
         if not ok:
-            return False
-        # Persist active knobs to config.toml
-        save_config(self.config, CONFIG_PATH)
-        # Update panel_presets.knobs.preset in settings
+            # Fallback to legacy global apply for backward compat
+            with self._lock:
+                ok = self.mapper.apply_knob_preset(name)
+            if not ok:
+                return False
+        # Update panel_presets[panel_id].preset in settings
         panel_presets = settings.get("panel_presets") or {}
-        panel_presets.setdefault("knobs", {})["preset"] = name
+        panel_presets.setdefault(panel_id, {})["preset"] = name
         settings.put("panel_presets", panel_presets)
         # Build updated knobs for event
         knobs = []
@@ -666,10 +1118,32 @@ class AppCore:
             })
         self.event_bus.publish("knob_preset.changed", {
             "preset": name,
+            "panel": panel_id,
             "knobs": knobs,
+            "knob_routing": self.mapper.get_knob_routing(),
         })
         self._runtime_log("KNOB",
-            f"Knob preset switched: {name}", (100, 255, 150))
+            f"Knob preset switched [{panel_id}]: {name}", (100, 255, 150))
+        return True
+
+    def swap_knobs(self, cc_a: int, cc_b: int) -> bool:
+        """Swap two knob mappings and persist to config.toml."""
+        with self._lock:
+            ok = self.mapper.swap_knobs(cc_a, cc_b)
+        if not ok:
+            return False
+        save_config(self.config, CONFIG_PATH)
+        # Build updated knobs for event
+        knobs = []
+        for k in self.config.knobs:
+            knobs.append({
+                "cc": k.cc, "label": k.label,
+                "action": {"type": k.action.type, "target": k.action.target},
+                "value": settings.get("knob_values", {}).get(str(k.cc), 64),
+            })
+        self.event_bus.publish("knobs.updated_all", {"knobs": knobs})
+        self._runtime_log("KNOB",
+            f"Knobs swapped: CC{cc_a} <-> CC{cc_b}", (100, 255, 150))
         return True
 
     def update_knob_config(

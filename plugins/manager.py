@@ -302,6 +302,38 @@ class PluginManager:
                           color=(255, 80, 80))
         return labels
 
+    def get_pad_labels_by_plugin(self) -> dict[str, dict[int, str]]:
+        """Return pad labels grouped by plugin name: {plugin_name: {note: label}}."""
+        result: dict[str, dict[int, str]] = {}
+        for name in self.enabled:
+            plugin = self.plugins.get(name)
+            if plugin is None:
+                continue
+            try:
+                plugin_labels = plugin.get_pad_labels()
+                if plugin_labels:
+                    result[name] = plugin_labels
+            except Exception:
+                self._log("PLUGIN",
+                          f"{name}.get_pad_labels error: {traceback.format_exc()}",
+                          color=(255, 80, 80))
+        return result
+
+    def get_pad_states_by_plugin(self) -> dict[str, dict[int, bool | None]]:
+        """Return pad states grouped by plugin name: {plugin_name: {note: state}}."""
+        result: dict[str, dict[int, bool | None]] = {}
+        for name in self.enabled:
+            plugin = self.plugins.get(name)
+            if plugin is None:
+                continue
+            try:
+                plugin_states = plugin.get_pad_states()
+                if plugin_states:
+                    result[name] = plugin_states
+            except Exception:
+                pass
+        return result
+
     def get_all_pad_states(self) -> dict[int, bool | None]:
         states: dict[int, bool | None] = {}
         for name in self.enabled:

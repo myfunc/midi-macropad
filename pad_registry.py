@@ -9,10 +9,16 @@ PAD_NOTES_BANK_B = [24, 25, 26, 27, 28, 29, 30, 31]
 PAD_NOTES_ALL = PAD_NOTES_BANK_A + PAD_NOTES_BANK_B
 
 
+def pad_key(preset: str, note: int) -> str:
+    """Composite key for addressing a pad within a specific preset."""
+    return f"{preset}:{note}"
+
+
 @dataclass
 class PadEntry:
     """Unified pad assignment."""
     note: int
+    preset: str = ""
     label: str = ""
     source: str = "config"           # "config" | "plugin:OBS" | "plugin:Voicemeeter" | ...
     action_type: str = ""            # "keystroke" | "app_keystroke" | "shell" | "launch" | "obs" | "volume" | "scroll" | "plugin"
@@ -39,89 +45,135 @@ class PadEntry:
 class PadRegistry:
     """Central registry for all pad assignments across banks and presets.
 
+    Keys are composite ``"PresetName:note"`` strings so pads from different
+    presets coexist without collision.
+
     Usage:
         registry = PadRegistry()
-        registry.load_from_preset(preset_pads)  # Load from config.toml
-        registry.set_pad(note, PadEntry(...))    # Plugin claims a pad
-        registry.on_change(callback)             # UI subscribes to changes
+        registry.load_from_preset(preset_pads, "Spotify")
+        registry.set_pad("Spotify", 16, PadEntry(...))
+        registry.on_change(callback)
     """
 
     def __init__(self):
-        self._pads: dict[int, PadEntry] = {}
-        self._change_callbacks: list[Callable[[int, PadEntry | None], None]] = []
-        # Initialize all notes with empty entries
-        for note in PAD_NOTES_ALL:
-            self._pads[note] = PadEntry(note=note)
+        self._pads: dict[str, PadEntry] = {}
+        self._change_callbacks: list[Callable[[str, PadEntry | None], None]] = []
 
-    def get_pad(self, note: int) -> PadEntry | None:
-        """Get pad entry for a specific note."""
-        return self._pads.get(note)
+    # -- Core access --------------------------------------------------
 
-    def set_pad(self, note: int, entry: PadEntry) -> None:
+    def get_pad(self, preset: str | None, note: int) -> PadEntry | None:
+        """Get pad entry by preset + note.
+
+        If *preset* is ``None``, fall back to legacy integer-key lookup
+        (searches all presets, returns first match — for backward compat).
+        """
+        if preset is not None:
+            return self._pads.get(pad_key(preset, note))
+        # Legacy: find first entry with this note
+        for key, entry in self._pads.items():
+            if entry.note == note:
+                return entry
+        return None
+
+    def set_pad(self, preset: str, note: int, entry: PadEntry) -> None:
         """Set or update a pad entry. Triggers change callbacks."""
         entry.note = note
-        self._pads[note] = entry
-        self._notify(note, entry)
+        entry.preset = preset
+        key = pad_key(preset, note)
+        self._pads[key] = entry
+        self._notify(key, entry)
 
-    def clear_pad(self, note: int) -> None:
+    def clear_pad(self, preset: str, note: int) -> None:
         """Reset a pad to empty state."""
-        entry = PadEntry(note=note)
-        self._pads[note] = entry
-        self._notify(note, entry)
+        entry = PadEntry(note=note, preset=preset)
+        key = pad_key(preset, note)
+        self._pads[key] = entry
+        self._notify(key, entry)
 
-    def swap_pads(self, note_a: int, note_b: int) -> bool:
-        """Swap two pads. Returns False if either is locked."""
-        pad_a = self._pads.get(note_a)
-        pad_b = self._pads.get(note_b)
+    def swap_pads(self, preset: str, note_a: int, note_b: int) -> bool:
+        """Swap two pads within the same preset. Returns False if either is locked."""
+        key_a = pad_key(preset, note_a)
+        key_b = pad_key(preset, note_b)
+        pad_a = self._pads.get(key_a)
+        pad_b = self._pads.get(key_b)
         if not pad_a or not pad_b:
             return False
         if pad_a.locked or pad_b.locked:
             return False
         # Swap entries but keep notes correct
         pad_a.note, pad_b.note = note_b, note_a
-        self._pads[note_a] = pad_b
-        self._pads[note_b] = pad_a
-        self._notify(note_a, pad_b)
-        self._notify(note_b, pad_a)
+        self._pads[key_a] = pad_b
+        self._pads[key_b] = pad_a
+        self._notify(key_a, pad_b)
+        self._notify(key_b, pad_a)
         return True
 
-    def get_bank(self, bank: str) -> list[PadEntry]:
-        """Get all pad entries for a bank ('A' or 'B')."""
-        notes = PAD_NOTES_BANK_A if bank == "A" else PAD_NOTES_BANK_B
-        return [self._pads[n] for n in notes if n in self._pads]
+    # -- Preset-level queries -----------------------------------------
 
-    def get_all(self) -> dict[int, PadEntry]:
-        """Get all pad entries."""
+    def get_preset_pads(self, preset_name: str) -> dict[int, PadEntry]:
+        """Get all pad entries for a given preset, keyed by note."""
+        prefix = f"{preset_name}:"
+        result: dict[int, PadEntry] = {}
+        for key, entry in self._pads.items():
+            if key.startswith(prefix):
+                result[entry.note] = entry
+        return result
+
+    def get_bank(self, preset: str, bank: str) -> list[PadEntry]:
+        """Get all pad entries for a bank ('A' or 'B') within a preset."""
+        notes = PAD_NOTES_BANK_A if bank == "A" else PAD_NOTES_BANK_B
+        result = []
+        for n in notes:
+            entry = self._pads.get(pad_key(preset, n))
+            if entry:
+                result.append(entry)
+        return result
+
+    def get_all(self) -> dict[str, PadEntry]:
+        """Get all pad entries keyed by composite key."""
         return dict(self._pads)
 
-    def get_labels(self) -> dict[int, str]:
+    def get_labels(self) -> dict[str, str]:
         """Get label map for all non-empty pads."""
         return {
-            note: entry.display_label
-            for note, entry in self._pads.items()
+            key: entry.display_label
+            for key, entry in self._pads.items()
             if entry.label or entry.action_type
         }
 
+    def get_all_hotkeys(self) -> list[tuple[str, int, str]]:
+        """Return list of (preset_name, note, hotkey_spec) for all pads with hotkeys."""
+        result = []
+        for key, entry in self._pads.items():
+            if entry.hotkey:
+                result.append((entry.preset, entry.note, entry.hotkey))
+        return result
+
+    # -- Plugin pad management ----------------------------------------
+
     def get_plugin_notes(self, plugin_name: str) -> set[int]:
-        """Get notes assigned to a specific plugin."""
+        """Get notes assigned to a specific plugin (across all presets)."""
         return {
-            note for note, entry in self._pads.items()
+            entry.note for entry in self._pads.values()
             if entry.plugin_name.lower() == plugin_name.lower()
         }
 
     def get_locked_notes(self) -> set[int]:
         """Get all locked (plugin-owned) notes."""
-        return {note for note, entry in self._pads.items() if entry.locked}
+        return {entry.note for entry in self._pads.values() if entry.locked}
 
-    def load_from_preset(self, pad_mappings: list) -> None:
+    # -- Loading from config ------------------------------------------
+
+    def load_from_preset(self, pad_mappings: list, preset_name: str = "") -> None:
         """Load pad assignments from a config preset (list of PadMapping).
 
-        Only overwrites non-locked pads. Call clear_plugin_pads() first
-        if you want plugins to re-register their pads after preset change.
+        Only overwrites non-locked pads. Loads under ``preset_name:N`` keys
+        without touching other presets.
         """
         for mapping in pad_mappings:
             note = mapping.note
-            existing = self._pads.get(note)
+            key = pad_key(preset_name, note)
+            existing = self._pads.get(key)
             if existing and existing.locked:
                 continue  # Don't overwrite plugin-owned pads
             action = mapping.action
@@ -136,6 +188,7 @@ class PadRegistry:
                 action_data['target'] = action.target
             entry = PadEntry(
                 note=note,
+                preset=preset_name,
                 label=mapping.label,
                 source="config",
                 action_type=action.type if action else "",
@@ -143,19 +196,37 @@ class PadRegistry:
                 hotkey=getattr(mapping, 'hotkey', '') or '',
                 locked=False,
             )
-            self._pads[note] = entry
-            self._notify(note, entry)
+            self._pads[key] = entry
+            self._notify(key, entry)
+
+    def load_active_and_hotkey_pads(
+        self,
+        active_presets: dict[str, str],
+        all_presets: list,
+    ) -> None:
+        """Load active MIDI pads + pads with hotkeys from all presets.
+
+        Args:
+            active_presets: ``{"bankA": "Spotify", "bankB": "OBS"}`` — panel->preset routing.
+            all_presets: Full list of PadPreset objects from config.
+        """
+        # First load ALL presets (so hotkeys from inactive presets work)
+        for preset in all_presets:
+            self.load_from_preset(preset.pads, preset.name)
+
+    # -- Plugin registration ------------------------------------------
 
     def clear_plugin_pads(self, plugin_name: str | None = None) -> None:
         """Clear all pads from a specific plugin, or all plugin pads if None."""
-        for note in PAD_NOTES_ALL:
-            entry = self._pads.get(note)
-            if not entry or not entry.is_plugin:
+        for key in list(self._pads.keys()):
+            entry = self._pads[key]
+            if not entry.is_plugin:
                 continue
             if plugin_name and entry.plugin_name.lower() != plugin_name.lower():
                 continue
-            self._pads[note] = PadEntry(note=note)
-            self._notify(note, self._pads[note])
+            new_entry = PadEntry(note=entry.note, preset=entry.preset)
+            self._pads[key] = new_entry
+            self._notify(key, new_entry)
 
     def register_plugin_pads(
         self,
@@ -163,6 +234,7 @@ class PadRegistry:
         notes: set[int],
         actions: list[dict],
         locked: bool = True,
+        preset: str = "",
     ) -> None:
         """Register pads for a plugin from its action catalog.
 
@@ -171,6 +243,7 @@ class PadRegistry:
             notes: Set of MIDI notes assigned to this plugin
             actions: List of action dicts with 'id', 'label', 'color', 'desc'
             locked: Whether these pads should be locked from user editing
+            preset: Preset name to register under
         """
         sorted_notes = sorted(notes)
         for i, note in enumerate(sorted_notes):
@@ -178,6 +251,7 @@ class PadRegistry:
                 action = actions[i]
                 entry = PadEntry(
                     note=note,
+                    preset=preset,
                     label=action.get("label", ""),
                     source=f"plugin:{plugin_name}",
                     action_type="plugin",
@@ -188,17 +262,21 @@ class PadRegistry:
             else:
                 entry = PadEntry(
                     note=note,
+                    preset=preset,
                     label="",
                     source=f"plugin:{plugin_name}",
                     action_type="plugin",
                     action_data={"target": plugin_name},
                     locked=locked,
                 )
-            self._pads[note] = entry
-            self._notify(note, entry)
+            key = pad_key(preset, note)
+            self._pads[key] = entry
+            self._notify(key, entry)
 
-    def on_change(self, callback: Callable[[int, PadEntry | None], None]) -> None:
-        """Register a callback for pad changes. Called with (note, entry)."""
+    # -- Change notification ------------------------------------------
+
+    def on_change(self, callback: Callable[[str, PadEntry | None], None]) -> None:
+        """Register a callback for pad changes. Called with (composite_key, entry)."""
         if callback not in self._change_callbacks:
             self._change_callbacks.append(callback)
 
@@ -209,18 +287,21 @@ class PadRegistry:
         except ValueError:
             pass
 
-    def _notify(self, note: int, entry: PadEntry | None) -> None:
+    def _notify(self, key: str, entry: PadEntry | None) -> None:
         for cb in self._change_callbacks:
             try:
-                cb(note, entry)
+                cb(key, entry)
             except Exception:
                 pass
 
-    def to_config_dict(self, notes: list[int] | None = None) -> list[dict]:
-        """Export non-plugin pad entries as config.toml format dicts."""
+    # -- Export --------------------------------------------------------
+
+    def to_config_dict(self, preset_name: str, notes: list[int] | None = None) -> list[dict]:
+        """Export non-plugin pad entries for a preset as config.toml format dicts."""
         result = []
-        for note in (notes or sorted(self._pads.keys())):
-            entry = self._pads.get(note)
+        preset_pads = self.get_preset_pads(preset_name)
+        for note in (notes or sorted(preset_pads.keys())):
+            entry = preset_pads.get(note)
             if not entry or entry.is_plugin or not entry.action_type:
                 continue
             pad_dict: dict[str, Any] = {

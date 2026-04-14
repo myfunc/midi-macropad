@@ -3,7 +3,7 @@ import toml
 from pathlib import Path
 from dataclasses import dataclass, field
 
-from pad_registry import PadRegistry, PadEntry
+from pad_registry import PadRegistry, PadEntry, pad_key
 
 PAD_NOTES_BANK_A = [16, 17, 18, 19, 20, 21, 22, 23]
 PAD_NOTES_BANK_B = [24, 25, 26, 27, 28, 29, 30, 31]
@@ -191,15 +191,30 @@ def save_config(config: AppConfig, path: str | Path) -> None:
 
 
 class Mapper:
-    """Maps MIDI events to actions based on current pad preset."""
+    """Maps MIDI events to actions based on per-panel preset routing.
+
+    Instead of a single ``current_preset_index``, the mapper maintains a
+    routing table ``_active_midi_presets`` that maps panel IDs to preset
+    names (e.g. ``{"bankA": "Spotify", "bankB": "OBS"}``).
+    """
 
     def __init__(self, config: AppConfig):
         self.config = config
-        self.current_preset_index = 0
+        self.current_preset_index = 0  # kept for backward compat / legacy code
         self._pad_maps: list[dict[int, PadMapping]] = []
+        self._active_midi_presets: dict[str, str] = {}  # panel_id -> preset_name (legacy)
+        # Per-panel knob routing: {"knobBank-A": preset_name, ...} (legacy)
+        self._active_knob_presets: dict[str, str] = {}
+
+        # Freeform panel model (new):
+        # _panel_presets: instanceId -> preset_name (for ALL registered panels)
+        # _active_panels:  (type, bank) -> instanceId  (exclusive active slot)
+        self._panel_presets: dict[str, str] = {}
+        self._active_panels: dict[tuple[str, str], str] = {}
+
         self._rebuild_pad_maps()
         self.registry = PadRegistry()
-        self._sync_registry()
+        self._sync_all_to_registry()
 
     def _rebuild_pad_maps(self):
         self._pad_maps = []
@@ -207,11 +222,34 @@ class Mapper:
             by_note = {p.note: p for p in preset.pads}
             self._pad_maps.append(by_note)
 
+    def _sync_all_to_registry(self) -> None:
+        """Load ALL presets into the registry under composite keys."""
+        for preset in self.config.pad_presets:
+            self.registry.load_from_preset(preset.pads, preset.name)
+
     def _sync_registry(self) -> None:
-        """Sync current preset pads to PadRegistry."""
-        preset = self.current_preset
-        if preset:
-            self.registry.load_from_preset(preset.pads)
+        """Sync current preset pads to PadRegistry (legacy helper)."""
+        self._sync_all_to_registry()
+
+    # -- Routing table ------------------------------------------------
+
+    def set_midi_routing(self, panel_id: str, preset_name: str) -> bool:
+        """Set which preset is active for a given panel.
+
+        Does NOT mutate pad_maps — just updates the routing lookup.
+        Returns False if preset not found.
+        """
+        preset = self.get_preset_by_name(preset_name)
+        if not preset:
+            return False
+        self._active_midi_presets[panel_id] = preset_name
+        return True
+
+    def get_midi_routing(self) -> dict[str, str]:
+        """Return current panel -> preset routing table."""
+        return dict(self._active_midi_presets)
+
+    # -- Pad lookup ---------------------------------------------------
 
     @property
     def current_preset(self) -> PadPreset:
@@ -229,7 +267,7 @@ class Mapper:
             self.current_preset_index = 0
             return
         self.current_preset_index = max(0, min(int(index), len(self.config.pad_presets) - 1))
-        self._sync_registry()
+        self._sync_all_to_registry()
 
     def set_preset_by_name(self, name: str) -> bool:
         for i, preset in enumerate(self.config.pad_presets):
@@ -239,10 +277,39 @@ class Mapper:
         return False
 
     def lookup_pad(self, note: int) -> PadMapping | None:
+        """Look up a pad by MIDI note using the routing table.
+
+        Determines bank from note range, finds the routed preset for that
+        bank, then returns the PadMapping from that preset.
+        """
+        # Determine which panel this note belongs to
+        if note in PAD_NOTES_BANK_A:
+            panel_id = "bankA"
+        elif note in PAD_NOTES_BANK_B:
+            panel_id = "bankB"
+        else:
+            # Note outside pad range — not a pad
+            return None
+
+        preset_name = self._active_midi_presets.get(panel_id)
+        if preset_name:
+            return self.get_pad_from_preset(preset_name, note)
+
+        # Fallback: use current_preset_index (legacy)
         if not self._pad_maps:
             return None
         idx = min(self.current_preset_index, len(self._pad_maps) - 1)
         return self._pad_maps[idx].get(note)
+
+    def get_pad_from_preset(self, preset_name: str, note: int) -> PadMapping | None:
+        """Get a PadMapping from a specific preset by name."""
+        preset = self.get_preset_by_name(preset_name)
+        if not preset:
+            return None
+        for pad in preset.pads:
+            if pad.note == note:
+                return pad
+        return None
 
     def lookup_knob(self, cc: int) -> KnobMapping | None:
         for knob in self.config.knobs:
@@ -250,36 +317,168 @@ class Mapper:
                 return knob
         return None
 
-    def update_pad(self, note: int, label: str, action_dict: dict, hotkey: str = ""):
-        """Update a single pad in-place for the current preset (no full reload)."""
+    # -- Knob routing per panel ---------------------------------------
+
+    def _find_knob_preset(self, name: str) -> KnobPreset | None:
+        for kp in self.config.knob_presets:
+            if kp.name.lower() == name.lower():
+                return kp
+        return None
+
+    def set_knob_routing(self, panel_id: str, preset_name: str) -> bool:
+        """Set which knob preset is active for a given knob panel.
+
+        Does NOT mutate config.knobs; stores routing only. Returns False if
+        the knob preset is not found.
+        """
+        kp = self._find_knob_preset(preset_name)
+        if kp is None:
+            return False
+        self._active_knob_presets[panel_id] = preset_name
+        return True
+
+    def get_knob_routing(self) -> dict[str, str]:
+        """Return current knob panel -> preset routing table."""
+        return dict(self._active_knob_presets)
+
+    def lookup_knob_for_panel(self, panel_id: str, cc: int) -> KnobMapping | None:
+        """Resolve a KnobMapping for a panel using its routed knob preset.
+
+        Falls back to legacy ``config.knobs`` if the panel has no routing.
+        """
+        preset_name = self._active_knob_presets.get(panel_id)
+        if preset_name:
+            kp = self._find_knob_preset(preset_name)
+            if kp is not None:
+                for knob in kp.knobs:
+                    if knob.cc == cc:
+                        return knob
+                return None
+        # Fallback: legacy global knobs
+        return self.lookup_knob(cc)
+
+    # -- Freeform panel model -----------------------------------------
+
+    def register_panel_preset(self, instance_id: str, preset_name: str) -> bool:
+        """Store preset binding for a panel instance (any id, any preset)."""
+        if not instance_id or not preset_name:
+            return False
+        self._panel_presets[instance_id] = preset_name
+        return True
+
+    def unregister_panel(self, instance_id: str) -> None:
+        """Remove a panel instance from tracking; also clear active slot."""
+        self._panel_presets.pop(instance_id, None)
+        for key, pid in list(self._active_panels.items()):
+            if pid == instance_id:
+                self._active_panels.pop(key, None)
+
+    def set_active_panel(
+        self, panel_type: str, bank: str, instance_id: str | None,
+    ) -> str | None:
+        """Activate a panel for (type, bank). Returns previously-active id.
+
+        Passing instance_id=None clears the slot.
+        """
+        key = (panel_type, bank)
+        prev = self._active_panels.get(key)
+        if instance_id is None:
+            self._active_panels.pop(key, None)
+        else:
+            self._active_panels[key] = instance_id
+        return prev
+
+    def get_active_panel(self, panel_type: str, bank: str) -> str | None:
+        return self._active_panels.get((panel_type, bank))
+
+    def get_panel_preset(self, instance_id: str) -> str | None:
+        return self._panel_presets.get(instance_id)
+
+    def get_all_panel_presets(self) -> dict[str, str]:
+        return dict(self._panel_presets)
+
+    def get_all_active_panels(self) -> dict[str, str]:
+        """Return {"pad:A": instanceId, ...} for JSON serialization."""
+        return {f"{t}:{b}": pid for (t, b), pid in self._active_panels.items()}
+
+    def lookup_pad_for_active(self, note: int) -> PadMapping | None:
+        """Resolve pad via the active pad-panel for the note's bank."""
+        if note in PAD_NOTES_BANK_A:
+            bank = "A"
+        elif note in PAD_NOTES_BANK_B:
+            bank = "B"
+        else:
+            return None
+        pid = self._active_panels.get(("pad", bank))
+        if pid is not None:
+            preset_name = self._panel_presets.get(pid)
+            if preset_name:
+                return self.get_pad_from_preset(preset_name, note)
+        # Legacy fallback
+        return self.lookup_pad(note)
+
+    def lookup_knob_for_active_bank(
+        self, bank: str, cc: int,
+    ) -> KnobMapping | None:
+        """Resolve knob via the active knob-panel for a given bank."""
+        pid = self._active_panels.get(("knob", bank))
+        if pid is not None:
+            preset_name = self._panel_presets.get(pid)
+            if preset_name:
+                kp = self._find_knob_preset(preset_name)
+                if kp is not None:
+                    for knob in kp.knobs:
+                        if knob.cc == cc:
+                            return knob
+                    return None
+        # Legacy fallback to per-panel routing table
+        legacy_panel = "knobBank-B" if bank == "B" else "knobBank-A"
+        return self.lookup_knob_for_panel(legacy_panel, cc)
+
+    def update_pad(self, preset_name: str, note: int, label: str, action_dict: dict, hotkey: str = ""):
+        """Update a single pad in a specific preset (no full reload)."""
         action = _parse_action(action_dict)
         mapping = PadMapping(note=note, label=label, action=action, hotkey=hotkey)
-        idx = min(self.current_preset_index, len(self._pad_maps) - 1)
-        self._pad_maps[idx][note] = mapping
-        # Also update the config preset's pad list
-        preset = self.config.pad_presets[idx]
+
+        # Find preset by name
+        preset = self.get_preset_by_name(preset_name)
+        if not preset:
+            return
+
+        # Update pad_maps
+        preset_idx = self.get_preset_index_by_name(preset_name)
+        if preset_idx is not None and preset_idx < len(self._pad_maps):
+            self._pad_maps[preset_idx][note] = mapping
+
+        # Update config preset's pad list
         for i, p in enumerate(preset.pads):
             if p.note == note:
                 preset.pads[i] = mapping
                 break
         else:
             preset.pads.append(mapping)
+
         # Sync to registry
         action_data = {}
         if action.keys: action_data['keys'] = action.keys
         if action.process: action_data['process'] = action.process
         if action.command: action_data['command'] = action.command
         if action.target: action_data['target'] = action.target
-        self.registry.set_pad(note, PadEntry(
-            note=note, label=label, source="config",
+        self.registry.set_pad(preset_name, note, PadEntry(
+            note=note, preset=preset_name, label=label, source="config",
             action_type=action.type, action_data=action_data,
             hotkey=hotkey,
         ))
 
-    def swap_pads(self, note_a: int, note_b: int):
-        """Swap two pads in-place for the current preset (no full reload)."""
-        idx = min(self.current_preset_index, len(self._pad_maps) - 1)
-        pad_map = self._pad_maps[idx]
+    def swap_pads(self, preset_name: str, note_a: int, note_b: int):
+        """Swap two pads in-place for a specific preset."""
+        preset = self.get_preset_by_name(preset_name)
+        if not preset:
+            return
+        preset_idx = self.get_preset_index_by_name(preset_name)
+        if preset_idx is None or preset_idx >= len(self._pad_maps):
+            return
+        pad_map = self._pad_maps[preset_idx]
         a = pad_map.get(note_a)
         b = pad_map.get(note_b)
         if a and b:
@@ -298,7 +497,6 @@ class Mapper:
         pad_map[note_a] = new_a
         pad_map[note_b] = new_b
         # Update config preset pad list
-        preset = self.config.pad_presets[idx]
         found_a = found_b = False
         for i, p in enumerate(preset.pads):
             if p.note == note_a:
@@ -311,7 +509,7 @@ class Mapper:
             preset.pads.append(new_a)
         if not found_b:
             preset.pads.append(new_b)
-        self._sync_registry()
+        self._sync_all_to_registry()
 
     def get_preset_by_name(self, name: str) -> PadPreset | None:
         """Find a preset by name (case-insensitive). Returns None if not found."""
@@ -330,6 +528,7 @@ class Mapper:
     def rebuild_maps(self) -> None:
         """Public wrapper for _rebuild_pad_maps."""
         self._rebuild_pad_maps()
+        self._sync_all_to_registry()
 
     def get_current_preset_index(self) -> int:
         """Return the current preset index."""
@@ -342,37 +541,6 @@ class Mapper:
         else:
             self.current_preset_index = 0
 
-    def apply_partial_preset(self, preset_name: str, note_filter: list[int]) -> bool:
-        """Apply pads from a named preset, but only for notes in note_filter.
-
-        This allows switching a single bank (e.g. bankA = notes 16-23) to a
-        different preset without touching the other bank.
-        Returns True on success, False if preset not found.
-        """
-        preset = self.get_preset_by_name(preset_name)
-        if not preset:
-            return False
-        # Build a map of note -> PadMapping for the target preset
-        target_pads = {p.note: p for p in preset.pads if p.note in note_filter}
-        # Update the current preset's pad map for filtered notes
-        idx = min(self.current_preset_index, len(self._pad_maps) - 1)
-        pad_map = self._pad_maps[idx]
-        for note in note_filter:
-            if note in target_pads:
-                pad_map[note] = target_pads[note]
-            else:
-                # Clear pad if target preset has no mapping for this note
-                pad_map[note] = PadMapping(
-                    note=note,
-                    label=f"Pad {note - 15}",
-                    action=ActionDef(type=""),
-                )
-        # Sync filtered pads to registry
-        filter_set = set(note_filter)
-        filtered_mappings = [pad_map[n] for n in note_filter if n in pad_map]
-        self.registry.load_from_preset(filtered_mappings)
-        return True
-
     def update_knob_action(
         self,
         cc: int,
@@ -382,12 +550,7 @@ class Mapper:
         params: dict,
         config_path: str | Path = "config.toml",
     ) -> bool:
-        """Update a knob action in config.toml and reload the mapper config.
-
-        Finds the [[knobs]] entry with matching cc, updates its action and label,
-        writes back to config.toml, and reloads the in-memory config.
-        Returns True on success, False if cc not found.
-        """
+        """Update a knob action in config.toml and reload the mapper config."""
         path = Path(config_path)
         if not path.is_absolute():
             path = Path(__file__).resolve().parent / path
@@ -411,11 +574,27 @@ class Mapper:
         self.config.knobs = new_cfg.knobs
         return True
 
-    def apply_knob_preset(self, preset_name: str) -> bool:
-        """Replace self.config.knobs with knobs from the named knob preset.
+    def swap_knobs(self, cc_a: int, cc_b: int) -> bool:
+        """Swap labels and actions between two knobs in config.knobs."""
+        knob_a = knob_b = None
+        idx_a = idx_b = -1
+        for i, k in enumerate(self.config.knobs):
+            if k.cc == cc_a:
+                knob_a = k
+                idx_a = i
+            elif k.cc == cc_b:
+                knob_b = k
+                idx_b = i
+        if knob_a is None or knob_b is None:
+            return False
+        new_a = KnobMapping(cc=cc_a, label=knob_b.label, action=knob_b.action)
+        new_b = KnobMapping(cc=cc_b, label=knob_a.label, action=knob_a.action)
+        self.config.knobs[idx_a] = new_a
+        self.config.knobs[idx_b] = new_b
+        return True
 
-        Returns True on success, False if preset not found.
-        """
+    def apply_knob_preset(self, preset_name: str) -> bool:
+        """Replace self.config.knobs with knobs from the named knob preset."""
         for kp in self.config.knob_presets:
             if kp.name.lower() == preset_name.lower():
                 self.config.knobs = list(kp.knobs)

@@ -81,6 +81,8 @@ def test_lookup_pad_mapped():
         )
     ]
     m = Mapper(cfg)
+    # Set routing so lookup_pad works
+    m.set_midi_routing("bankA", "m1")
     p = m.lookup_pad(20)
     assert p is not None
     assert p.label == "L"
@@ -101,6 +103,7 @@ def test_lookup_pad_unmapped_returns_none():
         )
     ]
     m = Mapper(cfg)
+    # Note 99 is outside pad range -> None
     assert m.lookup_pad(99) is None
 
 
@@ -234,7 +237,7 @@ def test_update_knob_action_not_found(tmp_path):
     assert ok is False
 
 
-# ── Knob presets ────────────────────────────────────────────────────
+# -- Knob presets ----------------------------------------------------------
 
 KNOB_PRESETS_TOML = """
 [device]
@@ -355,3 +358,170 @@ def test_save_config_preserves_knob_presets(tmp_path):
     assert cfg2.knob_presets[0].name == "Master"
     assert cfg2.knob_presets[1].name == "EQ"
     assert cfg2.knob_presets[1].knobs[0].action.params["band"] == 0
+
+
+# -- Routing table ---------------------------------------------------------
+
+def test_set_midi_routing():
+    cfg = AppConfig()
+    cfg.pad_presets = [
+        PadPreset(name="Spotify", pads=[
+            PadMapping(note=16, label="Play", action=ActionDef(type="keystroke", keys="space")),
+        ]),
+        PadPreset(name="OBS", pads=[
+            PadMapping(note=24, label="Record", action=ActionDef(type="keystroke", keys="r")),
+        ]),
+    ]
+    m = Mapper(cfg)
+    assert m.set_midi_routing("bankA", "Spotify") is True
+    assert m.set_midi_routing("bankB", "OBS") is True
+    assert m.get_midi_routing() == {"bankA": "Spotify", "bankB": "OBS"}
+
+    # Lookup pad using routing
+    pad_a = m.lookup_pad(16)
+    assert pad_a is not None
+    assert pad_a.label == "Play"
+    pad_b = m.lookup_pad(24)
+    assert pad_b is not None
+    assert pad_b.label == "Record"
+
+
+def test_set_knob_routing_isolates_panels():
+    """set_knob_routing for one panel must not affect another."""
+    cfg = AppConfig()
+    cfg.knob_presets = [
+        KnobPreset(name="Master", knobs=[
+            KnobMapping(cc=48, label="Vol", action=ActionDef(type="volume", target="master")),
+        ]),
+        KnobPreset(name="Piano FX", knobs=[
+            KnobMapping(cc=48, label="Delay", action=ActionDef(type="plugin", target="Piano:delay")),
+        ]),
+    ]
+    m = Mapper(cfg)
+    assert m.set_knob_routing("knobBank-A", "Master") is True
+    assert m.set_knob_routing("knobBank-B", "Piano FX") is True
+
+    # Panel A returns Master knob for CC48
+    kA = m.lookup_knob_for_panel("knobBank-A", 48)
+    assert kA is not None
+    assert kA.label == "Vol"
+    assert kA.action.target == "master"
+
+    # Panel B returns Piano FX knob for CC48
+    kB = m.lookup_knob_for_panel("knobBank-B", 48)
+    assert kB is not None
+    assert kB.label == "Delay"
+    assert kB.action.target == "Piano:delay"
+
+    # Routing table reports both
+    assert m.get_knob_routing() == {
+        "knobBank-A": "Master",
+        "knobBank-B": "Piano FX",
+    }
+
+
+def test_set_knob_routing_unknown_preset():
+    cfg = AppConfig()
+    cfg.knob_presets = [
+        KnobPreset(name="Only", knobs=[]),
+    ]
+    m = Mapper(cfg)
+    assert m.set_knob_routing("knobBank-A", "Nonexistent") is False
+
+
+def test_lookup_knob_for_panel_fallback_to_global():
+    """lookup_knob_for_panel falls back to config.knobs when no routing set."""
+    cfg = AppConfig()
+    cfg.knobs = [
+        KnobMapping(cc=48, label="Legacy", action=ActionDef(type="volume", target="master")),
+    ]
+    m = Mapper(cfg)
+    # No routing — should use legacy knobs
+    k = m.lookup_knob_for_panel("knobBank-A", 48)
+    assert k is not None
+    assert k.label == "Legacy"
+
+
+def test_set_midi_routing_unknown_preset():
+    cfg = AppConfig()
+    cfg.pad_presets = [PadPreset(name="Default")]
+    m = Mapper(cfg)
+    assert m.set_midi_routing("bankA", "Nonexistent") is False
+
+
+def test_update_pad_with_preset_name():
+    """update_pad should write to the specified preset."""
+    cfg = AppConfig()
+    cfg.pad_presets = [
+        PadPreset(name="A", pads=[
+            PadMapping(note=16, label="Old", action=ActionDef(type="keystroke", keys="x")),
+        ]),
+        PadPreset(name="B", pads=[]),
+    ]
+    m = Mapper(cfg)
+    m.update_pad("A", 16, "New", {"type": "shell", "command": "ls"})
+    # Check config preset was updated
+    preset_a = m.get_preset_by_name("A")
+    assert preset_a.pads[0].label == "New"
+    assert preset_a.pads[0].action.type == "shell"
+
+    # Check registry has composite key
+    entry = m.registry.get_pad("A", 16)
+    assert entry is not None
+    assert entry.label == "New"
+    assert entry.preset == "A"
+
+
+def test_get_pad_from_preset():
+    cfg = AppConfig()
+    cfg.pad_presets = [
+        PadPreset(name="X", pads=[
+            PadMapping(note=20, label="Hello", action=ActionDef(type="keystroke", keys="h")),
+        ]),
+    ]
+    m = Mapper(cfg)
+    p = m.get_pad_from_preset("X", 20)
+    assert p is not None
+    assert p.label == "Hello"
+    assert m.get_pad_from_preset("X", 99) is None
+    assert m.get_pad_from_preset("Missing", 20) is None
+
+
+def test_sync_all_to_registry():
+    """All presets should be loaded into registry under composite keys."""
+    cfg = AppConfig()
+    cfg.pad_presets = [
+        PadPreset(name="A", pads=[
+            PadMapping(note=16, label="A16", action=ActionDef(type="keystroke", keys="a")),
+        ]),
+        PadPreset(name="B", pads=[
+            PadMapping(note=16, label="B16", action=ActionDef(type="keystroke", keys="b")),
+        ]),
+    ]
+    m = Mapper(cfg)
+    # Both should exist under different composite keys
+    a16 = m.registry.get_pad("A", 16)
+    b16 = m.registry.get_pad("B", 16)
+    assert a16 is not None
+    assert a16.label == "A16"
+    assert b16 is not None
+    assert b16.label == "B16"
+
+
+def test_swap_pads_with_preset_name():
+    """swap_pads should work with preset name."""
+    cfg = AppConfig()
+    cfg.pad_presets = [
+        PadPreset(name="Main", pads=[
+            PadMapping(note=16, label="X", action=ActionDef(type="keystroke", keys="x")),
+            PadMapping(note=17, label="Y", action=ActionDef(type="keystroke", keys="y")),
+        ]),
+    ]
+    m = Mapper(cfg)
+    m.swap_pads("Main", 16, 17)
+    p16 = m.get_pad_from_preset("Main", 16)
+    p17 = m.get_pad_from_preset("Main", 17)
+    assert p16 is not None
+    assert p16.label == "Y"
+    assert p17 is not None
+    assert p17.label == "X"

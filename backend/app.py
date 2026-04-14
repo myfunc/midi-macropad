@@ -35,7 +35,7 @@ def create_app(core: AppCore) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Global error handler ────────────────────────────────────────
+    # -- Global error handler ----------------------------------------
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -48,7 +48,7 @@ def create_app(core: AppCore) -> FastAPI:
         core._runtime_log("ERR", f"HTTP {request.url.path}: {exc}", (255, 80, 80))
         return JSONResponse({"error": "Internal server error", "detail": str(exc)}, 500)
 
-    # ── REST routes ──────────────────────────────────────────────────
+    # -- REST routes --------------------------------------------------
 
     @app.get("/api/state")
     async def get_state():
@@ -85,43 +85,117 @@ def create_app(core: AppCore) -> FastAPI:
 
     @app.post("/api/pads/swap")
     async def pad_swap(body: dict):
+        preset = body.get("preset")
         note_a = body.get("note_a")
         note_b = body.get("note_b")
         if note_a is None or note_b is None:
             return JSONResponse({"error": "note_a and note_b required"}, 400)
-        pad_a = core.mapper.registry.get_pad(note_a)
-        pad_b = core.mapper.registry.get_pad(note_b)
+        if not preset:
+            return JSONResponse({"error": "preset name required"}, 400)
+        pad_a = core.mapper.registry.get_pad(preset, note_a)
+        pad_b = core.mapper.registry.get_pad(preset, note_b)
         if (pad_a and pad_a.locked) or (pad_b and pad_b.locked):
             return JSONResponse({"error": "Cannot swap locked pads"}, 409)
         with core._lock:
-            core.mapper.swap_pads(note_a, note_b)
+            core.mapper.swap_pads(preset, note_a, note_b)
+        from mapper import save_config
+        from backend.core import CONFIG_PATH
+        save_config(core.config, CONFIG_PATH)
         core.event_bus.publish("pads.updated", {
             "pads": core.get_state_snapshot()["pads"],
         })
         return {"ok": True}
 
-    @app.patch("/api/pads/{note}")
-    async def update_pad(note: int, body: dict):
-        """Update pad label, hotkey, and/or action."""
-        pad = core.mapper.registry.get_pad(note)
-        if not pad:
-            return JSONResponse({"error": f"Pad {note} not found"}, 404)
-        label = body.get("label", pad.label)
-        hotkey = body.get("hotkey", pad.hotkey)
+    @app.post("/api/knobs/swap")
+    async def knob_swap(body: dict):
+        cc_a = body.get("cc_a")
+        cc_b = body.get("cc_b")
+        if cc_a is None or cc_b is None:
+            return JSONResponse({"error": "cc_a and cc_b required"}, 400)
+        ok = core.swap_knobs(cc_a, cc_b)
+        if not ok:
+            return JSONResponse({"error": "One or both CCs not found"}, 404)
+        return {"ok": True}
+
+    # -- Preset-aware pad update --------------------------------------
+
+    @app.patch("/api/presets/{preset_name}/pads/{note}")
+    async def update_preset_pad(preset_name: str, note: int, body: dict):
+        """Update pad label, hotkey, and/or action in a specific preset."""
+        pad = core.mapper.registry.get_pad(preset_name, note)
+        # Build defaults from existing pad or empty
+        old_label = pad.label if pad else ""
+        old_hotkey = pad.hotkey if pad else ""
+        old_action_type = pad.action_type if pad else ""
+        old_action_data = pad.action_data if pad else {}
+
+        label = body.get("label", old_label)
+        hotkey = body.get("hotkey", old_hotkey)
         action_data = body.get("action")
-        # Build action dict from current pad or from body
         if action_data is None:
-            action_dict = {"type": pad.action_type}
-            action_dict.update(pad.action_data)
+            action_dict = {"type": old_action_type}
+            action_dict.update(old_action_data)
         else:
             action_dict = action_data
-        log.info("PATCH pad %d: label=%r hotkey=%r action=%r", note, label, hotkey, action_dict)
+
+        log.info("PATCH preset=%s pad %d: label=%r hotkey=%r action=%r",
+                 preset_name, note, label, hotkey, action_dict)
         with core._lock:
-            core.mapper.update_pad(note, label, action_dict, hotkey=hotkey)
+            core.mapper.update_pad(preset_name, note, label, action_dict, hotkey=hotkey)
             core.hotkeys.reload_bindings(core.mapper)
-        # Verify hotkey was applied
-        updated = core.mapper.registry.get_pad(note)
-        log.info("PATCH pad %d result: hotkey=%r action_type=%r", note, updated.hotkey if updated else '?', updated.action_type if updated else '?')
+        # Save config to disk
+        from mapper import save_config
+        from backend.core import CONFIG_PATH
+        save_config(core.config, CONFIG_PATH)
+
+        core.event_bus.publish("pads.updated", {
+            "pads": core.get_state_snapshot()["pads"],
+        })
+        return {"ok": True}
+
+    @app.delete("/api/presets/{preset_name}/pads/{note}/action")
+    async def clear_preset_pad_action(preset_name: str, note: int):
+        """Clear pad action and hotkey in a specific preset."""
+        with core._lock:
+            core.mapper.update_pad(preset_name, note, "", {"type": ""}, hotkey="")
+            core.hotkeys.reload_bindings(core.mapper)
+        from mapper import save_config
+        from backend.core import CONFIG_PATH
+        save_config(core.config, CONFIG_PATH)
+        core.event_bus.publish("pads.updated", {
+            "pads": core.get_state_snapshot()["pads"],
+        })
+        return {"ok": True}
+
+    # -- Legacy pad routes (kept for backward compat) -----------------
+
+    @app.patch("/api/pads/{note}")
+    async def update_pad(note: int, body: dict):
+        """Update pad in current preset (legacy route)."""
+        preset_name = core.mapper.current_preset.name
+        pad = core.mapper.registry.get_pad(preset_name, note)
+        old_label = pad.label if pad else ""
+        old_hotkey = pad.hotkey if pad else ""
+        old_action_type = pad.action_type if pad else ""
+        old_action_data = pad.action_data if pad else {}
+
+        label = body.get("label", old_label)
+        hotkey = body.get("hotkey", old_hotkey)
+        action_data = body.get("action")
+        if action_data is None:
+            action_dict = {"type": old_action_type}
+            action_dict.update(old_action_data)
+        else:
+            action_dict = action_data
+        log.info("PATCH pad %d (legacy, preset=%s): label=%r hotkey=%r action=%r",
+                 note, preset_name, label, hotkey, action_dict)
+        with core._lock:
+            core.mapper.update_pad(preset_name, note, label, action_dict, hotkey=hotkey)
+            core.hotkeys.reload_bindings(core.mapper)
+        from mapper import save_config
+        from backend.core import CONFIG_PATH
+        save_config(core.config, CONFIG_PATH)
+
         core.event_bus.publish("pads.updated", {
             "pads": core.get_state_snapshot()["pads"],
         })
@@ -129,10 +203,14 @@ def create_app(core: AppCore) -> FastAPI:
 
     @app.delete("/api/pads/{note}/action")
     async def clear_pad_action(note: int):
-        """Clear pad action and hotkey."""
+        """Clear pad action and hotkey (legacy route, uses current preset)."""
+        preset_name = core.mapper.current_preset.name
         with core._lock:
-            core.mapper.update_pad(note, "", {"type": ""}, hotkey="")
+            core.mapper.update_pad(preset_name, note, "", {"type": ""}, hotkey="")
             core.hotkeys.reload_bindings(core.mapper)
+        from mapper import save_config
+        from backend.core import CONFIG_PATH
+        save_config(core.config, CONFIG_PATH)
         core.event_bus.publish("pads.updated", {
             "pads": core.get_state_snapshot()["pads"],
         })
@@ -180,26 +258,67 @@ def create_app(core: AppCore) -> FastAPI:
             log.error("activate_preset failed: %s", exc, exc_info=True)
             return JSONResponse({"error": str(exc)}, 500)
 
-    # ── Panel presets ─────────────────────────────────────────────────
+    # -- Freeform panels ----------------------------------------------
 
-    @app.get("/api/panels/{panel_id}/preset")
+    @app.get("/api/panels")
+    async def list_panels():
+        return {
+            "panels": core.list_panels(),
+            "active_panels": core.mapper.get_all_active_panels(),
+        }
+
+    @app.post("/api/panels")
+    async def create_panel(body: dict):
+        panel_type = body.get("type")
+        bank = body.get("bank", "A")
+        preset = body.get("preset")
+        title = body.get("title")
+        activate = bool(body.get("activate", False))
+        if panel_type not in ("pad", "knob"):
+            return JSONResponse({"error": "type must be 'pad' or 'knob'"}, 400)
+        if bank not in ("A", "B"):
+            return JSONResponse({"error": "bank must be 'A' or 'B'"}, 400)
+        try:
+            panel = core.create_panel(panel_type, bank=bank,
+                preset=preset, title=title, activate=activate)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, 400)
+        return panel
+
+    @app.patch("/api/panels/{instance_id}")
+    async def patch_panel(instance_id: str, body: dict):
+        panel = core.update_panel(
+            instance_id,
+            bank=body.get("bank"),
+            preset=body.get("preset"),
+            title=body.get("title"),
+        )
+        if panel is None:
+            return JSONResponse({"error": f"panel '{instance_id}' not found"}, 404)
+        return panel
+
+    @app.delete("/api/panels/{instance_id}")
+    async def remove_panel(instance_id: str):
+        if not core.delete_panel(instance_id):
+            return JSONResponse({"error": f"panel '{instance_id}' not found"}, 404)
+        return {"ok": True}
+
+    @app.post("/api/panels/{instance_id}/activate")
+    async def activate_panel(instance_id: str):
+        if not core.activate_panel(instance_id):
+            return JSONResponse({"error": f"panel '{instance_id}' not found"}, 404)
+        return {"ok": True}
+
+    # -- Panel presets (legacy, kept for compatibility) ---------------
+
+    @app.get("/api/panel-presets/{panel_id}")
     async def get_panel_preset(panel_id: str):
         info = core.get_panel_preset(panel_id)
         if info is None:
             return JSONResponse({"error": f"Panel '{panel_id}' not found"}, 404)
         return info
 
-    @app.post("/api/panels/{panel_id}/preset")
-    async def set_panel_preset(panel_id: str, body: dict):
-        preset_name = body.get("preset")
-        if not preset_name:
-            return JSONResponse({"error": "preset name required"}, 400)
-        ok = core.set_panel_preset(panel_id, preset_name)
-        if not ok:
-            return JSONResponse({"error": f"Preset '{preset_name}' not found or invalid panel"}, 404)
-        return {"ok": True, "panel": panel_id, "preset": preset_name}
-
-    @app.put("/api/panels/{panel_id}/order")
+    @app.put("/api/panel-presets/{panel_id}/order")
     async def set_panel_order(panel_id: str, body: dict):
         order = body.get("order")
         if not isinstance(order, list):
@@ -286,24 +405,9 @@ def create_app(core: AppCore) -> FastAPI:
     async def get_knob_presets():
         return core.get_knob_presets()
 
-    @app.post("/api/knob-presets/activate")
-    async def activate_knob_preset(body: dict):
-        name = body.get("name")
-        if not name:
-            return JSONResponse({"error": "name required"}, 400)
-        ok = core.switch_knob_preset(name)
-        if not ok:
-            return JSONResponse({"error": f"Knob preset '{name}' not found"}, 404)
-        return {"ok": True, "preset": name}
-
     @app.get("/api/knobs/catalog")
     async def get_knob_catalog():
-        """Aggregated knob action catalog from all enabled plugins.
-
-        Returns ``{"core": [...], "plugins": {plugin_name: [...]}}``.
-        The ``core`` list describes built-in knob action types that don't
-        route through a plugin (e.g. volume targets).
-        """
+        """Aggregated knob action catalog from all enabled plugins."""
         core_actions = [
             {"id": "volume:master", "type": "volume", "target": "master",
              "label": "Master Volume", "description": "System master volume",
@@ -349,7 +453,143 @@ def create_app(core: AppCore) -> FastAPI:
             return JSONResponse({"error": f"Knob CC{cc} not found in config"}, 404)
         return {"ok": True, "cc": cc, "label": label}
 
-    # ── Settings & Profiles ────────────────────────────────────────────
+    # -- Piano plugin --------------------------------------------------
+
+    @app.get("/api/piano/instruments")
+    async def get_piano_instruments():
+        piano = core.plugin_manager.plugins.get("Piano")
+        if not piano:
+            return JSONResponse({"error": "Piano plugin not loaded"}, 404)
+        return {
+            "instruments": piano.available_instruments(),
+            "current": piano.current_instrument,
+        }
+
+    @app.post("/api/piano/instrument")
+    async def set_piano_instrument(body: dict):
+        piano = core.plugin_manager.plugins.get("Piano")
+        if not piano:
+            return JSONResponse({"error": "Piano plugin not loaded"}, 404)
+        name = body.get("name")
+        if not name:
+            return JSONResponse({"error": "name required"}, 400)
+        ok = piano.load_instrument(name)
+        core.event_bus.publish("piano.instrument_changed", {
+            "name": name,
+            "success": ok,
+            "current": piano.current_instrument,
+        })
+        return {"ok": ok, "current": piano.current_instrument}
+
+    @app.post("/api/piano/note")
+    async def piano_note_on(body: dict):
+        piano = core.plugin_manager.plugins.get("Piano")
+        if not piano:
+            return JSONResponse({"error": "Piano plugin not loaded"}, 404)
+        note = body.get("note")
+        velocity = body.get("velocity", 100)
+        if note is None:
+            return JSONResponse({"error": "note required"}, 400)
+        if not (0 <= note <= 127):
+            return JSONResponse({"error": "note must be 0-127"}, 400)
+        if not (0 <= velocity <= 127):
+            return JSONResponse({"error": "velocity must be 0-127"}, 400)
+        piano._note_on(note, velocity)
+        core.event_bus.publish("piano.note_on", {
+            "note": note,
+            "velocity": velocity,
+        })
+        return {"ok": True}
+
+    @app.post("/api/piano/note/off")
+    async def piano_note_off(body: dict):
+        piano = core.plugin_manager.plugins.get("Piano")
+        if not piano:
+            return JSONResponse({"error": "Piano plugin not loaded"}, 404)
+        note = body.get("note")
+        if note is None:
+            return JSONResponse({"error": "note required"}, 400)
+        piano._note_off(note)
+        core.event_bus.publish("piano.note_off", {"note": note})
+        return {"ok": True}
+
+    @app.get("/api/audio/devices")
+    async def get_audio_devices():
+        """List available audio output devices via sounddevice."""
+        try:
+            import sounddevice as sd
+            raw_devices = sd.query_devices()
+            default_out = None
+            try:
+                default = sd.default.device
+                if isinstance(default, (list, tuple)) and len(default) >= 2:
+                    default_out = default[1]
+                elif isinstance(default, int):
+                    default_out = default
+            except Exception:
+                pass
+            devices = []
+            for idx, d in enumerate(raw_devices):
+                if int(d.get("max_output_channels", 0)) > 0:
+                    devices.append({
+                        "index": idx,
+                        "name": d.get("name", f"Device {idx}"),
+                        "max_output_channels": int(d.get("max_output_channels", 0)),
+                        "default": (idx == default_out),
+                    })
+            # Current device from piano_audio settings (or default)
+            import settings as _settings
+            piano_audio = _settings.get("piano_audio", {}) or {}
+            current = piano_audio.get("output_device", default_out)
+            return {"devices": devices, "current": current}
+        except Exception as exc:
+            log.error("get_audio_devices failed: %s", exc, exc_info=True)
+            return JSONResponse({"error": str(exc)}, 500)
+
+    @app.put("/api/settings/piano_audio")
+    async def put_piano_audio(body: dict):
+        """Save piano audio config and apply to Piano plugin."""
+        import settings as _settings
+        # Validate & coerce
+        try:
+            cfg = {
+                "sample_rate": int(body.get("sample_rate", 44100)),
+                "block_size": int(body.get("block_size", 1024)),
+                "max_polyphony": int(body.get("max_polyphony", 8)),
+                "latency_mode": str(body.get("latency_mode", "low")),
+                "output_device": body.get("output_device"),
+                "master_volume": float(body.get("master_volume", 0.8)),
+            }
+        except (TypeError, ValueError) as exc:
+            return JSONResponse({"error": f"Invalid config: {exc}"}, 400)
+
+        if cfg["latency_mode"] not in ("low", "medium", "high"):
+            return JSONResponse({"error": "latency_mode must be low|medium|high"}, 400)
+
+        _settings.put("piano_audio", cfg)
+
+        piano = core.plugin_manager.plugins.get("Piano")
+        if piano is None:
+            core.event_bus.publish("settings.changed", {"key": "piano_audio", "value": cfg})
+            return {"ok": True, "applied": False, "reason": "Piano plugin not loaded"}
+        try:
+            ok, err = piano.reconfigure(cfg)
+            core.event_bus.publish("settings.changed", {"key": "piano_audio", "value": cfg})
+            if not ok:
+                return JSONResponse({"ok": False, "applied": False, "error": err or "reconfigure failed"}, 500)
+            return {"ok": True, "applied": True}
+        except Exception as exc:
+            log.error("piano reconfigure failed: %s", exc, exc_info=True)
+            return JSONResponse({"ok": False, "applied": False, "error": str(exc)}, 500)
+
+    @app.get("/api/piano/fx")
+    async def get_piano_fx():
+        piano = core.plugin_manager.plugins.get("Piano")
+        if not piano:
+            return JSONResponse({"error": "Piano plugin not loaded"}, 404)
+        return piano.fx_chain.get_state()
+
+    # -- Settings & Profiles ------------------------------------------
 
     @app.get("/api/settings")
     async def get_settings():
@@ -415,7 +655,7 @@ def create_app(core: AppCore) -> FastAPI:
         })
         return {"ok": True, "enabled": name in core.plugin_manager.enabled}
 
-    # ── Voice Scribe ─────────────────────────────────────────────────
+    # -- Voice Scribe -------------------------------------------------
 
     @app.get("/api/voice-scribe/state")
     async def get_voice_scribe_state():
@@ -539,7 +779,7 @@ def create_app(core: AppCore) -> FastAPI:
         except Exception as exc:
             return JSONResponse({"error": str(exc)}, 500)
 
-    # ── Operations (async background tasks) ──────────────────────────
+    # -- Operations (async background tasks) --------------------------
 
     @app.post("/api/ops/start")
     async def start_operation(body: dict):
@@ -570,7 +810,7 @@ def create_app(core: AppCore) -> FastAPI:
             return JSONResponse({"error": "not found or already finished"}, 404)
         return {"ok": True}
 
-    # ── WebSocket ────────────────────────────────────────────────────
+    # -- WebSocket ----------------------------------------------------
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
@@ -595,7 +835,7 @@ def create_app(core: AppCore) -> FastAPI:
         finally:
             core.event_bus.unsubscribe(sub)
 
-    # ── Startup / Shutdown ───────────────────────────────────────────
+    # -- Startup / Shutdown -------------------------------------------
 
     @app.on_event("startup")
     async def on_startup():
@@ -610,7 +850,7 @@ def create_app(core: AppCore) -> FastAPI:
         core.shutdown()
         log.info("Backend shutdown complete")
 
-    # ── Static files (production build) ──────────────────────────────
+    # -- Static files (production build) ------------------------------
 
     if _FRONTEND_DIST.is_dir():
         app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="frontend")

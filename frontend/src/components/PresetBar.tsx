@@ -1,17 +1,14 @@
-import { useState, useCallback } from 'react'
-import { useAppStore } from '../stores/useAppStore'
+import { useCallback, useRef, useState } from 'react'
+import type { MenuAction, MenuGroup } from '../App'
 
 interface PresetBarProps {
-  onOpenSettings: () => void
-  onTogglePanel: (id: string, title: string) => void
-  onResetLayout: () => void
-  panels: readonly { id: string; title: string }[]
+  onMenuAction: (action: MenuAction) => void
+  menu: readonly MenuGroup[]
 }
 
-export function PresetBar({ onOpenSettings, onTogglePanel, onResetLayout, panels }: PresetBarProps) {
-  const presets = useAppStore(s => s.presets)
-  const currentIndex = useAppStore(s => s.currentPresetIndex)
+export function PresetBar({ onMenuAction, menu }: PresetBarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement)
 
   const toggleFullscreen = useCallback(() => {
@@ -22,38 +19,84 @@ export function PresetBar({ onOpenSettings, onTogglePanel, onResetLayout, panels
     }
   }, [])
 
-  function switchPreset(index: number) {
-    fetch(`/api/presets/${index}/activate`, { method: 'POST' })
+  const closeTimerRef = useRef<number | null>(null)
+
+  function closeMenu() {
+    setMenuOpen(false)
+    setHoveredGroup(null)
+  }
+
+  function scheduleClose() {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = window.setTimeout(() => closeMenu(), 150)
+  }
+
+  function cancelClose() {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }
+
+  function fireAction(action: MenuAction) {
+    cancelClose()
+    onMenuAction(action)
+    closeMenu()
   }
 
   return (
     <div className="preset-bar">
       <div className="preset-spacer" />
 
-      {/* View menu */}
+      {/* Menu */}
       <div style={{ position: 'relative' }}>
         <button
           className="toolbar-btn"
           onClick={() => setMenuOpen(!menuOpen)}
-          title="Panels"
+          title="Menu"
         >
-          &#9783;
+          &#9776;
         </button>
         {menuOpen && (
-          <div className="panel-menu" onMouseLeave={() => setMenuOpen(false)}>
-            {panels.map(p => (
-              <div
-                key={p.id}
-                className="panel-menu-item"
-                onClick={() => { onTogglePanel(p.id, p.title); setMenuOpen(false) }}
-              >
-                {p.title}
-              </div>
-            ))}
+          <div
+            className="panel-menu"
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
+          >
+            {menu.map(group => {
+              const isHovered = hoveredGroup === group.label
+              return (
+                <div
+                  key={group.label}
+                  className={`panel-menu-item panel-menu-parent${isHovered ? ' active' : ''}`}
+                  onMouseEnter={() => { cancelClose(); setHoveredGroup(group.label) }}
+                >
+                  <span>{group.label}</span>
+                  <span className="panel-menu-chevron">&#9656;</span>
+                  {isHovered && (
+                    <div
+                      className="panel-submenu"
+                      onMouseEnter={cancelClose}
+                      onMouseLeave={scheduleClose}
+                    >
+                      {group.items.map(item => (
+                        <div
+                          key={item.label}
+                          className="panel-menu-item"
+                          onClick={() => fireAction(item.action)}
+                        >
+                          {item.label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
             <div className="panel-menu-divider" />
             <div
               className="panel-menu-item reset"
-              onClick={() => { onResetLayout(); setMenuOpen(false) }}
+              onClick={() => fireAction({ kind: 'resetLayout' })}
             >
               Reset Layout
             </div>
@@ -61,14 +104,8 @@ export function PresetBar({ onOpenSettings, onTogglePanel, onResetLayout, panels
         )}
       </div>
 
-      {/* Fullscreen */}
       <button className="toolbar-btn" onClick={toggleFullscreen} title="Fullscreen">
         {isFullscreen ? '\u2716' : '\u26F6'}
-      </button>
-
-      {/* Settings gear */}
-      <button className="toolbar-btn" onClick={onOpenSettings} title="Settings">
-        &#9881;
       </button>
     </div>
   )
