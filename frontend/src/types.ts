@@ -1,4 +1,5 @@
 export interface PadEntry {
+  preset: string
   note: number
   label: string
   source: string
@@ -62,7 +63,24 @@ export interface KnobCatalog {
 export interface PanelPresetState {
   preset: string
   order: number[]
+  bank?: string
 }
+
+export type PanelType = 'pad' | 'knob'
+export type PanelBank = 'A' | 'B'
+
+export interface Panel {
+  instanceId: string
+  type: PanelType
+  bank: PanelBank
+  preset: string
+  title: string
+}
+
+export type ActivePanelsMap = Partial<Record<
+  'pad:A' | 'pad:B' | 'knob:A' | 'knob:B',
+  string | null
+>>
 
 export interface AppState {
   midi: { connected: boolean; port_name: string | null; device_name: string }
@@ -73,6 +91,8 @@ export interface AppState {
   obs: ObsState
   logs: LogEntry[]
   panel_presets?: Record<string, PanelPresetState>
+  active_midi_presets?: Record<string, string>
+  active_knob_presets?: Record<string, string>
 }
 
 export interface WsEvent {

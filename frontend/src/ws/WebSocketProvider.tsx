@@ -18,6 +18,32 @@ function getWsUrl(): string {
   return `${proto}://${window.location.host}/ws`
 }
 
+/**
+ * Build a composite flash key from a MIDI note by finding which preset
+ * currently owns that note via activeMidiPresets routing.
+ * Bank A = notes 16-23, Bank B = notes 24-31.
+ */
+function flashKeyForNote(note: number): string | null {
+  const state = useAppStore.getState()
+  let bank: 'A' | 'B' | null = null
+  if (note >= 16 && note <= 23) bank = 'A'
+  else if (note >= 24 && note <= 31) bank = 'B'
+  if (!bank) return null
+
+  // Resolve active pad panel for this bank
+  const slot = (`pad:${bank}`) as 'pad:A' | 'pad:B'
+  const activeId = state.activePanels[slot]
+  if (activeId) {
+    const preset = state.panels[activeId]?.preset
+    if (preset) return `${preset}:${note}`
+  }
+  // Legacy fallback
+  const legacyKey = bank === 'A' ? 'bankA' : 'bankB'
+  const preset = state.activeMidiPresets[legacyKey] ?? state.panelPresets[legacyKey]?.preset
+  if (!preset) return null
+  return `${preset}:${note}`
+}
+
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<ReconnectingWebSocket | null>(null)
   const store = useAppStore
@@ -67,18 +93,39 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       const payload = msg.payload as unknown as Record<string, unknown>
       console.log('[WS] Handshake received, presets:', (payload.presets as any)?.list?.length)
       s.setInitialState(payload)
+      // Parse active_midi_presets from handshake
+      if (payload.active_midi_presets) {
+        s.setActiveMidiPresets(payload.active_midi_presets as Record<string, string>)
+      }
+      // Parse active_knob_presets so panel routing survives reconnects
+      if (payload.active_knob_presets) {
+        s.setActiveKnobPresets(payload.active_knob_presets as Record<string, string>)
+      }
+      // Freeform panels from snapshot
+      if (payload.panels) {
+        s.setPanels(payload.panels as Record<string, any>)
+      }
+      if (payload.active_panels) {
+        s.setActivePanels(payload.active_panels as Record<string, string>)
+      }
       return
     }
 
     if (msg.type === 'event') {
       const evt = msg as WsEvent
       switch (evt.event) {
-        case 'midi.pad_press':
-          s.flashPad(evt.payload.note as number)
+        case 'midi.pad_press': {
+          const note = evt.payload.note as number
+          const key = flashKeyForNote(note)
+          if (key) s.flashPad(key)
           break
-        case 'midi.pad_release':
-          s.releasePad(evt.payload.note as number)
+        }
+        case 'midi.pad_release': {
+          const note = evt.payload.note as number
+          const key = flashKeyForNote(note)
+          if (key) s.releasePad(key)
           break
+        }
         case 'midi.knob':
           s.updateKnob(evt.payload.cc as number, evt.payload.value as number)
           break
@@ -94,6 +141,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         case 'pads.updated':
           if (evt.payload.pads) {
             s.updatePads(evt.payload.pads as Record<string, any>)
+          }
+          if (evt.payload.active_midi_presets) {
+            s.setActiveMidiPresets(evt.payload.active_midi_presets as Record<string, string>)
           }
           break
         case 'obs.scene_changed':
@@ -123,6 +173,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           if (evt.payload.pads) {
             s.updatePads(evt.payload.pads as Record<string, any>)
           }
+          if (evt.payload.active_midi_presets) {
+            s.setActiveMidiPresets(evt.payload.active_midi_presets as Record<string, string>)
+          }
           break
         }
         case 'knobs.updated': {
@@ -134,19 +187,90 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           s.fetchKnobCatalog()
           break
         }
+        case 'knobs.updated_all': {
+          if (evt.payload.knobs && Array.isArray(evt.payload.knobs)) {
+            store.setState({ knobs: evt.payload.knobs })
+          }
+          break
+        }
         case 'knob_preset.changed': {
+          const fallbackPanel =
+            s.activePanels['knob:A'] ??
+            s.activePanels['knob:B'] ??
+            'knobBank-A'
+          const panel = (evt.payload.panel as string) || fallbackPanel
           if (evt.payload.knobs && Array.isArray(evt.payload.knobs)) {
             store.setState({ knobs: evt.payload.knobs })
           }
           const kPreset = evt.payload.preset as string
           if (kPreset) {
-            s.setPanelPreset('knobs', kPreset)
+            s.setPanelPreset(panel, kPreset)
           }
+          if (evt.payload.knob_routing) {
+            s.setActiveKnobPresets(evt.payload.knob_routing as Record<string, string>)
+          }
+          break
+        }
+        case 'piano.note_on': {
+          const note = evt.payload.note as number
+          if (note !== undefined) s.setPianoKey(note, true)
+          break
+        }
+        case 'piano.note_off': {
+          const note = evt.payload.note as number
+          if (note !== undefined) s.setPianoKey(note, false)
+          break
+        }
+        case 'fx.param_changed': {
+          // Store FX param changes for future Piano UI display
+          console.log('[WS] FX param changed:', evt.payload)
           break
         }
         case 'ops.update':
           console.log('[WS] Op update:', evt.payload)
           break
+        case 'panel.created': {
+          const panel = evt.payload.panel as any
+          if (panel?.instanceId) s.upsertPanel(panel)
+          break
+        }
+        case 'panel.updated': {
+          const panel = evt.payload.panel as any
+          if (panel?.instanceId) s.upsertPanel(panel)
+          if (evt.payload.pads) {
+            s.updatePads(evt.payload.pads as Record<string, any>)
+          }
+          if (evt.payload.active_midi_presets) {
+            s.setActiveMidiPresets(evt.payload.active_midi_presets as Record<string, string>)
+          }
+          if (evt.payload.active_knob_presets) {
+            s.setActiveKnobPresets(evt.payload.active_knob_presets as Record<string, string>)
+          }
+          break
+        }
+        case 'panel.deleted': {
+          const id = evt.payload.instanceId as string
+          if (id) s.removePanel(id)
+          if (evt.payload.active_panels) {
+            s.setActivePanels(evt.payload.active_panels as Record<string, string>)
+          }
+          break
+        }
+        case 'panel.activated': {
+          if (evt.payload.active_panels) {
+            s.setActivePanels(evt.payload.active_panels as Record<string, string>)
+          }
+          if (evt.payload.pads) {
+            s.updatePads(evt.payload.pads as Record<string, any>)
+          }
+          if (evt.payload.active_midi_presets) {
+            s.setActiveMidiPresets(evt.payload.active_midi_presets as Record<string, string>)
+          }
+          if (evt.payload.active_knob_presets) {
+            s.setActiveKnobPresets(evt.payload.active_knob_presets as Record<string, string>)
+          }
+          break
+        }
         case 'error.unhandled':
           s.showToast(`Error: ${evt.payload.error}`)
           setTimeout(() => s.clearToast(), 5000)

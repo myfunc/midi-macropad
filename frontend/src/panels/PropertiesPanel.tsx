@@ -60,8 +60,16 @@ const MOUSE_MAP: Record<number, string> = {
   1: 'mouse3', 3: 'mouse4', 4: 'mouse5',
 }
 
-function patchPad(note: number, data: Record<string, unknown>): Promise<Response> {
-  return fetch(`/api/pads/${note}`, {
+/** Parse composite pad key "PresetName:note" into [presetName, note] */
+function parsePadKey(key: string): [string, number] {
+  const colonIdx = key.lastIndexOf(':')
+  const presetName = key.substring(0, colonIdx)
+  const note = parseInt(key.substring(colonIdx + 1), 10)
+  return [presetName, note]
+}
+
+function patchPad(presetName: string, note: number, data: Record<string, unknown>): Promise<Response> {
+  return fetch(`/api/presets/${encodeURIComponent(presetName)}/pads/${note}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -69,7 +77,7 @@ function patchPad(note: number, data: Record<string, unknown>): Promise<Response
 }
 
 export function PropertiesPanel(_props: IDockviewPanelProps) {
-  const selectedNote = useAppStore(s => s.selectedNote)
+  const selectedPadKey = useAppStore(s => s.selectedPadKey)
   const selectedKnobCC = useAppStore(s => s.selectedKnobCC)
   const pads = useAppStore(s => s.pads)
   const showToast = useAppStore(s => s.showToast)
@@ -78,7 +86,7 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
   const hotkeyRef = useRef<HTMLInputElement>(null)
 
   // Reset capture mode when pad changes
-  useEffect(() => { setCapturing(false) }, [selectedNote])
+  useEffect(() => { setCapturing(false) }, [selectedPadKey])
 
   const refreshPads = useCallback(() => {
     fetch('/api/pads').then(r => r.json()).then(data => {
@@ -91,7 +99,7 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
     return <KnobPropertiesView cc={selectedKnobCC} />
   }
 
-  if (selectedNote === null) {
+  if (selectedPadKey === null) {
     return (
       <div className="props-empty">
         <div className="props-empty-icon">&#127899;</div>
@@ -102,21 +110,22 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
     )
   }
 
-  const entry = pads[String(selectedNote)]
+  const [presetName, noteNum] = parsePadKey(selectedPadKey)
+  const entry = pads[selectedPadKey]
   if (!entry) {
     return <div className="props-empty"><div className="props-empty-hint">Pad not found</div></div>
   }
 
-  const padIndex = selectedNote - (selectedNote >= 24 ? 24 : 16) + 1
-  const bank = selectedNote >= 24 ? 'B' : 'A'
+  const padIndex = noteNum - (noteNum >= 24 ? 24 : 16) + 1
+  const bank = noteNum >= 24 ? 'B' : 'A'
 
   function saveLabel(value: string) {
-    patchPad(selectedNote!, { label: value.trim() }).then(() => refreshPads())
+    patchPad(presetName, noteNum, { label: value.trim() }).then(() => refreshPads())
   }
 
   function commitHotkey(hotkey: string) {
     setHkSaving(true)
-    patchPad(selectedNote!, { hotkey })
+    patchPad(presetName, noteNum, { hotkey })
       .then(async (r) => {
         if (r.ok) {
           showToast(hotkey ? `Hotkey: ${hotkey}` : 'Hotkey cleared')
@@ -131,14 +140,14 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
   }
 
   function assignAction(actionId: string) {
-    patchPad(selectedNote!, { action: { type: actionId } }).then(() => {
+    patchPad(presetName, noteNum, { action: { type: actionId } }).then(() => {
       showToast(`Action: ${actionId}`)
       refreshPads()
     })
   }
 
   function clearAction() {
-    fetch(`/api/pads/${selectedNote}/action`, { method: 'DELETE' }).then(() => {
+    fetch(`/api/presets/${encodeURIComponent(presetName)}/pads/${noteNum}/action`, { method: 'DELETE' }).then(() => {
       showToast('Assignment cleared')
       refreshPads()
     })
@@ -148,7 +157,8 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
     <div className="properties-content">
       <div className="props-header">
         <span className="pad-badge">Pad {bank}{padIndex}</span>
-        <span className="props-note">note {selectedNote}</span>
+        <span className="props-note">note {noteNum}</span>
+        {presetName && <span style={{ fontSize: 11, color: '#8899aa', marginLeft: 'auto' }}>{presetName}</span>}
       </div>
       <div className="props-current">
         Current: <strong>{entry.label || 'Not assigned'}</strong>
@@ -160,7 +170,7 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
         <input
           className="props-input"
           type="text"
-          key={`label-${selectedNote}`}
+          key={`label-${selectedPadKey}`}
           defaultValue={entry.label}
           placeholder="Pad label..."
           onBlur={(e) => saveLabel(e.target.value)}
@@ -176,7 +186,7 @@ export function PropertiesPanel(_props: IDockviewPanelProps) {
             ref={hotkeyRef}
             className={`props-input ${capturing ? 'props-hotkey-input capturing' : ''}`}
             type="text"
-            key={`hk-${selectedNote}`}
+            key={`hk-${selectedPadKey}`}
             defaultValue={entry.hotkey || ''}
             placeholder="mouse5, ctrl+shift+r..."
             readOnly={capturing}

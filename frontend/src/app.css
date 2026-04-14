@@ -113,6 +113,133 @@ body {
 .panel-menu-item.reset { color: var(--text-muted); }
 .panel-menu-item.reset:hover { color: #FF7878; }
 .panel-menu-divider { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+.panel-menu-group {
+  padding: 6px 12px 2px; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+}
+.panel-menu-subitem { padding-left: 22px; }
+.panel-menu-section { display: flex; flex-direction: column; }
+
+/* Sub-menu (flyout) */
+.panel-menu-parent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+.panel-menu-parent.active { background: var(--bg-tertiary); color: var(--text-primary); }
+.panel-menu-chevron { font-size: 10px; color: var(--text-muted); margin-left: 8px; }
+.panel-submenu {
+  position: absolute;
+  top: -4px;
+  left: auto;
+  right: 100%;
+  margin-right: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 170px;
+  z-index: 101;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  padding: 4px 0;
+}
+
+/* Panel header (per-panel controls) */
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+.panel-header-banks { display: inline-flex; gap: 2px; }
+.panel-bank-btn {
+  width: 24px; height: 22px;
+  font-size: 11px; font-weight: 600;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.panel-bank-btn.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.panel-preset-select {
+  flex: 1; min-width: 0;
+  background: #1c2333; color: #c9d1d9;
+  border: 1px solid #30363d; border-radius: 4px;
+  padding: 3px 8px; font-size: 12px;
+  outline: none; cursor: pointer;
+}
+
+/* Engineering activate button — monospace LED indicator */
+.panel-activate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 120ms ease-out;
+  white-space: nowrap;
+}
+.panel-activate-btn:hover {
+  border-color: #4a6;
+  color: var(--text-secondary);
+}
+.panel-activate-btn .activate-led {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #2c3440;
+  border: 1px solid #1a1f2a;
+  box-shadow: inset 0 0 2px rgba(0,0,0,0.6);
+  transition: all 120ms ease-out;
+}
+.panel-activate-btn.is-active {
+  background: #163022;
+  color: #7CE8A6;
+  border-color: #3DA86A;
+  box-shadow: 0 0 0 1px rgba(61, 168, 106, 0.25),
+              inset 0 0 10px rgba(80, 220, 140, 0.08);
+  cursor: default;
+}
+.panel-activate-btn.is-active .activate-led {
+  background: #6EFFB0;
+  border-color: #3DA86A;
+  box-shadow: 0 0 6px #6EFFB0, inset 0 0 2px #fff;
+}
+.panel-activate-btn.is-active:hover {
+  border-color: #3DA86A;
+}
+.panel-delete-btn {
+  width: 22px; height: 22px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: all var(--transition);
+}
+.panel-delete-btn:hover {
+  color: #FF7878;
+  border-color: #FF7878;
+  background: rgba(255,120,120,0.08);
+}
 
 /* ── Status Bar ── */
 .status-bar {

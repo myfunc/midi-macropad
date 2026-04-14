@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PadEntry, KnobEntry, PresetInfo, PluginInfo, LogEntry, ObsState, KnobCatalog, PanelPresetState } from '../types'
+import type { PadEntry, KnobEntry, PresetInfo, PluginInfo, LogEntry, ObsState, KnobCatalog, PanelPresetState, Panel, ActivePanelsMap, PanelType, PanelBank } from '../types'
 
 interface AppStore {
   // MIDI
@@ -12,9 +12,9 @@ interface AppStore {
   knobPresets: PresetInfo[]
   currentPresetIndex: number
 
-  // Pads
+  // Pads — composite keys "Preset:note"
   pads: Record<string, PadEntry>
-  selectedNote: number | null
+  selectedPadKey: string | null
 
   // Knobs
   knobs: KnobEntry[]
@@ -29,8 +29,8 @@ interface AppStore {
   // Logs
   logs: LogEntry[]
 
-  // Flash state (which pads are currently pressed)
-  flashedPads: Set<number>
+  // Flash state (which pad keys are currently pressed)
+  flashedPads: Set<string>
 
   // Toast
   toastMessage: string | null
@@ -38,16 +38,29 @@ interface AppStore {
   // Panel presets (per-panel independent preset + order)
   panelPresets: Record<string, PanelPresetState>
 
+  // Active MIDI presets routing (panel_id -> preset_name)
+  activeMidiPresets: Record<string, string>
+
+  // Active knob presets routing (knobBank-A/B -> preset_name)
+  activeKnobPresets: Record<string, string>
+
   // Knob catalog (cached)
   knobCatalog: KnobCatalog | null
   knobCatalogLoading: boolean
 
+  // Freeform panels
+  panels: Record<string, Panel>
+  activePanels: ActivePanelsMap
+
+  // Piano state (for future PianoPanel)
+  pianoKeysPressed: Set<number>
+
   // Actions
   setInitialState: (state: Record<string, unknown>) => void
-  selectPad: (note: number | null) => void
+  selectPad: (key: string | null) => void
   selectKnob: (cc: number | null) => void
-  flashPad: (note: number) => void
-  releasePad: (note: number) => void
+  flashPad: (key: string) => void
+  releasePad: (key: string) => void
   updateKnob: (cc: number, value: number) => void
   addLog: (entry: LogEntry) => void
   setPresetIndex: (index: number) => void
@@ -64,6 +77,20 @@ interface AppStore {
   fetchPresets: () => void
   updateKnobLabel: (cc: number, label: string) => void
   updatePanelPresetName: (oldName: string, newName: string) => void
+  setActiveMidiPresets: (routing: Record<string, string>) => void
+  setActiveKnobPresets: (routing: Record<string, string>) => void
+  setPanelBank: (panelId: string, bank: string) => void
+  setPianoKey: (note: number, pressed: boolean) => void
+
+  // Freeform panel actions
+  setPanels: (panels: Record<string, Panel>) => void
+  setActivePanels: (active: ActivePanelsMap) => void
+  upsertPanel: (panel: Panel) => void
+  removePanel: (instanceId: string) => void
+  createPanelRequest: (type: PanelType, bank?: PanelBank) => Promise<Panel | null>
+  updatePanelRequest: (id: string, patch: Partial<Pick<Panel, 'bank' | 'preset' | 'title'>>) => Promise<void>
+  activatePanelRequest: (id: string) => Promise<void>
+  deletePanelRequest: (id: string) => Promise<void>
 }
 
 const MAX_LOGS = 500
@@ -76,7 +103,7 @@ export const useAppStore = create<AppStore>((set) => ({
   knobPresets: [],
   currentPresetIndex: 0,
   pads: {},
-  selectedNote: null,
+  selectedPadKey: null,
   knobs: [],
   selectedKnobCC: null,
   plugins: [],
@@ -92,8 +119,13 @@ export const useAppStore = create<AppStore>((set) => ({
   flashedPads: new Set(),
   toastMessage: null,
   panelPresets: {},
+  activeMidiPresets: {},
+  activeKnobPresets: {},
   knobCatalog: null,
   knobCatalogLoading: false,
+  panels: {},
+  activePanels: {},
+  pianoKeysPressed: new Set(),
 
   setInitialState: (state) => set(() => {
     const s = state as Record<string, any>
@@ -110,21 +142,25 @@ export const useAppStore = create<AppStore>((set) => ({
       obs: s.obs ?? {},
       logs: s.logs ?? [],
       panelPresets: s.panel_presets ?? {},
+      activeMidiPresets: s.active_midi_presets ?? {},
+      activeKnobPresets: s.active_knob_presets ?? {},
+      panels: s.panels ?? {},
+      activePanels: s.active_panels ?? {},
     }
   }),
 
-  selectPad: (note) => set({ selectedNote: note, selectedKnobCC: null }),
-  selectKnob: (cc) => set({ selectedKnobCC: cc, selectedNote: null }),
+  selectPad: (key) => set({ selectedPadKey: key, selectedKnobCC: null }),
+  selectKnob: (cc) => set({ selectedKnobCC: cc, selectedPadKey: null }),
 
-  flashPad: (note) => set((s) => {
+  flashPad: (key) => set((s) => {
     const next = new Set(s.flashedPads)
-    next.add(note)
+    next.add(key)
     return { flashedPads: next }
   }),
 
-  releasePad: (note) => set((s) => {
+  releasePad: (key) => set((s) => {
     const next = new Set(s.flashedPads)
-    next.delete(note)
+    next.delete(key)
     return { flashedPads: next }
   }),
 
@@ -162,6 +198,13 @@ export const useAppStore = create<AppStore>((set) => ({
     panelPresets: {
       ...s.panelPresets,
       [panelId]: { ...s.panelPresets[panelId], preset: s.panelPresets[panelId]?.preset ?? '', order },
+    },
+  })),
+
+  setPanelBank: (panelId: string, bank: string) => set((s) => ({
+    panelPresets: {
+      ...s.panelPresets,
+      [panelId]: { ...s.panelPresets[panelId], preset: s.panelPresets[panelId]?.preset ?? '', order: s.panelPresets[panelId]?.order ?? [], bank },
     },
   })),
 
@@ -215,4 +258,95 @@ export const useAppStore = create<AppStore>((set) => ({
     }
     return changed ? { panelPresets: updated } : {}
   }),
+
+  setActiveMidiPresets: (routing) => set({ activeMidiPresets: routing }),
+  setActiveKnobPresets: (routing) => set({ activeKnobPresets: routing }),
+
+  setPianoKey: (note, pressed) => set((s) => {
+    const next = new Set(s.pianoKeysPressed)
+    if (pressed) next.add(note); else next.delete(note)
+    return { pianoKeysPressed: next }
+  }),
+
+  setPanels: (panels) => set({ panels }),
+  setActivePanels: (active) => set({ activePanels: active }),
+
+  upsertPanel: (panel) => set((s) => ({
+    panels: { ...s.panels, [panel.instanceId]: panel },
+  })),
+
+  removePanel: (instanceId) => set((s) => {
+    const next = { ...s.panels }
+    delete next[instanceId]
+    const active: ActivePanelsMap = { ...s.activePanels }
+    for (const k of Object.keys(active) as (keyof ActivePanelsMap)[]) {
+      if (active[k] === instanceId) active[k] = null
+    }
+    return { panels: next, activePanels: active }
+  }),
+
+  createPanelRequest: async (type, bank = 'A') => {
+    try {
+      const res = await fetch('/api/panels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, bank }),
+      })
+      if (!res.ok) throw new Error(res.statusText)
+      const panel: Panel = await res.json()
+      useAppStore.getState().upsertPanel(panel)
+      return panel
+    } catch (e) {
+      console.error('[Store] createPanel failed:', e)
+      return null
+    }
+  },
+
+  updatePanelRequest: async (id, patch) => {
+    // Optimistic
+    const prev = useAppStore.getState().panels[id]
+    if (prev) useAppStore.getState().upsertPanel({ ...prev, ...patch })
+    try {
+      const res = await fetch(`/api/panels/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error(res.statusText)
+      const panel: Panel = await res.json()
+      useAppStore.getState().upsertPanel(panel)
+    } catch (e) {
+      console.error('[Store] updatePanel failed:', e)
+      if (prev) useAppStore.getState().upsertPanel(prev)
+    }
+  },
+
+  activatePanelRequest: async (id) => {
+    // Optimistic: clear other on same (type, bank)
+    const panel = useAppStore.getState().panels[id]
+    if (panel) {
+      const key = `${panel.type}:${panel.bank}` as keyof ActivePanelsMap
+      set((s) => ({ activePanels: { ...s.activePanels, [key]: id } }))
+    }
+    try {
+      const res = await fetch(`/api/panels/${encodeURIComponent(id)}/activate`, {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error(res.statusText)
+    } catch (e) {
+      console.error('[Store] activatePanel failed:', e)
+    }
+  },
+
+  deletePanelRequest: async (id) => {
+    try {
+      const res = await fetch(`/api/panels/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error(res.statusText)
+      useAppStore.getState().removePanel(id)
+    } catch (e) {
+      console.error('[Store] deletePanel failed:', e)
+    }
+  },
 }))

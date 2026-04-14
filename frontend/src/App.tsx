@@ -12,24 +12,32 @@ import { StatusBar } from './components/StatusBar'
 import { useAppStore } from './stores/useAppStore'
 import { useTabLeader } from './hooks/useTabLeader'
 import { loadLayout, saveLayout } from './hooks/useLayoutPersistence'
-import { BankAPanel, BankBPanel, KnobsPanel } from './panels/PadGridPanel'
+import { PadPanel } from './panels/PadPanel'
+import { KnobPanel } from './panels/KnobPanel'
 import { PropertiesPanel } from './panels/PropertiesPanel'
 import { LogPanel } from './panels/LogPanel'
 import { ObsPanel } from './panels/ObsPanel'
 import { VoicemeeterPanel } from './panels/VoicemeeterPanel'
 import { VoiceScribePanel } from './panels/VoiceScribePanel'
 import { SettingsPanel } from './panels/SettingsPanel'
+import { PianoPanel } from './panels/PianoPanel'
 
 const components: Record<string, React.FC<any>> = {
-  bankA: BankAPanel,
-  bankB: BankBPanel,
-  knobs: KnobsPanel,
+  padPanel: PadPanel,
+  knobPanel: KnobPanel,
+  piano: PianoPanel,
   properties: PropertiesPanel,
   log: LogPanel,
   obs: ObsPanel,
   voicemeeter: VoicemeeterPanel,
   voicescribe: VoiceScribePanel,
   settings: SettingsPanel,
+  // Legacy aliases — older saved layouts may reference these
+  padBank: PadPanel,
+  knobBank: KnobPanel,
+  bankA: PadPanel,
+  bankB: PadPanel,
+  knobs: KnobPanel,
 }
 
 function Watermark(_props: IWatermarkPanelProps) {
@@ -43,22 +51,62 @@ function Watermark(_props: IWatermarkPanelProps) {
   )
 }
 
-const PANEL_CATALOG = [
-  { id: 'bankA', title: 'Bank A' },
-  { id: 'bankB', title: 'Bank B' },
-  { id: 'knobs', title: 'Knobs' },
-  { id: 'properties', title: 'Properties' },
-  { id: 'log', title: 'Log' },
-  { id: 'obs', title: 'OBS' },
-  { id: 'voicemeeter', title: 'Voicemeeter' },
-  { id: 'voicescribe', title: 'Voice Scribe' },
-  { id: 'settings', title: 'Settings' },
-] as const
+export type MenuAction =
+  | { kind: 'addPad' }
+  | { kind: 'addKnob' }
+  | { kind: 'togglePanel'; id: string; title: string; instanceId?: string }
+  | { kind: 'resetLayout' }
+
+export type MenuLeaf = {
+  label: string
+  action: MenuAction
+}
+
+export type MenuGroup = {
+  label: string
+  items: MenuLeaf[]
+}
+
+export const MENU_GROUPS: MenuGroup[] = [
+  { label: 'Controls', items: [
+    { label: 'Add Pad Panel', action: { kind: 'addPad' } },
+    { label: 'Add Knob Panel', action: { kind: 'addKnob' } },
+  ]},
+  { label: 'Plugins', items: [
+    { label: 'Piano', action: { kind: 'togglePanel', id: 'piano', title: 'Piano' } },
+    { label: 'Voice Scribe', action: { kind: 'togglePanel', id: 'voicescribe', title: 'Voice Scribe' } },
+    { label: 'OBS', action: { kind: 'togglePanel', id: 'obs', title: 'OBS' } },
+    { label: 'Voicemeeter', action: { kind: 'togglePanel', id: 'voicemeeter', title: 'Voicemeeter' } },
+  ]},
+  { label: 'Settings', items: [
+    { label: 'Settings', action: { kind: 'togglePanel', id: 'settings', title: 'Settings' } },
+    { label: 'Properties', action: { kind: 'togglePanel', id: 'properties', title: 'Properties' } },
+  ]},
+  { label: 'Logs', items: [
+    { label: 'Log', action: { kind: 'togglePanel', id: 'log', title: 'Log' } },
+  ]},
+]
 
 export default function App() {
   const dockApiRef = useRef<DockviewApi | null>(null)
   const { isLeader, otherTabExists } = useTabLeader()
-  const [layoutLoaded, setLayoutLoaded] = useState(false)
+  const [, setLayoutLoaded] = useState(false)
+
+  const ensurePanelOpen = useCallback((instanceId: string, component: string, title: string) => {
+    const api = dockApiRef.current
+    if (!api) return
+    const existing = api.getPanel(instanceId)
+    if (existing) {
+      existing.api.setActive()
+      return
+    }
+    api.addPanel({
+      id: instanceId,
+      component,
+      title,
+      floating: { width: 400, height: 400 },
+    })
+  }, [])
 
   const onReady = useCallback(async (event: DockviewReadyEvent) => {
     const api = event.api
@@ -77,10 +125,38 @@ export default function App() {
       }
     }
 
-    // Default layout
+    // Default layout — builds from known panels in store, else placeholders
     buildDefaultLayout(api)
     setLayoutLoaded(true)
     setupLayoutSave(api)
+  }, [])
+
+  // When panels are created (from menu or migration), open them in dockview
+  useEffect(() => {
+    const unsub = useAppStore.subscribe((state, prev) => {
+      const api = dockApiRef.current
+      if (!api) return
+      // Detect newly added panels
+      for (const [id, panel] of Object.entries(state.panels)) {
+        if (!prev.panels[id]) {
+          const component = panel.type === 'pad' ? 'padPanel' : 'knobPanel'
+          if (!api.getPanel(id)) {
+            api.addPanel({
+              id, component, title: panel.title,
+              floating: { width: 420, height: 360 },
+            })
+          }
+        }
+      }
+      // Detect removed panels
+      for (const id of Object.keys(prev.panels)) {
+        if (!state.panels[id]) {
+          const p = api.getPanel(id)
+          if (p) api.removePanel(p)
+        }
+      }
+    })
+    return unsub
   }, [])
 
   function setupLayoutSave(api: DockviewApi) {
@@ -94,54 +170,70 @@ export default function App() {
   }
 
   function buildDefaultLayout(api: DockviewApi) {
-    const bankA = api.addPanel({
-      id: 'bankA', component: 'bankA', title: 'Bank A',
-    })
-    api.addPanel({
-      id: 'bankB', component: 'bankB', title: 'Bank B',
-      position: { referencePanel: bankA, direction: 'right' },
-    })
-    api.addPanel({
-      id: 'knobs', component: 'knobs', title: 'Knobs',
-      position: { referencePanel: bankA, direction: 'right' },
-    })
-    api.addPanel({
-      id: 'properties', component: 'properties', title: 'Properties',
-      position: { referencePanel: bankA, direction: 'right' },
-      initialWidth: 280,
-    })
-    const log = api.addPanel({
-      id: 'log', component: 'log', title: 'Log',
-      position: { referencePanel: bankA, direction: 'below' },
-      initialHeight: 200,
-    })
-    api.addPanel({
-      id: 'obs', component: 'obs', title: 'OBS',
-      position: { referencePanel: log, direction: 'right' },
-    })
-  }
+    const panels = Object.values(useAppStore.getState().panels)
+    const padPanels = panels.filter(p => p.type === 'pad')
+    const knobPanels = panels.filter(p => p.type === 'knob')
 
-  function togglePanel(id: string, title: string) {
-    const api = dockApiRef.current
-    if (!api) return
-    const existing = api.getPanel(id)
-    if (existing) {
-      existing.api.setActive()
-    } else {
-      api.addPanel({ id, component: id, title, floating: { width: 400, height: 500 } })
+    let reference: string | null = null
+    const firstPad = padPanels[0]
+    if (firstPad) {
+      api.addPanel({
+        id: firstPad.instanceId, component: 'padPanel', title: firstPad.title,
+      })
+      reference = firstPad.instanceId
+    }
+    for (const p of padPanels.slice(1)) {
+      api.addPanel({
+        id: p.instanceId, component: 'padPanel', title: p.title,
+        position: reference ? { referencePanel: reference, direction: 'right' } : undefined,
+      })
+      reference = p.instanceId
+    }
+
+    let knobRef: string | null = null
+    for (const k of knobPanels) {
+      api.addPanel({
+        id: k.instanceId, component: 'knobPanel', title: k.title,
+        position: reference
+          ? { referencePanel: knobRef ?? reference, direction: knobRef ? 'below' : 'right' }
+          : undefined,
+      })
+      knobRef = k.instanceId
+    }
+
+    // Utility panels (properties, log) only if there's space
+    if (reference) {
+      api.addPanel({
+        id: 'properties', component: 'properties', title: 'Properties',
+        position: { referencePanel: reference, direction: 'right' },
+        initialWidth: 280,
+      })
+      api.addPanel({
+        id: 'log', component: 'log', title: 'Log',
+        position: { referencePanel: reference, direction: 'below' },
+        initialHeight: 180,
+      })
     }
   }
 
-  function resetLayout() {
-    localStorage.removeItem('dockview-layout')
-    // Also clear backend
-    fetch('/api/settings/ui_layout', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: null }),
-    }).catch(() => {})
-    window.location.reload()
-  }
+  const handleMenuAction = useCallback(async (action: MenuAction) => {
+    const store = useAppStore.getState()
+    if (action.kind === 'addPad') {
+      await store.createPanelRequest('pad', 'A')
+    } else if (action.kind === 'addKnob') {
+      await store.createPanelRequest('knob', 'A')
+    } else if (action.kind === 'togglePanel') {
+      ensurePanelOpen(action.instanceId ?? action.id, action.id, action.title)
+    } else if (action.kind === 'resetLayout') {
+      localStorage.removeItem('dockview-layout')
+      fetch('/api/settings/ui_layout', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: null }),
+      }).catch(() => {})
+      window.location.reload()
+    }
+  }, [ensurePanelOpen])
 
   return (
     <WebSocketProvider>
@@ -152,10 +244,8 @@ export default function App() {
           </div>
         )}
         <PresetBar
-          onOpenSettings={() => togglePanel('settings', 'Settings')}
-          onTogglePanel={togglePanel}
-          onResetLayout={resetLayout}
-          panels={PANEL_CATALOG}
+          onMenuAction={handleMenuAction}
+          menu={MENU_GROUPS}
         />
         <div className="dock-container">
           <DockviewReact

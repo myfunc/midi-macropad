@@ -2,6 +2,7 @@
 import queue
 import threading
 import logging
+from typing import Callable
 from pynput import keyboard, mouse
 from midi_listener import MidiEvent
 
@@ -67,40 +68,61 @@ def _parse_hotkey(hotkey_str: str):
 
 
 class HotkeyListener:
-    """Listens for keyboard/mouse hotkeys and injects pad events into the queue."""
+    """Listens for keyboard/mouse hotkeys and dispatches pad actions.
 
-    def __init__(self, event_queue: queue.Queue, log_fn=None):
+    Instead of injecting fake MIDI events into a queue, hotkeys now call
+    an ``action_callback(preset_name, note)`` directly.  When the same
+    hotkey is bound in multiple presets, *all* of them fire.
+    """
+
+    def __init__(
+        self,
+        event_queue: queue.Queue,
+        log_fn=None,
+        action_callback: Callable[[str, int], None] | None = None,
+    ):
         self._queue = event_queue
         self._log_fn = log_fn or (lambda *a: None)
-        self._mouse_bindings: dict[mouse.Button, int] = {}   # button -> note
-        self._key_bindings: dict[frozenset, int] = {}         # key combo -> note
+        self._action_callback = action_callback
+        # Bindings: spec -> list of (preset_name, note)
+        self._mouse_bindings: dict[mouse.Button, list[tuple[str, int]]] = {}
+        self._key_bindings: dict[frozenset, list[tuple[str, int]]] = {}
         self._pressed_keys: set = set()
         self._kb_listener: keyboard.Listener | None = None
         self._mouse_listener: mouse.Listener | None = None
         self._lock = threading.Lock()
 
+    def set_action_callback(self, callback: Callable[[str, int], None]) -> None:
+        """Set the callback invoked when a hotkey fires."""
+        self._action_callback = callback
+
     def reload_bindings(self, mapper):
-        """Rebuild hotkey->note mappings from the current preset."""
-        new_mouse = {}
-        new_keys = {}
-        preset = mapper.current_preset
-        for pad in preset.pads:
-            hk = getattr(pad, "hotkey", "") or ""
-            if not hk:
-                continue
-            kind, spec = _parse_hotkey(hk)
-            if kind == "mouse":
-                new_mouse[spec] = pad.note
-            elif kind == "key":
-                new_keys[spec] = pad.note
+        """Rebuild hotkey bindings from ALL presets (not just current).
+
+        Each hotkey spec maps to a list of ``(preset_name, note)`` pairs.
+        If the same hotkey appears in multiple presets, all are stored so
+        all fire on activation (no conflict resolution needed).
+        """
+        new_mouse: dict[mouse.Button, list[tuple[str, int]]] = {}
+        new_keys: dict[frozenset, list[tuple[str, int]]] = {}
+
+        for preset in mapper.config.pad_presets:
+            for pad in preset.pads:
+                hk = getattr(pad, "hotkey", "") or ""
+                if not hk:
+                    continue
+                kind, spec = _parse_hotkey(hk)
+                if kind == "mouse":
+                    new_mouse.setdefault(spec, []).append((preset.name, pad.note))
+                elif kind == "key":
+                    new_keys.setdefault(spec, []).append((preset.name, pad.note))
+
         with self._lock:
             self._mouse_bindings = new_mouse
             self._key_bindings = new_keys
-        count = len(new_mouse) + len(new_keys)
-        _log.info("Hotkey bindings reloaded: %d binding(s) mouse=%s keys=%s",
-                  count,
-                  {str(k): v for k, v in new_mouse.items()},
-                  {str(k): v for k, v in new_keys.items()})
+
+        total = sum(len(v) for v in new_mouse.values()) + sum(len(v) for v in new_keys.values())
+        _log.info("Hotkey bindings reloaded: %d binding(s) across all presets", total)
 
     def start(self):
         """Start keyboard and mouse listeners in background threads."""
@@ -128,8 +150,17 @@ class HotkeyListener:
             self._mouse_listener = None
         _log.info("Hotkey listener stopped")
 
+    def _dispatch(self, bindings: list[tuple[str, int]]):
+        """Dispatch action for each binding entry."""
+        for preset_name, note in bindings:
+            if self._action_callback:
+                self._action_callback(preset_name, note)
+            else:
+                # Fallback: inject fake MIDI event (legacy)
+                self._inject_pad_press(note)
+
     def _inject_pad_press(self, note: int):
-        """Put a synthetic pad_press event into the MIDI queue."""
+        """Put a synthetic pad_press event into the MIDI queue (legacy fallback)."""
         import time as _t
         evt = MidiEvent("pad_press", _t.time(), note=note, velocity=100)
         try:
@@ -148,9 +179,9 @@ class HotkeyListener:
     def _on_key_press(self, key):
         self._pressed_keys.add(key)
         with self._lock:
-            for combo, note in self._key_bindings.items():
+            for combo, bindings in self._key_bindings.items():
                 if combo.issubset(self._pressed_keys):
-                    self._inject_pad_press(note)
+                    self._dispatch(bindings)
 
     def _on_key_release(self, key):
         self._pressed_keys.discard(key)
@@ -159,9 +190,6 @@ class HotkeyListener:
         if not pressed:
             return
         with self._lock:
-            note = self._mouse_bindings.get(button)
-            bindings_snapshot = dict(self._mouse_bindings)
-        _log.debug("Mouse click: button=%s, matched_note=%s, bindings=%s",
-                   button, note, {str(k): v for k, v in bindings_snapshot.items()})
-        if note is not None:
-            self._inject_pad_press(note)
+            bindings = self._mouse_bindings.get(button)
+        if bindings:
+            self._dispatch(bindings)

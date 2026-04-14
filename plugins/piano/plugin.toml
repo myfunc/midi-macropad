@@ -1,0 +1,8 @@
+[plugin]
+name = "Piano"
+version = "1.0.0"
+description = "Polyphonic SFZ/SF2 instrument player with audio FX chain — play keyboard notes with reverb, delay, filter, and more"
+entry = "piano_plugin.PianoPlugin"
+
+[settings]
+default_instrument = ""

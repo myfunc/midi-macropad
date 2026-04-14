@@ -5,8 +5,6 @@ interface PanelPresetSwitcherProps {
   panelId: string
 }
 
-const MAX_VISIBLE = 6
-
 export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
   const padPresets = useAppStore(s => s.presets)
   const knobPresets = useAppStore(s => s.knobPresets ?? [])
@@ -20,20 +18,15 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; preset: string } | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [overflowOpen, setOverflowOpen] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
 
   // Knobs panel uses knob presets, pad panels use pad presets
-  const isKnobs = panelId === 'knobs'
+  const isKnobs = panelId === 'knobs' || panelId.startsWith('knob-') || panelId.startsWith('knobBank')
   const sourcePresets = isKnobs ? knobPresets : padPresets
   const activePreset = panelPreset?.preset ?? sourcePresets[0]?.name ?? ''
   const presetNames = sourcePresets.map(p => p.name)
-
-  const needsOverflow = presetNames.length > MAX_VISIBLE
-  const visiblePresets = needsOverflow ? presetNames.slice(0, MAX_VISIBLE) : presetNames
-  const overflowPresets = needsOverflow ? presetNames.slice(MAX_VISIBLE) : []
 
   useEffect(() => {
     if (creating) inputRef.current?.focus()
@@ -57,10 +50,13 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
     const url = isKnobs
       ? '/api/knob-presets/activate'
       : `/api/panels/${panelId}/preset`
+    // Include bank from panel state so backend can route MIDI correctly
+    const panelState = useAppStore.getState().panelPresets[panelId]
+    const bank = panelState?.bank
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, preset: name }),
+      body: JSON.stringify({ name, preset: name, ...(bank ? { bank } : {}) }),
     }).then(r => {
       if (!r.ok) throw new Error(r.statusText)
     }).catch((e) => {
@@ -69,16 +65,17 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
     })
   }, [panelId, activePreset, setPanelPreset, isKnobs])
 
-  function handleContextMenu(e: React.MouseEvent, preset: string) {
+  function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, preset })
+    setContextMenu({ x: e.clientX, y: e.clientY, preset: activePreset })
   }
 
   async function createPreset() {
     const name = newName.trim()
     if (!name) return
     try {
-      const res = await fetch('/api/presets', {
+      const url = isKnobs ? '/api/knob-presets' : '/api/presets'
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -101,7 +98,8 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
     const name = renameValue.trim()
     if (!name || name === renaming) { setRenaming(null); return }
     try {
-      const res = await fetch(`/api/presets/${encodeURIComponent(renaming)}`, {
+      const base = isKnobs ? '/api/knob-presets' : '/api/presets'
+      const res = await fetch(`${base}/${encodeURIComponent(renaming)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -123,7 +121,8 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
   async function deletePreset(name: string) {
     if (!confirm(`Delete preset "${name}"?`)) return
     try {
-      const res = await fetch(`/api/presets/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      const base = isKnobs ? '/api/knob-presets' : '/api/presets'
+      const res = await fetch(`${base}/${encodeURIComponent(name)}`, { method: 'DELETE' })
       if (res.ok) {
         showToast(`Preset "${name}" deleted`)
       }
@@ -132,11 +131,10 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
     }
   }
 
-  function renderPill(name: string) {
-    if (renaming === name) {
-      return (
+  return (
+    <div className="panel-preset-switcher">
+      {renaming ? (
         <input
-          key={name}
           ref={renameRef}
           className="panel-preset-rename-input"
           value={renameValue}
@@ -146,48 +144,32 @@ export function PanelPresetSwitcher({ panelId }: PanelPresetSwitcherProps) {
             if (e.key === 'Enter') renamePreset()
             if (e.key === 'Escape') setRenaming(null)
           }}
+          style={{ flex: 1, minWidth: 0 }}
         />
-      )
-    }
-    return (
-      <button
-        key={name}
-        className={`panel-preset-pill ${name === activePreset ? 'active' : ''}`}
-        onClick={() => switchPreset(name)}
-        onContextMenu={e => handleContextMenu(e, name)}
-      >
-        {name}
-      </button>
-    )
-  }
-
-  return (
-    <div className="panel-preset-switcher">
-      {visiblePresets.map(renderPill)}
-
-      {needsOverflow && (
-        <div className="panel-preset-overflow-wrap">
-          <button
-            className={`panel-preset-pill overflow ${overflowPresets.includes(activePreset) ? 'active' : ''}`}
-            onClick={() => setOverflowOpen(!overflowOpen)}
-          >
-            ...
-          </button>
-          {overflowOpen && (
-            <div className="panel-preset-overflow-menu" onMouseLeave={() => setOverflowOpen(false)}>
-              {overflowPresets.map(name => (
-                <div
-                  key={name}
-                  className={`panel-preset-overflow-item ${name === activePreset ? 'active' : ''}`}
-                  onClick={() => { switchPreset(name); setOverflowOpen(false) }}
-                  onContextMenu={e => handleContextMenu(e, name)}
-                >
-                  {name}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      ) : (
+        <select
+          value={activePreset}
+          onChange={e => switchPreset(e.target.value)}
+          onContextMenu={handleContextMenu}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: '#1c2333',
+            color: '#c9d1d9',
+            border: '1px solid #30363d',
+            borderRadius: 4,
+            padding: '3px 8px',
+            fontSize: 12,
+            outline: 'none',
+            cursor: 'pointer',
+          }}
+          onFocus={e => { e.currentTarget.style.borderColor = '#58a6ff' }}
+          onBlur={e => { e.currentTarget.style.borderColor = '#30363d' }}
+        >
+          {presetNames.map(name => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
       )}
 
       {creating ? (
