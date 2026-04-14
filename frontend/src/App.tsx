@@ -21,11 +21,13 @@ import { VoicemeeterPanel } from './panels/VoicemeeterPanel'
 import { VoiceScribePanel } from './panels/VoiceScribePanel'
 import { SettingsPanel } from './panels/SettingsPanel'
 import { PianoPanel } from './panels/PianoPanel'
+import type { PanelType, PanelBank } from './types'
 
 const components: Record<string, React.FC<any>> = {
   padPanel: PadPanel,
   knobPanel: KnobPanel,
   piano: PianoPanel,
+  pianoPanel: PianoPanel,
   properties: PropertiesPanel,
   log: LogPanel,
   obs: ObsPanel,
@@ -40,6 +42,12 @@ const components: Record<string, React.FC<any>> = {
   knobs: KnobPanel,
 }
 
+function panelComponentName(type: PanelType): string {
+  if (type === 'pad') return 'padPanel'
+  if (type === 'knob') return 'knobPanel'
+  return 'pianoPanel'
+}
+
 function Watermark(_props: IWatermarkPanelProps) {
   return (
     <div style={{
@@ -52,8 +60,7 @@ function Watermark(_props: IWatermarkPanelProps) {
 }
 
 export type MenuAction =
-  | { kind: 'addPad' }
-  | { kind: 'addKnob' }
+  | { kind: 'addPanel'; type: PanelType; bank: PanelBank }
   | { kind: 'togglePanel'; id: string; title: string; instanceId?: string }
   | { kind: 'resetLayout' }
 
@@ -69,11 +76,14 @@ export type MenuGroup = {
 
 export const MENU_GROUPS: MenuGroup[] = [
   { label: 'Controls', items: [
-    { label: 'Add Pad Panel', action: { kind: 'addPad' } },
-    { label: 'Add Knob Panel', action: { kind: 'addKnob' } },
+    { label: 'Add Pad Panel A', action: { kind: 'addPanel', type: 'pad', bank: 'A' } },
+    { label: 'Add Pad Panel B', action: { kind: 'addPanel', type: 'pad', bank: 'B' } },
+    { label: 'Add Knob Panel A', action: { kind: 'addPanel', type: 'knob', bank: 'A' } },
+    { label: 'Add Knob Panel B', action: { kind: 'addPanel', type: 'knob', bank: 'B' } },
+    { label: 'Add Piano Panel (Play)', action: { kind: 'addPanel', type: 'piano', bank: 'play' } },
+    { label: 'Add Piano Panel (Map)', action: { kind: 'addPanel', type: 'piano', bank: 'map' } },
   ]},
   { label: 'Plugins', items: [
-    { label: 'Piano', action: { kind: 'togglePanel', id: 'piano', title: 'Piano' } },
     { label: 'Voice Scribe', action: { kind: 'togglePanel', id: 'voicescribe', title: 'Voice Scribe' } },
     { label: 'OBS', action: { kind: 'togglePanel', id: 'obs', title: 'OBS' } },
     { label: 'Voicemeeter', action: { kind: 'togglePanel', id: 'voicemeeter', title: 'Voicemeeter' } },
@@ -92,6 +102,13 @@ export default function App() {
   const { isLeader, otherTabExists } = useTabLeader()
   const [, setLayoutLoaded] = useState(false)
 
+  // Tracks whether onReady completed so the store subscription doesn't spawn
+  // "ghost" panels during initial hydration.
+  const layoutReadyRef = useRef(false)
+  // Tracks which panel-ids are currently represented in the dockview UI.
+  // Updated on onReady, subscription add, and panel deletion events.
+  const knownPanelIdsRef = useRef<Set<string>>(new Set())
+
   const ensurePanelOpen = useCallback((instanceId: string, component: string, title: string) => {
     const api = dockApiRef.current
     if (!api) return
@@ -104,19 +121,54 @@ export default function App() {
       id: instanceId,
       component,
       title,
-      floating: { width: 400, height: 400 },
     })
+    knownPanelIdsRef.current.add(instanceId)
+  }, [])
+
+  /**
+   * One-shot reconciliation: mounts any panels that the store learned about
+   * BEFORE ``layoutReadyRef`` flipped true (e.g. a WS handshake whose
+   * ``setPanels`` fired while ``loadLayout()`` was still awaiting). The
+   * zustand subscription only observes *subsequent* mutations, so without
+   * this pass such panels would be stranded in the store with no dockview
+   * tab until a full reload.
+   */
+  const reconcileStorePanels = useCallback((api: DockviewApi) => {
+    const storePanels = useAppStore.getState().panels
+    for (const [id, p] of Object.entries(storePanels)) {
+      if (knownPanelIdsRef.current.has(id)) continue
+      if (api.getPanel(id)) {
+        knownPanelIdsRef.current.add(id)
+        continue
+      }
+      try {
+        api.addPanel({
+          id,
+          component: panelComponentName(p.type),
+          title: p.title,
+        })
+        knownPanelIdsRef.current.add(id)
+      } catch (e) {
+        console.warn('[Layout] reconcile addPanel failed for', id, e)
+      }
+    }
   }, [])
 
   const onReady = useCallback(async (event: DockviewReadyEvent) => {
     const api = event.api
     dockApiRef.current = api
 
-    // Load saved layout (backend first, then localStorage)
-    const saved = await loadLayout()
+    // Collect currently-known panel ids from the store (plus utilities) so
+    // loadLayout() can strip orphans before handing JSON back to dockview.
+    const storePanels = Object.keys(useAppStore.getState().panels)
+    const saved = await loadLayout(storePanels)
     if (saved) {
       try {
         api.fromJSON(saved as any)
+        // Seed knownPanelIds from the freshly-restored dockview state.
+        for (const p of api.panels) knownPanelIdsRef.current.add(p.id)
+        layoutReadyRef.current = true
+        reconcileStorePanels(api)
         setLayoutLoaded(true)
         setupLayoutSave(api)
         return
@@ -127,33 +179,43 @@ export default function App() {
 
     // Default layout — builds from known panels in store, else placeholders
     buildDefaultLayout(api)
+    for (const p of api.panels) knownPanelIdsRef.current.add(p.id)
+    layoutReadyRef.current = true
+    reconcileStorePanels(api)
     setLayoutLoaded(true)
     setupLayoutSave(api)
-  }, [])
+  }, [reconcileStorePanels])
 
-  // When panels are created (from menu or migration), open them in dockview
+  // When panels are created (from menu, migration, WS) or deleted, sync the
+  // dockview state. This subscription no longer uses ``floating`` — new panels
+  // are docked into the grid as regular tabs.
   useEffect(() => {
     const unsub = useAppStore.subscribe((state, prev) => {
       const api = dockApiRef.current
       if (!api) return
-      // Detect newly added panels
+      if (!layoutReadyRef.current) return
+
+      // Detect newly added panels — open only if truly new.
       for (const [id, panel] of Object.entries(state.panels)) {
-        if (!prev.panels[id]) {
-          const component = panel.type === 'pad' ? 'padPanel' : 'knobPanel'
-          if (!api.getPanel(id)) {
-            api.addPanel({
-              id, component, title: panel.title,
-              floating: { width: 420, height: 360 },
-            })
-          }
+        if (prev.panels[id]) continue
+        if (knownPanelIdsRef.current.has(id)) continue
+        if (api.getPanel(id)) {
+          knownPanelIdsRef.current.add(id)
+          continue
         }
+        const component = panelComponentName(panel.type)
+        api.addPanel({
+          id, component, title: panel.title,
+        })
+        knownPanelIdsRef.current.add(id)
       }
-      // Detect removed panels
+
+      // Detect removed panels — close dockview entry and drop from known set.
       for (const id of Object.keys(prev.panels)) {
-        if (!state.panels[id]) {
-          const p = api.getPanel(id)
-          if (p) api.removePanel(p)
-        }
+        if (state.panels[id]) continue
+        const p = api.getPanel(id)
+        if (p) api.removePanel(p)
+        knownPanelIdsRef.current.delete(id)
       }
     })
     return unsub
@@ -169,48 +231,68 @@ export default function App() {
     })
   }
 
+  /**
+   * Build a deterministic default layout (no floating panels):
+   * - 2x2 grid: padA top-left, padB right-of-padA, knobA below-padA,
+   *   knobB below-padB.
+   * - Properties + Log in a right-side column.
+   * Missing panels are skipped gracefully.
+   */
   function buildDefaultLayout(api: DockviewApi) {
     const panels = Object.values(useAppStore.getState().panels)
-    const padPanels = panels.filter(p => p.type === 'pad')
-    const knobPanels = panels.filter(p => p.type === 'knob')
+    const padA = panels.find(p => p.type === 'pad' && p.bank === 'A')
+    const padB = panels.find(p => p.type === 'pad' && p.bank === 'B')
+    const knobA = panels.find(p => p.type === 'knob' && p.bank === 'A')
+    const knobB = panels.find(p => p.type === 'knob' && p.bank === 'B')
 
-    let reference: string | null = null
-    const firstPad = padPanels[0]
-    if (firstPad) {
-      api.addPanel({
-        id: firstPad.instanceId, component: 'padPanel', title: firstPad.title,
-      })
-      reference = firstPad.instanceId
-    }
-    for (const p of padPanels.slice(1)) {
-      api.addPanel({
-        id: p.instanceId, component: 'padPanel', title: p.title,
-        position: reference ? { referencePanel: reference, direction: 'right' } : undefined,
-      })
-      reference = p.instanceId
-    }
+    let anchor: string | null = null
 
-    let knobRef: string | null = null
-    for (const k of knobPanels) {
+    if (padA) {
       api.addPanel({
-        id: k.instanceId, component: 'knobPanel', title: k.title,
-        position: reference
-          ? { referencePanel: knobRef ?? reference, direction: knobRef ? 'below' : 'right' }
+        id: padA.instanceId, component: 'padPanel', title: padA.title,
+      })
+      anchor = padA.instanceId
+    }
+    if (padB) {
+      api.addPanel({
+        id: padB.instanceId, component: 'padPanel', title: padB.title,
+        position: anchor
+          ? { referencePanel: anchor, direction: 'right' }
           : undefined,
       })
-      knobRef = k.instanceId
+      if (!anchor) anchor = padB.instanceId
+    }
+    if (knobA) {
+      api.addPanel({
+        id: knobA.instanceId, component: 'knobPanel', title: knobA.title,
+        position: padA
+          ? { referencePanel: padA.instanceId, direction: 'below' }
+          : (anchor ? { referencePanel: anchor, direction: 'below' } : undefined),
+      })
+      if (!anchor) anchor = knobA.instanceId
+    }
+    if (knobB) {
+      api.addPanel({
+        id: knobB.instanceId, component: 'knobPanel', title: knobB.title,
+        position: padB
+          ? { referencePanel: padB.instanceId, direction: 'below' }
+          : (knobA
+            ? { referencePanel: knobA.instanceId, direction: 'right' }
+            : (anchor ? { referencePanel: anchor, direction: 'right' } : undefined)),
+      })
+      if (!anchor) anchor = knobB.instanceId
     }
 
-    // Utility panels (properties, log) only if there's space
-    if (reference) {
+    // Utility panels (properties, log) — side column.
+    if (anchor) {
       api.addPanel({
         id: 'properties', component: 'properties', title: 'Properties',
-        position: { referencePanel: reference, direction: 'right' },
+        position: { referencePanel: anchor, direction: 'right' },
         initialWidth: 280,
       })
       api.addPanel({
         id: 'log', component: 'log', title: 'Log',
-        position: { referencePanel: reference, direction: 'below' },
+        position: { referencePanel: 'properties', direction: 'below' },
         initialHeight: 180,
       })
     }
@@ -218,10 +300,8 @@ export default function App() {
 
   const handleMenuAction = useCallback(async (action: MenuAction) => {
     const store = useAppStore.getState()
-    if (action.kind === 'addPad') {
-      await store.createPanelRequest('pad', 'A')
-    } else if (action.kind === 'addKnob') {
-      await store.createPanelRequest('knob', 'A')
+    if (action.kind === 'addPanel') {
+      await store.createPanelRequest(action.type, action.bank)
     } else if (action.kind === 'togglePanel') {
       ensurePanelOpen(action.instanceId ?? action.id, action.id, action.title)
     } else if (action.kind === 'resetLayout') {

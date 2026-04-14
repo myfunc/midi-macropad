@@ -450,3 +450,18 @@ target = "Sample Player"
 
 [device]
 name = "MPK mini play"
+
+# --- Piano presets (for Piano panel map bank) -----------------------
+# Each preset defines optional per-key actions for keyboard notes 36-72.
+# Keys without an action act as normal piano notes (play bank behavior),
+# or are no-op in map bank.
+[[piano_presets]]
+name = "Default"
+
+# Example mapping (uncomment and edit to use):
+# [[piano_presets.keys]]
+# note = 48
+# label = "Copy"
+# [piano_presets.keys.action]
+# type = "keystroke"
+# keys = "ctrl+c"

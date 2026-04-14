@@ -309,6 +309,16 @@ def create_app(core: AppCore) -> FastAPI:
             return JSONResponse({"error": f"panel '{instance_id}' not found"}, 404)
         return {"ok": True}
 
+    @app.post("/api/panels/reconcile")
+    async def reconcile_panels(body: dict | None = None):
+        fix_titles = bool((body or {}).get("fix_titles", False))
+        try:
+            result = core.reconcile_panels(fix_titles=fix_titles)
+        except Exception as exc:
+            log.error("reconcile_panels failed: %s", exc, exc_info=True)
+            return JSONResponse({"error": str(exc)}, 500)
+        return result
+
     # -- Panel presets (legacy, kept for compatibility) ---------------
 
     @app.get("/api/panel-presets/{panel_id}")
@@ -483,17 +493,25 @@ def create_app(core: AppCore) -> FastAPI:
 
     @app.post("/api/piano/note")
     async def piano_note_on(body: dict):
-        piano = core.plugin_manager.plugins.get("Piano")
-        if not piano:
-            return JSONResponse({"error": "Piano plugin not loaded"}, 404)
         note = body.get("note")
         velocity = body.get("velocity", 100)
+        bank = body.get("bank")  # optional: 'play' | 'map'
         if note is None:
             return JSONResponse({"error": "note required"}, 400)
         if not (0 <= note <= 127):
             return JSONResponse({"error": "note must be 0-127"}, 400)
         if not (0 <= velocity <= 127):
             return JSONResponse({"error": "velocity must be 0-127"}, 400)
+
+        # If bank='map' is specified, route through the piano dispatcher
+        # which respects the active map panel + preset mapping.
+        if bank == "map":
+            handled = core.handle_piano_note(int(note), int(velocity), on=True)
+            return {"ok": True, "handled": handled, "bank": "map"}
+
+        piano = core.plugin_manager.plugins.get("Piano")
+        if not piano:
+            return JSONResponse({"error": "Piano plugin not loaded"}, 404)
         piano._note_on(note, velocity)
         core.event_bus.publish("piano.note_on", {
             "note": note,
@@ -503,15 +521,151 @@ def create_app(core: AppCore) -> FastAPI:
 
     @app.post("/api/piano/note/off")
     async def piano_note_off(body: dict):
+        note = body.get("note")
+        bank = body.get("bank")
+        if note is None:
+            return JSONResponse({"error": "note required"}, 400)
+        if bank == "map":
+            handled = core.handle_piano_note(int(note), 0, on=False)
+            return {"ok": True, "handled": handled, "bank": "map"}
         piano = core.plugin_manager.plugins.get("Piano")
         if not piano:
             return JSONResponse({"error": "Piano plugin not loaded"}, 404)
-        note = body.get("note")
-        if note is None:
-            return JSONResponse({"error": "note required"}, 400)
         piano._note_off(note)
         core.event_bus.publish("piano.note_off", {"note": note})
         return {"ok": True}
+
+    # -- Piano presets (for Piano Map bank) ---------------------------
+
+    def _serialize_piano_preset(pp) -> dict:
+        return {
+            "name": pp.name,
+            "keys": [
+                {
+                    "note": k.note,
+                    "label": k.label,
+                    "action": k.action,
+                }
+                for k in pp.keys
+            ],
+        }
+
+    @app.get("/api/piano/presets")
+    async def list_piano_presets():
+        return {
+            "presets": [
+                _serialize_piano_preset(pp)
+                for pp in core.config.piano_presets
+            ],
+        }
+
+    @app.get("/api/piano/presets/{name}")
+    async def get_piano_preset(name: str):
+        pp = core.mapper.get_piano_preset(name)
+        if pp is None:
+            return JSONResponse({"error": f"preset '{name}' not found"}, 404)
+        return _serialize_piano_preset(pp)
+
+    @app.post("/api/piano/presets")
+    async def create_piano_preset(body: dict):
+        from mapper import PianoPreset
+        name = (body.get("name") or "").strip()
+        if not name:
+            return JSONResponse({"error": "name required"}, 400)
+        if core.mapper.get_piano_preset(name) is not None:
+            return JSONResponse({"error": f"preset '{name}' already exists"}, 409)
+        from mapper import save_config
+        from backend.core import CONFIG_PATH
+        with core._lock:
+            core.config.piano_presets.append(PianoPreset(name=name))
+            save_config(core.config, CONFIG_PATH)
+        core.event_bus.publish("piano_presets.changed", {
+            "presets": [_serialize_piano_preset(p) for p in core.config.piano_presets],
+        })
+        return {"ok": True, "name": name}
+
+    @app.delete("/api/piano/presets/{name}")
+    async def delete_piano_preset(name: str):
+        pp = core.mapper.get_piano_preset(name)
+        if pp is None:
+            return JSONResponse({"error": f"preset '{name}' not found"}, 404)
+        # Refuse if an active piano panel references it.
+        panels = core.list_panels()
+        for panel in panels.values():
+            if (panel.get("type") == "piano"
+                    and (panel.get("preset") or "").lower() == name.lower()):
+                return JSONResponse(
+                    {"error": f"preset '{name}' is in use by a panel"}, 409)
+        from mapper import save_config
+        from backend.core import CONFIG_PATH
+        with core._lock:
+            core.config.piano_presets = [
+                p for p in core.config.piano_presets
+                if p.name.lower() != name.lower()
+            ]
+            save_config(core.config, CONFIG_PATH)
+        core.event_bus.publish("piano_presets.changed", {
+            "presets": [_serialize_piano_preset(p) for p in core.config.piano_presets],
+        })
+        return {"ok": True}
+
+    @app.patch("/api/piano/presets/{name}/keys/{note}")
+    async def patch_piano_key(name: str, note: int, body: dict):
+        from mapper import PianoKeyMapping, PIANO_MAP_NOTE_MIN, PIANO_MAP_NOTE_MAX
+        pp = core.mapper.get_piano_preset(name)
+        if pp is None:
+            return JSONResponse({"error": f"preset '{name}' not found"}, 404)
+        if not (PIANO_MAP_NOTE_MIN <= note <= PIANO_MAP_NOTE_MAX):
+            return JSONResponse(
+                {"error": f"note {note} out of range "
+                 f"[{PIANO_MAP_NOTE_MIN}-{PIANO_MAP_NOTE_MAX}]"}, 400)
+
+        has_label = "label" in body
+        has_action = "action" in body
+        label = body.get("label")
+        action = body.get("action")
+        if has_label and label is not None and not isinstance(label, str):
+            return JSONResponse(
+                {"error": "label must be string or null"}, 400)
+        if action is not None and not isinstance(action, dict):
+            return JSONResponse(
+                {"error": "action must be a dict or null"}, 400)
+
+        existing = None
+        for k in pp.keys:
+            if k.note == note:
+                existing = k
+                break
+        # No-op guard: if the key doesn't exist and the body carries neither
+        # label nor action, don't create an empty entry.
+        if existing is None and not has_label and not has_action:
+            return {"preset": _serialize_piano_preset(pp)}
+
+        from mapper import save_config
+        from backend.core import CONFIG_PATH
+        with core._lock:
+            # Re-resolve under lock (another writer may have added it).
+            existing = None
+            for k in pp.keys:
+                if k.note == note:
+                    existing = k
+                    break
+            if existing is None:
+                existing = PianoKeyMapping(note=note)
+                pp.keys.append(existing)
+            if has_label:
+                existing.label = label if isinstance(label, str) else None
+            if has_action:
+                existing.action = dict(action) if isinstance(action, dict) else None
+            # Garbage-collect entries that end up fully empty (no label, no action).
+            if not existing.label and not existing.action:
+                pp.keys = [k for k in pp.keys if k is not existing]
+            save_config(core.config, CONFIG_PATH)
+
+        core.event_bus.publish("piano_presets.changed", {
+            "presets": [_serialize_piano_preset(p) for p in core.config.piano_presets],
+        })
+        return _serialize_piano_preset(pp)
 
     @app.get("/api/audio/devices")
     async def get_audio_devices():

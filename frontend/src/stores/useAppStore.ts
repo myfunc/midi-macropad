@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PadEntry, KnobEntry, PresetInfo, PluginInfo, LogEntry, ObsState, KnobCatalog, PanelPresetState, Panel, ActivePanelsMap, PanelType, PanelBank } from '../types'
+import type { PadEntry, KnobEntry, PresetInfo, PluginInfo, LogEntry, ObsState, KnobCatalog, PanelPresetState, Panel, ActivePanelsMap, PanelType, PanelBank, PianoPreset, PadAction } from '../types'
 
 interface AppStore {
   // MIDI
@@ -52,6 +52,10 @@ interface AppStore {
   panels: Record<string, Panel>
   activePanels: ActivePanelsMap
 
+  // Piano presets & mapping selection (for PianoPanel map mode)
+  pianoPresets: PianoPreset[]
+  selectedPianoNote: number | null
+
   // Piano state (for future PianoPanel)
   pianoKeysPressed: Set<number>
 
@@ -59,6 +63,7 @@ interface AppStore {
   setInitialState: (state: Record<string, unknown>) => void
   selectPad: (key: string | null) => void
   selectKnob: (cc: number | null) => void
+  selectPianoNote: (note: number | null) => void
   flashPad: (key: string) => void
   releasePad: (key: string) => void
   updateKnob: (cc: number, value: number) => void
@@ -87,6 +92,15 @@ interface AppStore {
   setActivePanels: (active: ActivePanelsMap) => void
   upsertPanel: (panel: Panel) => void
   removePanel: (instanceId: string) => void
+  // Piano preset actions
+  setPianoPresets: (presets: PianoPreset[]) => void
+  fetchPianoPresets: () => void
+  updatePianoKey: (
+    presetName: string,
+    note: number,
+    patch: { label?: string; action?: PadAction | null },
+  ) => Promise<void>
+
   createPanelRequest: (type: PanelType, bank?: PanelBank) => Promise<Panel | null>
   updatePanelRequest: (id: string, patch: Partial<Pick<Panel, 'bank' | 'preset' | 'title'>>) => Promise<void>
   activatePanelRequest: (id: string) => Promise<void>
@@ -125,6 +139,8 @@ export const useAppStore = create<AppStore>((set) => ({
   knobCatalogLoading: false,
   panels: {},
   activePanels: {},
+  pianoPresets: [],
+  selectedPianoNote: null,
   pianoKeysPressed: new Set(),
 
   setInitialState: (state) => set(() => {
@@ -149,8 +165,9 @@ export const useAppStore = create<AppStore>((set) => ({
     }
   }),
 
-  selectPad: (key) => set({ selectedPadKey: key, selectedKnobCC: null }),
-  selectKnob: (cc) => set({ selectedKnobCC: cc, selectedPadKey: null }),
+  selectPad: (key) => set({ selectedPadKey: key, selectedKnobCC: null, selectedPianoNote: null }),
+  selectKnob: (cc) => set({ selectedKnobCC: cc, selectedPadKey: null, selectedPianoNote: null }),
+  selectPianoNote: (note) => set({ selectedPianoNote: note, selectedPadKey: null, selectedKnobCC: null }),
 
   flashPad: (key) => set((s) => {
     const next = new Set(s.flashedPads)
@@ -285,12 +302,15 @@ export const useAppStore = create<AppStore>((set) => ({
     return { panels: next, activePanels: active }
   }),
 
-  createPanelRequest: async (type, bank = 'A') => {
+  createPanelRequest: async (type, bank) => {
+    // Piano panels use 'play' / 'map' banks; pad/knob panels use 'A' / 'B'.
+    // Pick a sane default matching the panel type so callers don't have to.
+    const resolvedBank = bank ?? (type === 'piano' ? 'play' : 'A')
     try {
       const res = await fetch('/api/panels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, bank }),
+        body: JSON.stringify({ type, bank: resolvedBank }),
       })
       if (!res.ok) throw new Error(res.statusText)
       const panel: Panel = await res.json()
@@ -335,6 +355,57 @@ export const useAppStore = create<AppStore>((set) => ({
       if (!res.ok) throw new Error(res.statusText)
     } catch (e) {
       console.error('[Store] activatePanel failed:', e)
+    }
+  },
+
+  setPianoPresets: (presets) => set({ pianoPresets: presets }),
+
+  fetchPianoPresets: () => {
+    fetch('/api/piano/presets')
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() })
+      .then((data: { presets: PianoPreset[] }) => {
+        if (Array.isArray(data?.presets)) set({ pianoPresets: data.presets })
+      })
+      .catch(e => console.error('[Store] Failed to fetch piano presets:', e))
+  },
+
+  updatePianoKey: async (presetName, note, patch) => {
+    const prev = useAppStore.getState().pianoPresets
+    // Optimistic update
+    set((s) => {
+      const next = s.pianoPresets.map(p => {
+        if (p.name !== presetName) return p
+        const keys = [...p.keys]
+        const idx = keys.findIndex(k => k.note === note)
+        const merged = {
+          note,
+          label: patch.label ?? (idx >= 0 ? keys[idx].label : undefined),
+          action: patch.action === null
+            ? undefined
+            : (patch.action ?? (idx >= 0 ? keys[idx].action : undefined)),
+        }
+        if (idx >= 0) keys[idx] = merged
+        else keys.push(merged)
+        return { ...p, keys }
+      })
+      return { pianoPresets: next }
+    })
+    try {
+      const body: Record<string, unknown> = {}
+      if (patch.label !== undefined) body.label = patch.label
+      if (patch.action !== undefined) body.action = patch.action
+      const res = await fetch(
+        `/api/piano/presets/${encodeURIComponent(presetName)}/keys/${note}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      )
+      if (!res.ok) throw new Error(res.statusText)
+    } catch (e) {
+      console.error('[Store] updatePianoKey failed:', e)
+      set({ pianoPresets: prev })
     }
   },
 

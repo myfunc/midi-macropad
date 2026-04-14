@@ -66,8 +66,10 @@ export interface PanelPresetState {
   bank?: string
 }
 
-export type PanelType = 'pad' | 'knob'
-export type PanelBank = 'A' | 'B'
+export type PanelType = 'pad' | 'knob' | 'piano'
+export type PadKnobBank = 'A' | 'B'
+export type PianoBank = 'play' | 'map'
+export type PanelBank = PadKnobBank | PianoBank
 
 export interface Panel {
   instanceId: string
@@ -77,10 +79,32 @@ export interface Panel {
   title: string
 }
 
-export type ActivePanelsMap = Partial<Record<
-  'pad:A' | 'pad:B' | 'knob:A' | 'knob:B',
-  string | null
->>
+export type ActivePanelKey =
+  | 'pad:A' | 'pad:B'
+  | 'knob:A' | 'knob:B'
+  | 'piano:play' | 'piano:map'
+
+export type ActivePanelsMap = Partial<Record<ActivePanelKey, string | null>>
+
+export interface PadAction {
+  type: string
+  keys?: string
+  target?: string
+  command?: string
+  process?: string
+  params?: Record<string, unknown>
+}
+
+export interface PianoKeyMapping {
+  note: number
+  label?: string
+  action?: PadAction
+}
+
+export interface PianoPreset {
+  name: string
+  keys: PianoKeyMapping[]
+}
 
 export interface AppState {
   midi: { connected: boolean; port_name: string | null; device_name: string }

@@ -17,7 +17,12 @@ if _PROJECT_ROOT not in sys.path:
 
 import settings
 from midi_listener import MidiListener, MidiEvent
-from mapper import Mapper, load_config, save_config, PAD_NOTES_BANK_A, PAD_NOTES_BANK_B, PAD_NOTES_ALL
+from mapper import (
+    Mapper, load_config, save_config,
+    PAD_NOTES_BANK_A, PAD_NOTES_BANK_B, PAD_NOTES_ALL,
+    PIANO_MAP_NOTE_MIN, PIANO_MAP_NOTE_MAX,
+    PianoPreset, PianoKeyMapping,
+)
 from executor import execute_keystroke, execute_shell, execute_launch, execute_scroll
 from audio import AudioController
 from feedback import FeedbackService, set_transpose, get_transpose
@@ -37,6 +42,32 @@ import re
 _PRESET_NAME_RE = re.compile(r'^[\w\s\-.,!?()&#+]{1,50}$', re.UNICODE)
 # Legacy fixed IDs kept for backward compatibility; dynamic IDs also accepted
 _LEGACY_PANEL_IDS = frozenset({"bankA", "bankB", "knobs"})
+
+# Valid bank values per panel type. Kept at module scope so other modules (and
+# tests) can introspect without constructing an AppCore instance.
+VALID_BANKS: dict[str, tuple[str, ...]] = {
+    "pad": ("A", "B"),
+    "knob": ("A", "B"),
+    "piano": ("play", "map"),
+}
+
+# Title templates recognized by ``reconcile_panels(fix_titles=True)`` and by
+# PanelHeader's auto-sync logic. Custom titles (anything not matching) are
+# preserved as-is when banks change.
+_TEMPLATE_TITLE_RE = re.compile(
+    r'^(?:Pad Panel [AB]|Knob Panel [AB]|Piano \((?:Play|Map)\))$'
+)
+
+
+def _template_title(panel_type: str, bank: str) -> str:
+    """Return the canonical template title for (type, bank)."""
+    if panel_type == "pad":
+        return f"Pad Panel {bank}"
+    if panel_type == "knob":
+        return f"Knob Panel {bank}"
+    if panel_type == "piano":
+        return "Piano (Map)" if bank == "map" else "Piano (Play)"
+    return f"{panel_type} {bank}"
 
 
 def _validate_preset_name(name: str) -> str | None:
@@ -152,6 +183,19 @@ class AppCore:
 
         # Restore MIDI routing from settings
         self._restore_midi_routing()
+
+        # Reconcile active-panel slots against live panels (fix drift caused
+        # by earlier bugs / crashed writes). Titles are left alone here — the
+        # user can explicitly request a title-fix pass via the REST endpoint.
+        try:
+            rep = self.reconcile_panels(fix_titles=False)
+            for msg in rep.get("fixed", []):
+                self._runtime_log("SYS", f"[reconcile] {msg}", (100, 255, 150))
+            for msg in rep.get("warnings", []):
+                self._runtime_log("SYS", f"[reconcile] {msg}", (255, 200, 80))
+        except Exception as exc:
+            self._runtime_log("ERR",
+                f"reconcile_panels failed: {exc}", (255, 80, 80))
 
         # Mark headless mode so plugins skip DearPyGui calls
         os.environ["MACROPAD_HEADLESS"] = "1"
@@ -307,15 +351,19 @@ class AppCore:
         try:
             if event.type == "pad_press":
                 note = event.note
-                # Split: pad notes -> pad dispatch, other notes -> piano plugin
+                # Split: pad notes -> pad dispatch, other notes -> piano dispatch
                 if note in PAD_NOTES_ALL:
                     self._handle_pad_press(note, event.velocity)
                 else:
-                    # Piano / non-pad note — forward to plugins
+                    # Piano / non-pad note — route through piano dispatcher
                     self.event_bus.publish("midi.key_press", {
                         "note": note, "velocity": event.velocity,
                     })
-                    self.plugin_manager.on_pad_press(note, event.velocity)
+                    handled = self.handle_piano_note(
+                        note, event.velocity, on=True)
+                    if not handled:
+                        # Legacy fallback: let plugins (incl. Piano) handle it.
+                        self.plugin_manager.on_pad_press(note, event.velocity)
 
             elif event.type == "pad_release":
                 note = event.note
@@ -324,7 +372,9 @@ class AppCore:
                     self.plugin_manager.on_pad_release(note)
                 else:
                     self.event_bus.publish("midi.key_release", {"note": note})
-                    self.plugin_manager.on_pad_release(note)
+                    handled = self.handle_piano_note(note, 0, on=False)
+                    if not handled:
+                        self.plugin_manager.on_pad_release(note)
 
             elif event.type == "knob":
                 self.event_bus.publish("midi.knob", {
@@ -380,6 +430,69 @@ class AppCore:
             else:
                 self._runtime_log("PAD",
                     f"note {note} (unmapped)", (150, 150, 160))
+
+    # ------------------------------------------------------------------
+    # Piano dispatch (play vs map bank)
+    # ------------------------------------------------------------------
+
+    def handle_piano_note(self, note: int, velocity: int, on: bool) -> bool:
+        """Dispatch a non-pad MIDI note through active piano panel(s).
+
+        Precedence: active ``map`` bank wins over active ``play`` bank when
+        both are active simultaneously. Returns True if the note was handled
+        (either by executor or piano plugin), False if there is no active
+        piano panel for this note — in which case the caller may fall back
+        to legacy plugin dispatch.
+        """
+        # Piano map dispatch is limited to keyboard notes 36-72. Notes outside
+        # this range cannot be mapped; only ``play`` may accept them.
+        map_pid = self.mapper.get_active_panel("piano", "map")
+        play_pid = self.mapper.get_active_panel("piano", "play")
+
+        # (1) Map wins: resolve a key mapping and execute its action on press.
+        if map_pid and PIANO_MAP_NOTE_MIN <= note <= PIANO_MAP_NOTE_MAX:
+            preset_name = self.mapper.get_panel_preset(map_pid)
+            if preset_name:
+                key = self.mapper.lookup_piano_key(preset_name, note)
+                if key is not None:
+                    if on and key.action:
+                        from mapper import ActionDef
+                        action = ActionDef(
+                            type=key.action.get("type", ""),
+                            keys=key.action.get("keys", ""),
+                            target=key.action.get("target", ""),
+                            command=key.action.get("command", ""),
+                            process=key.action.get("process", ""),
+                            params=dict(key.action.get("params", {}) or {}),
+                        )
+                        label = key.label or f"note {note}"
+                        self._runtime_log("PIANO",
+                            f"map: {label} -> {action.type}",
+                            (150, 200, 255))
+                        self._execute_action(action)
+                    # On release or no-action key in map bank, swallow event.
+                    return True
+            # Map panel active but no matching key -> no-op (map has priority)
+            return True
+
+        # (2) Play bank: forward to Piano plugin.
+        if play_pid:
+            piano = self.plugin_manager.plugins.get("Piano") if hasattr(
+                self.plugin_manager, "plugins") else None
+            if piano is not None:
+                try:
+                    if on:
+                        piano._note_on(note, velocity)
+                    else:
+                        piano._note_off(note)
+                    return True
+                except Exception as exc:
+                    self._runtime_log("ERR",
+                        f"piano note dispatch failed: {exc}", (255, 80, 80))
+                    return True
+
+        # (3) Neither bank active — not handled.
+        return False
 
     # ------------------------------------------------------------------
     # Hotkey action dispatch
@@ -686,20 +799,27 @@ class AppCore:
         activate: bool = False,
     ) -> dict:
         """Create a new freeform panel. Returns the persisted panel dict."""
-        if panel_type not in ("pad", "knob"):
+        valid_banks = VALID_BANKS.get(panel_type)
+        if valid_banks is None:
             raise ValueError(f"invalid panel type: {panel_type}")
-        if bank not in ("A", "B"):
-            raise ValueError(f"invalid bank: {bank}")
+        if bank not in valid_banks:
+            raise ValueError(
+                f"invalid bank '{bank}' for type '{panel_type}' "
+                f"(expected one of {valid_banks})"
+            )
 
         if preset is None:
             if panel_type == "pad":
                 p = self.mapper.current_preset
                 preset = p.name if p else "Default"
-            else:
+            elif panel_type == "knob":
                 preset = self._default_knob_preset_name() or "Default"
+            else:  # piano
+                piano_presets = getattr(self.config, "piano_presets", []) or []
+                preset = piano_presets[0].name if piano_presets else ""
 
         if title is None:
-            title = "Pad Panel" if panel_type == "pad" else "Knob Panel"
+            title = _template_title(panel_type, bank)
 
         import time as _time, uuid
         instance_id = f"{panel_type}Panel-{int(_time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
@@ -744,9 +864,10 @@ class AppCore:
         old_slot_key = f"{panel_type}:{old_bank}"
         was_active_on_old = active_map.get(old_slot_key) == instance_id
 
+        valid_banks = VALID_BANKS.get(panel_type, ())
         changed = False
         bank_changed = False
-        if bank is not None and bank in ("A", "B") and old_bank != bank:
+        if bank is not None and bank in valid_banks and old_bank != bank:
             panel["bank"] = bank
             changed = True
             bank_changed = True
@@ -847,6 +968,113 @@ class AppCore:
         })
         return True
 
+    def reconcile_panels(self, fix_titles: bool = False) -> dict:
+        """Reconcile active_panels slots against the live panels dict.
+
+        - Clears active slot entries that reference non-existent panels.
+        - For an empty slot, if exactly one live panel matches the (type, bank)
+          pair, assigns it as active.
+        - If ``fix_titles`` is True, rewrites template-matching titles to the
+          canonical template for the panel's current (type, bank). Custom
+          titles (anything not matching the template regex) are untouched.
+
+        Returns a dict with ``fixed`` (list of human-readable change messages)
+        and ``warnings`` (list of diagnostic messages).
+        """
+        fixed: list[str] = []
+        warnings: list[str] = []
+
+        panels = dict(settings.get("panels") or {})
+        active = dict(settings.get("active_panels") or {})
+
+        # --- Clean up titles first (before the slot sweep relies on them) ---
+        if fix_titles:
+            for pid, panel in panels.items():
+                if not isinstance(panel, dict):
+                    continue
+                panel_type = panel.get("type")
+                bank = panel.get("bank")
+                title = panel.get("title", "")
+                if panel_type not in VALID_BANKS:
+                    continue
+                if bank not in VALID_BANKS[panel_type]:
+                    continue
+                if not isinstance(title, str) or not _TEMPLATE_TITLE_RE.match(title):
+                    continue  # custom title -> leave alone
+                new_title = _template_title(panel_type, bank)
+                if new_title != title:
+                    panel["title"] = new_title
+                    fixed.append(
+                        f"retitled {pid}: '{title}' -> '{new_title}'"
+                    )
+
+        # --- Sweep active_panels slots ---
+        # Build index: (type, bank) -> [live panel ids]
+        by_slot: dict[tuple[str, str], list[str]] = {}
+        for pid, panel in panels.items():
+            if not isinstance(panel, dict):
+                continue
+            t = panel.get("type")
+            b = panel.get("bank")
+            if t in VALID_BANKS and b in VALID_BANKS.get(t, ()):
+                by_slot.setdefault((t, b), []).append(pid)
+
+        # Ensure every valid slot key exists in the active map for uniform
+        # handling. Missing keys are treated the same as ``None``.
+        expected_slot_keys: list[str] = []
+        for t, banks in VALID_BANKS.items():
+            for b in banks:
+                expected_slot_keys.append(f"{t}:{b}")
+
+        changed_active = False
+        for key in expected_slot_keys:
+            try:
+                panel_type, bank = key.split(":", 1)
+            except ValueError:
+                continue
+            current = active.get(key)
+
+            # (1) Stale reference — clear it.
+            if current and current not in panels:
+                active[key] = None
+                changed_active = True
+                with self._lock:
+                    self.mapper.set_active_panel(panel_type, bank, None)
+                fixed.append(
+                    f"cleared stale active slot {key} "
+                    f"(missing panel id '{current}')"
+                )
+                current = None
+
+            # (2) Empty slot with exactly one candidate — auto-assign.
+            if not current:
+                candidates = by_slot.get((panel_type, bank), [])
+                if len(candidates) == 1:
+                    pid = candidates[0]
+                    active[key] = pid
+                    changed_active = True
+                    with self._lock:
+                        self.mapper.set_active_panel(panel_type, bank, pid)
+                        preset_name = (panels[pid] or {}).get("preset")
+                        if preset_name:
+                            self.mapper.register_panel_preset(pid, preset_name)
+                        self._legacy_mirror_routing(
+                            panel_type, bank, preset_name)
+                    fixed.append(f"auto-activated '{pid}' on slot {key}")
+                elif len(candidates) > 1:
+                    warnings.append(
+                        f"slot {key} has {len(candidates)} candidate panels; "
+                        f"leaving empty (user must activate manually)"
+                    )
+
+        # Persist if anything changed
+        if fix_titles:
+            settings.put("panels", panels)
+        if changed_active:
+            settings.put("active_panels", active)
+
+        return {"fixed": fixed, "warnings": warnings}
+
     def activate_panel(self, instance_id: str) -> bool:
         panels = settings.get("panels") or {}
         panel = panels.get(instance_id)
@@ -854,7 +1082,8 @@ class AppCore:
             return False
         panel_type = panel.get("type")
         bank = panel.get("bank")
-        if panel_type not in ("pad", "knob") or bank not in ("A", "B"):
+        valid_banks = VALID_BANKS.get(panel_type, ())
+        if not valid_banks or bank not in valid_banks:
             return False
 
         # All settings + mapper mutation + snapshot happen under the same
@@ -868,6 +1097,20 @@ class AppCore:
 
             self.mapper.set_active_panel(panel_type, bank, instance_id)
             self._legacy_mirror_routing(panel_type, bank, panel.get("preset"))
+
+            # Silence any in-flight piano voices when switching piano banks.
+            # Without this, a note held while the user flips from play to map
+            # (or vice-versa) can get stuck because the matching note_off is
+            # routed differently than its note_on.
+            if panel_type == "piano":
+                try:
+                    piano = self.plugin_manager.plugins.get("Piano") if hasattr(
+                        self.plugin_manager, "plugins") else None
+                    if piano is not None and hasattr(piano, "stop_all"):
+                        piano.stop_all()
+                except Exception:
+                    # Best-effort: never block activation because of silence.
+                    pass
 
             snapshot_pads = self.get_state_snapshot()["pads"]
             midi_routing = self.mapper.get_midi_routing()

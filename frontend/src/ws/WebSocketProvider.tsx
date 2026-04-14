@@ -108,6 +108,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       if (payload.active_panels) {
         s.setActivePanels(payload.active_panels as Record<string, string>)
       }
+      if (payload.piano_presets && Array.isArray(payload.piano_presets)) {
+        s.setPianoPresets(payload.piano_presets as any)
+      }
       return
     }
 
@@ -208,6 +211,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           }
           if (evt.payload.knob_routing) {
             s.setActiveKnobPresets(evt.payload.knob_routing as Record<string, string>)
+          }
+          break
+        }
+        case 'piano_presets.changed': {
+          const presets = (evt.payload as any).presets
+          if (Array.isArray(presets)) {
+            s.setPianoPresets(presets)
           }
           break
         }
