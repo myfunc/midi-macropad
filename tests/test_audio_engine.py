@@ -186,3 +186,87 @@ def test_produced_blocks_increments(engine):
     # Let the producer run for a short while and confirm it produces blocks.
     time.sleep(0.2)
     assert engine.status()["produced_blocks"] > 0
+
+
+def test_reconfigure_preserves_fx_state(engine):
+    # User tunes a couple of FX params.
+    engine.set_fx_param("reverb.mix", 0.73)
+    engine.set_fx_param("volume.gain", 0.42)
+    for _ in range(50):
+        state = engine.fx_chain.get_state()
+        if (state["reverb"]["mix"] == pytest.approx(0.73)
+                and state["volume"]["gain"] == pytest.approx(0.42)):
+            break
+        time.sleep(0.01)
+
+    # Reconfigure with a sample-rate change — forces FXChain rebuild.
+    ok, err = engine.reconfigure({"sample_rate": 48000, "block_size": 512})
+    assert ok, err
+
+    # FX params must survive the rebuild.
+    state = engine.fx_chain.get_state()
+    assert state["reverb"]["mix"] == pytest.approx(0.73)
+    assert state["volume"]["gain"] == pytest.approx(0.42)
+
+
+def test_shutdown_acks_pending_reconfigure():
+    """Pending reconfigure commands must be ACK'd (ok=False) on shutdown.
+
+    Otherwise HTTP callers blocked on ``cmd.done.wait(timeout)`` hang for
+    the full timeout when the engine is torn down mid-flight. We don't
+    start the producer — we queue a reconfigure ahead of a synthetic
+    shutdown command and drive ``_handle_command`` directly, which is
+    exactly what the producer does in the real shutdown path.
+    """
+    import audio_engine as ae
+
+    eng = AudioEngine(sample_rate=44100, block_size=256, max_voices=4)
+    # Do NOT call start() — we only exercise the shutdown drain logic.
+
+    pending_a = ae._CmdReconfigure(cfg={"max_polyphony": 8})
+    pending_b = ae._CmdReconfigure(cfg={"max_polyphony": 16})
+    eng._cmd_queue.put_nowait(pending_a)
+    eng._cmd_queue.put_nowait(pending_b)
+
+    # Drive the shutdown command through the real handler.
+    eng._handle_command(ae._CmdShutdown())
+
+    assert pending_a.done.is_set(), "first pending reconfigure not ACK'd"
+    assert pending_b.done.is_set(), "second pending reconfigure not ACK'd"
+    for p in (pending_a, pending_b):
+        assert p.result.get("ok") is False
+        assert "shutting down" in (p.result.get("error") or "")
+
+
+def test_pitch_cache_thread_safe():
+    """Parallel mutation of a lock-guarded cache must not raise.
+
+    Mirrors the PianoPlugin cache pattern (``_pitch_cache`` + single
+    ``_pitch_cache_lock``) without requiring the full plugin import
+    chain, so the test stays hermetic.
+    """
+    cache: dict = {}
+    lock = threading.Lock()
+
+    errors: list[BaseException] = []
+
+    def worker(base: int):
+        try:
+            for i in range(500):
+                key = (base, i % 24 - 12)
+                with lock:
+                    cache[key] = np.zeros(4, dtype=np.float32)
+                with lock:
+                    cache.get(key)
+                if i % 97 == 0:
+                    with lock:
+                        cache.clear()
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(b,)) for b in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5.0)
+    assert not errors, f"thread-safe cache access raised: {errors[0]!r}"

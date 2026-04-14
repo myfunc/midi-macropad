@@ -99,6 +99,28 @@ class FXChain:
                 state[name] = fx.get_params()
         return state
 
+    def apply_state(self, state: dict[str, dict[str, float]]) -> None:
+        """Restore FX parameters from a prior :meth:`get_state` snapshot.
+
+        Unknown fx names or params are silently ignored (forward/backward
+        compat with effect set changes). Used by :class:`AudioEngine` to
+        preserve user-tuned FX when the chain has to be rebuilt at a new
+        sample rate.
+        """
+        if not isinstance(state, dict):
+            return
+        for fx_name, params in state.items():
+            if not isinstance(params, dict):
+                continue
+            fx = self._effects.get(fx_name)
+            if fx is None:
+                continue
+            for param_name, value in params.items():
+                try:
+                    fx.set_param(param_name, float(value))
+                except (TypeError, ValueError):
+                    continue
+
     def get_effect(self, name: str):
         return self._effects.get(name)
 

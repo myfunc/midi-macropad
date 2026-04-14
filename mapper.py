@@ -485,6 +485,14 @@ class Mapper:
         """Return {"pad:A": instanceId, ...} for JSON serialization."""
         return {f"{t}:{b}": pid for (t, b), pid in self._active_panels.items()}
 
+    def iter_active_panels(self) -> dict[tuple[str, str], str]:
+        """Return a *copy* of the ``(type, bank) -> instanceId`` map.
+
+        Public accessor for callers that need to iterate over active slot
+        assignments without reaching into the private attribute.
+        """
+        return dict(self._active_panels)
+
     def lookup_pad_for_active(self, note: int) -> PadMapping | None:
         """Resolve pad via the active pad-panel for the note's bank."""
         if note in PAD_NOTES_BANK_A:

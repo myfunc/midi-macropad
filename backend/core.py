@@ -257,8 +257,8 @@ class AppCore:
             self.mapper.set_active_panel(panel_type, bank, instance_id)
 
         # Legacy mirror so existing fallbacks keep working
-        for (panel_type, bank), instance_id in self.mapper._active_panels.items():
-            preset_name = self.mapper._panel_presets.get(instance_id)
+        for (panel_type, bank), instance_id in self.mapper.iter_active_panels().items():
+            preset_name = self.mapper.get_panel_preset(instance_id)
             if not preset_name:
                 continue
             if panel_type == "pad":
@@ -729,12 +729,12 @@ class AppCore:
         knob_a_preset = _pick("knobBank-A", "knobs", fallback=default_knob_preset)
         knob_b_preset = _pick("knobBank-B", "knobs", fallback=default_knob_preset)
 
-        import time as _time
+        import time as _time, uuid
         base = int(_time.time() * 1000)
-        pad_a_id = f"padPanel-{base + 1}"
-        pad_b_id = f"padPanel-{base + 2}"
-        knob_a_id = f"knobPanel-{base + 3}"
-        knob_b_id = f"knobPanel-{base + 4}"
+        pad_a_id = f"padPanel-{base}-{uuid.uuid4().hex[:8]}"
+        pad_b_id = f"padPanel-{base}-{uuid.uuid4().hex[:8]}"
+        knob_a_id = f"knobPanel-{base}-{uuid.uuid4().hex[:8]}"
+        knob_b_id = f"knobPanel-{base}-{uuid.uuid4().hex[:8]}"
 
         panels = {
             pad_a_id: {
@@ -849,69 +849,77 @@ class AppCore:
         preset: str | None = None,
         title: str | None = None,
     ) -> dict | None:
-        panels = dict(settings.get("panels") or {})
-        panel = panels.get(instance_id)
-        if not panel:
-            return None
+        # All settings reads/writes + mapper mutation + snapshot capture
+        # happen under a single lock so concurrent PATCHes don't interleave
+        # and overwrite each other. Plugin notification + event publishing
+        # are deferred outside the lock to avoid re-entering user code.
+        with self._lock:
+            panels = dict(settings.get("panels") or {})
+            panel = panels.get(instance_id)
+            if not panel:
+                return None
 
-        panel_type = panel.get("type")
-        old_bank = panel.get("bank")
+            panel_type = panel.get("type")
+            old_bank = panel.get("bank")
 
-        # Detect whether this panel currently occupies the active slot
-        # on its *old* bank — we need to clear/reassign that slot if the
-        # bank changes.
-        active_map = dict(settings.get("active_panels") or {})
-        old_slot_key = f"{panel_type}:{old_bank}"
-        was_active_on_old = active_map.get(old_slot_key) == instance_id
+            # Detect whether this panel currently occupies the active slot
+            # on its *old* bank — we need to clear/reassign that slot if the
+            # bank changes.
+            active_map = dict(settings.get("active_panels") or {})
+            old_slot_key = f"{panel_type}:{old_bank}"
+            was_active_on_old = active_map.get(old_slot_key) == instance_id
 
-        valid_banks = VALID_BANKS.get(panel_type, ())
-        changed = False
-        bank_changed = False
-        if bank is not None and bank in valid_banks and old_bank != bank:
-            panel["bank"] = bank
-            changed = True
-            bank_changed = True
-        if preset is not None and panel.get("preset") != preset:
-            panel["preset"] = preset
-            with self._lock:
+            valid_banks = VALID_BANKS.get(panel_type, ())
+            changed = False
+            bank_changed = False
+            if bank is not None and bank in valid_banks and old_bank != bank:
+                panel["bank"] = bank
+                changed = True
+                bank_changed = True
+            if preset is not None and panel.get("preset") != preset:
+                panel["preset"] = preset
                 self.mapper.register_panel_preset(instance_id, preset)
-            changed = True
-        if title is not None and panel.get("title") != title:
-            panel["title"] = title
-            changed = True
-        if not changed:
-            return panel
+                changed = True
+            if title is not None and panel.get("title") != title:
+                panel["title"] = title
+                changed = True
+            if not changed:
+                return panel
 
-        panels[instance_id] = panel
-        settings.put("panels", panels)
+            panels[instance_id] = panel
+            settings.put("panels", panels)
 
-        auto_activated = False
-        if bank_changed and was_active_on_old:
-            # Clear the old slot (both settings + mapper routing)
-            active_map[old_slot_key] = None
-            with self._lock:
+            auto_activated = False
+            if bank_changed and was_active_on_old:
+                # Clear the old slot (both settings + mapper routing)
+                active_map[old_slot_key] = None
                 self.mapper.set_active_panel(panel_type, old_bank, None)
 
-            # Auto-activate on the new bank iff that slot is empty.
-            new_slot_key = f"{panel_type}:{panel['bank']}"
-            if not active_map.get(new_slot_key):
-                active_map[new_slot_key] = instance_id
-                with self._lock:
+                # Auto-activate on the new bank iff that slot is empty.
+                new_slot_key = f"{panel_type}:{panel['bank']}"
+                if not active_map.get(new_slot_key):
+                    active_map[new_slot_key] = instance_id
                     self.mapper.set_active_panel(
                         panel_type, panel["bank"], instance_id)
                     self._legacy_mirror_routing(
                         panel_type, panel["bank"], panel.get("preset"))
-                auto_activated = True
+                    auto_activated = True
 
-            settings.put("active_panels", active_map)
+                settings.put("active_panels", active_map)
 
-        # If this panel is currently active (on its current bank), re-mirror
-        # legacy routing so preset/title edits take effect.
-        current_key = f"{panel_type}:{panel['bank']}"
-        currently_active = active_map.get(current_key) == instance_id
-        if currently_active and not auto_activated:
-            self._legacy_mirror_routing(
-                panel_type, panel["bank"], panel.get("preset"))
+            # If this panel is currently active (on its current bank),
+            # re-mirror legacy routing so preset/title edits take effect.
+            current_key = f"{panel_type}:{panel['bank']}"
+            currently_active = active_map.get(current_key) == instance_id
+            if currently_active and not auto_activated:
+                self._legacy_mirror_routing(
+                    panel_type, panel["bank"], panel.get("preset"))
+
+            snapshot_pads = self.get_state_snapshot()["pads"]
+            midi_routing = self.mapper.get_midi_routing()
+            knob_routing = self.mapper.get_knob_routing()
+
+        # -- outside lock: notify plugins and publish events -----------
         if currently_active:
             try:
                 self.plugin_manager.on_mode_changed(panel["preset"])
@@ -921,9 +929,9 @@ class AppCore:
 
         payload = {
             "panel": panel,
-            "pads": self.get_state_snapshot()["pads"],
-            "active_midi_presets": self.mapper.get_midi_routing(),
-            "active_knob_presets": self.mapper.get_knob_routing(),
+            "pads": snapshot_pads,
+            "active_midi_presets": midi_routing,
+            "active_knob_presets": knob_routing,
         }
         if bank_changed and was_active_on_old:
             payload["active_panels"] = active_map
@@ -1264,7 +1272,7 @@ class AppCore:
 
         # Update panel_presets references
         for panel_id, panel_data in panel_presets.items():
-            if isinstance(panel_data, dict) and panel_data.get("preset", "").lower() == name.lower():
+            if isinstance(panel_data, dict) and panel_data.get("preset", "") == name:
                 panel_data["preset"] = remaining_name or "Default"
         settings.put("panel_presets", panel_presets)
 
@@ -1295,7 +1303,7 @@ class AppCore:
         # Update panel_presets references
         panel_presets = settings.get("panel_presets") or {}
         for panel_id, panel_data in panel_presets.items():
-            if isinstance(panel_data, dict) and panel_data.get("preset", "").lower() == old_name.lower():
+            if isinstance(panel_data, dict) and panel_data.get("preset", "") == old_name:
                 panel_data["preset"] = new_name
         settings.put("panel_presets", panel_presets)
 
